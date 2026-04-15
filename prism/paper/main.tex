@@ -1,0 +1,75 @@
+\documentclass{article}
+
+% NeurIPS 2025 style
+\usepackage[preprint]{neurips_2025}
+
+% Math
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+
+% Figures & tables
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{float}
+
+% Algorithms
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% Hyperlinks
+\usepackage{hyperref}
+\usepackage{url}
+
+% Misc
+\usepackage{microtype}
+\usepackage{xspace}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+% ── Macros ──────────────────────────────────────────────────────────────────
+\newcommand{\prism}{\textsc{PRISM}\xspace}
+\newcommand{\tamm}{\textsc{TAMM}\xspace}
+\newcommand{\cadg}{\textsc{CADG}\xspace}
+\newcommand{\sacd}{\textsc{SACD}\xspace}
+\newcommand{\tamsh}{\textsc{TAMSH}\xspace}
+\newcommand{\rails}{\textsc{RAILS}\xspace}
+
+% Theorem environments
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+% ── Document ────────────────────────────────────────────────────────────────
+\title{\textsc{PRISM}: Predictive Runtime Immune System with Manifold Monitoring for
+       Architecture-Agnostic Adversarial Defense}
+
+\author{%
+  [Author Name] \\
+  [Institution] \\
+  \texttt{[email]} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  \input{sections/abstract}
+\end{abstract}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+\bibliography{prism}
+\bibliographystyle{plainnat}
+
+\appendix
+\input{sections/appendix}
+
+\end{document}

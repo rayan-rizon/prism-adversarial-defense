@@ -1,0 +1,165 @@
+\section{Method}
+\label{sec:method}
+
+Figure~\ref{fig:architecture} shows the \prism pipeline.
+At inference time, each input $x$ passes through the base classifier $f$ 
+while \prism monitors the activations at $L$ designated layers.
+The defense proceeds in five stages.
+
+% ── Figure placeholder ──────────────────────────────────────────────────────
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig1_architecture.pdf}
+  \caption{%
+    \prism defense pipeline.
+    Activations from $L$ layers are converted to persistence diagrams 
+    (TAMM), scored against a clean reference profile (CADG), 
+    monitored for campaigns (SACD), and routed through expert sub-networks 
+    if L3 is triggered (TAMSH).
+  }
+  \label{fig:architecture}
+\end{figure}
+
+% ── Notation ────────────────────────────────────────────────────────────────
+\paragraph{Notation.}
+Let $f: \mathcal{X} \to \mathbb{R}^C$ be a pre-trained classifier.
+Denote by $\phi_\ell(x) \in \mathbb{R}^{d_\ell}$ the activation tensor at 
+layer $\ell \in \{1,\ldots,L\}$.
+A \emph{persistence diagram} $\mathrm{Dgm}(\cdot)$ is a multiset of 
+$(b_i, d_i)$ pairs encoding topological features (birth/death of connected 
+components in $H_0$ and loops in $H_1$).
+The $p$-Wasserstein distance between diagrams is
+\[
+  W_p(\mathcal{D}_1, \mathcal{D}_2) = 
+  \left( \inf_{\gamma} \sum_{i} \| \gamma(i) - i \|^p \right)^{1/p},
+\]
+where $\gamma$ ranges over bijections between the points 
+(including diagonal projections for unmatched points) \cite{edelsbrunner2010computational}.
+
+% ── TAMM ────────────────────────────────────────────────────────────────────
+\subsection{TAMM: Topological Activation Manifold Monitor}
+\label{sec:tamm}
+
+\paragraph{Reference profile construction.}
+Given a calibration set $\mathcal{D}_\text{cal} = \{x_i\}_{i=1}^N$ of clean 
+inputs, we extract activations $\phi_\ell(x_i)$ for each layer $\ell$ and 
+subsample to at most $n_\text{sub}=200$ points to make persistent homology 
+computation tractable.
+For each layer, we compute $N$ persistence diagrams and select the 
+\emph{Wasserstein medoid}---the diagram minimizing total Wasserstein distance 
+to all other diagrams---as the layer reference $\mathcal{R}_\ell$.
+
+\paragraph{Anomaly scoring.}
+At inference time, for input $x$, we compute:
+\begin{align}
+  s_\ell(x) &= W_2\bigl(\mathrm{Dgm}(\phi_\ell(x)),\, \mathcal{R}_\ell\bigr), \\
+  S(x) &= \frac{1}{L} \sum_{\ell=1}^L s_\ell(x).
+  \label{eq:score}
+\end{align}
+The score $S(x)$ measures how topologically distant the current activation 
+manifold is from the clean reference.
+On clean CIFAR-10 images, we observe $S(x) \sim \mathcal{N}(4.89, 1.38^2)$ 
+empirically (see Section~\ref{sec:experiments}).
+
+% ── CADG ────────────────────────────────────────────────────────────────────
+\subsection{CADG: Conformal Adversarial Detection Guarantee}
+\label{sec:cadg}
+
+\prism applies split conformal prediction \cite{vovk2005algorithmic,angelopoulos2023gentle} 
+to calibrate detection thresholds with distribution-free FPR guarantees.
+
+\paragraph{Calibration.}
+Given held-out clean scores $s_1, \ldots, s_n$ (iid from the clean distribution), 
+the conformal threshold at level $\alpha \in (0,1)$ is:
+\begin{equation}
+  \hat{q}_\alpha = s_{(\lceil (n+1)(1-\alpha) \rceil)},
+  \label{eq:quantile}
+\end{equation}
+where $s_{(k)}$ denotes the $k$-th order statistic.
+
+\begin{proposition}[Coverage guarantee]
+\label{prop:coverage}
+For any clean test input $x_{\text{test}}$ drawn iid from the same 
+distribution as the calibration set,
+\[
+  \Pr\bigl[S(x_{\text{test}}) > \hat{q}_\alpha\bigr] \leq \alpha + \frac{1}{n+1}.
+\]
+\end{proposition}
+
+\noindent
+This follows directly from the standard conformal coverage theorem 
+\cite{vovk2005algorithmic}.
+\prism uses three tiers with $\alpha \in \{0.10, 0.03, 0.005\}$:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccl}
+\toprule
+Tier & $\alpha$ & Threshold & Action \\
+\midrule
+L1 & 0.10 & 6.81 & Log + normal inference \\
+L2 & 0.03 & 8.05 & Input purification + inference \\
+L3 & 0.005 & 9.64 & Expert routing (MoE) or reject \\
+\bottomrule
+\end{tabular}
+\caption{Conformal detection tiers. Thresholds calibrated on $n{=}3000$ 
+clean CIFAR-10 images.}
+\label{tab:tiers}
+\end{table}
+
+\paragraph{Campaign-adaptive thresholds.}
+When the L0 campaign detector (\S\ref{sec:sacd}) is active, thresholds are 
+multiplied by a factor $\lambda \in (0,1)$ (default $\lambda=0.8$) to increase 
+sensitivity during sustained attacks, accepting a controlled FPR increase.
+
+% ── SACD ────────────────────────────────────────────────────────────────────
+\subsection{SACD: Sequential Adversarial Campaign Detection}
+\label{sec:sacd}
+
+Real-world adversaries often execute \emph{campaigns}: sequences of probing 
+queries before a targeted attack.
+\sacd monitors the score stream $S(x_1), S(x_2), \ldots$ online using 
+Bayesian Online Changepoint Detection (BOCPD) \cite{adams2007bayesian} 
+with a Normal-Inverse-Gamma conjugate prior.
+
+\paragraph{Detection signal.}
+BOCPD maintains the posterior run-length distribution 
+$p(r_t \mid S_{1:t})$ at each step $t$, 
+where $r_t$ is the time since the last changepoint.
+During clean operation, the posterior concentrates on large run lengths 
+(stable distribution).
+When an adversarial campaign begins, the score distribution shifts 
+upward and $p(r_t \leq k)$ spikes.
+\sacd triggers L0 mode when:
+\begin{equation}
+  \Pr[r_t \leq k_\text{alert}] > p_\text{alert}, \quad t > t_\text{warmup},
+  \label{eq:l0_trigger}
+\end{equation}
+with default $k_\text{alert}=5$, $p_\text{alert}=0.50$, $t_\text{warmup}=20$.
+
+% ── TAMSH ────────────────────────────────────────────────────────────────────
+\subsection{TAMSH: Topology-Aware MoE Self-Healing}
+\label{sec:tamsh}
+
+Inputs that breach the L3 threshold are highly likely adversarial.
+Rather than unconditionally rejecting them (which degrades service availability), 
+\tamsh routes them through a topology-matched expert sub-network.
+
+\paragraph{Expert training.}
+During calibration, we cluster $M$ clean persistence diagrams 
+from the final monitored layer into $K$ groups using $K$-medoids 
+with Wasserstein PAM \cite{schubert2021fast}.
+Each cluster is assigned an expert MLP trained on the corresponding 
+activation subset.
+
+\paragraph{Expert routing.}
+At runtime, for an L3-tier input $x$, we select:
+\begin{equation}
+  k^*(x) = \arg\min_{k=1}^{K}\, W_2\!\bigl(\mathrm{Dgm}(\phi_L(x)),\, \mathcal{R}_k^L\bigr),
+  \label{eq:routing}
+\end{equation}
+where $\mathcal{R}_k^L$ is the medoid diagram of cluster $k$ at layer $L$.
+The input is then forwarded through expert $k^*$ using the 
+penultimate-layer activation as input.
+This preserves prediction availability for detected adversarial inputs.

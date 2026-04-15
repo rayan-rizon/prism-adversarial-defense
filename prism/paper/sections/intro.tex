@@ -1,0 +1,72 @@
+\section{Introduction}
+\label{sec:intro}
+
+Deep neural networks are vulnerable to adversarial examples---inputs crafted 
+with small, imperceptible perturbations that cause confident misprediction 
+\cite{szegedy2014intriguing,goodfellow2015explaining}.
+Despite more than a decade of research, the arms race between attacks and 
+defenses remains unresolved: architecturally-coupled defenses require model 
+retraining, are often architecture-specific, and may degrade accuracy on clean 
+data \cite{croce2020reliable,athalye2018obfuscated}.
+
+A complementary direction is \emph{runtime detection}: rather than hardening 
+the model, intercept adversarial inputs before they affect predictions.
+Existing detectors often provide no formal statistical guarantees on false 
+alarm rates, rely on features that are themselves vulnerable to adaptive 
+attacks, or require knowledge of the model's training procedure 
+\cite{ma2018characterizing,grosse2017statistical,lee2018simple}.
+
+\textbf{Key insight.} 
+Clean and adversarial inputs traverse fundamentally different paths through 
+a neural network's activation manifold.
+While the output may look confident in both cases, the \emph{topology} of 
+intermediate representations---captured by persistent homology---differs 
+systematically \cite{gebhart2019adversary,carlini2019evaluating}.
+\prism exploits this topological signal at runtime as a 
+computationally tractable anomaly score.
+
+\textbf{Contributions.}
+We make four contributions:
+
+\begin{enumerate}[leftmargin=*, label=\textbf{C\arabic*}]
+
+\item \textbf{Topological activation profiler (\tamm).}
+We compute per-layer Wasserstein distances between input persistence diagrams 
+and a reference medoid profile built from clean training data.
+This \emph{architecture-agnostic} signature is robust to diverse attack types 
+and does not require access to adversarial examples during calibration.
+
+\item \textbf{Conformal detection guarantee (\cadg).}
+We apply split conformal prediction to the anomaly score stream, obtaining 
+\emph{distribution-free} FPR certificates at three severity tiers 
+(L1: $\alpha{=}0.10$; L2: $\alpha{=}0.03$; L3: $\alpha{=}0.005$) 
+using only a held-out clean calibration set.
+
+\item \textbf{Temporal campaign detector (\sacd).}
+We model the score stream as a Bayesian Online Changepoint Detection (BOCPD) 
+problem under a Normal-Inverse-Gamma prior.
+When a sustained distribution shift is detected (campaign mode), 
+\sacd automatically tightens detection thresholds to improve sensitivity 
+against coordinated probing attacks---a threat model absent from prior work.
+
+\item \textbf{Topology-aware MoE recovery (\tamsh).}
+For inputs reaching the L3 severity tier, \prism selects the 
+topologically-nearest expert sub-network via Wasserstein gating and 
+routes the input through it, preserving prediction availability 
+rather than issuing a blanket rejection.
+
+\end{enumerate}
+
+Empirically, \prism achieves competitive detection performance against 
+FGSM, PGD, C\&W L$_2$, and SquareAttack on CIFAR-10, 
+with a 100\% recovery rate for MoE-tier detections.
+Our ablation study confirms the contribution of each component.
+
+\textbf{Scope and limitations.}
+\prism is a \emph{runtime monitor}, not an adversarial trainer; 
+it complements (but does not replace) robust training.
+Detection latency scales with the number of monitored layers 
+(approximately 0.3\,s per image at 4 layers on CPU); 
+GPU deployment reduces this to $<$10\,ms.
+Like all detectors, \prism does not provide a guarantee against 
+adaptive adversaries who are aware of the topological scoring mechanism.

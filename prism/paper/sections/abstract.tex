@@ -1,0 +1,26 @@
+We present \prism (Predictive Runtime Immune System with Manifold Monitoring), 
+an architecture-agnostic adversarial defense system that detects adversarial 
+examples at inference time using topological data analysis (TDA) of internal 
+neural network activations. \prism integrates four complementary components: 
+(1)~\tamm (Topological Activation Manifold Monitor), which extracts persistence 
+diagrams from per-layer activations and scores each inference against a 
+calibrated clean-data profile using Wasserstein distance; 
+(2)~\cadg (Conformal Adversarial Detection Guarantee), which provides 
+distribution-free false-positive rate certificates at three severity tiers via 
+split conformal prediction; 
+(3)~\sacd (Sequential Adversarial Campaign Detector), which applies Bayesian 
+Online Changepoint Detection to the score stream to identify sustained attack 
+campaigns and dynamically tighten detection thresholds; and 
+(4)~\tamsh (Topology-Aware MoE Self-Healing), which routes inputs that trigger 
+the highest-severity tier through topology-matched expert sub-networks to 
+preserve prediction availability.
+
+On CIFAR-10 with ResNet-18, \prism achieves 78\% TPR against FGSM at 
+$\varepsilon{=}0.05$ and 100\% TPR against PGD-40 at $\varepsilon{=}0.03$, 
+with a certified FPR ${\le}10\%$ on clean inputs. 
+Ablation confirms that the MoE expert layer prevents prediction rejection for 
+11\% of adversarial inputs that would otherwise receive no output, 
+while the conformal calibration module provides formal coverage guarantees 
+absent in prior work. 
+Unlike detector-coupled defenses, \prism operates on any pre-trained 
+classifier without retraining or architecture modification.

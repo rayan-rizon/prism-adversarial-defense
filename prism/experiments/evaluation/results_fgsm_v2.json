@@ -1,0 +1,24 @@
+{
+  "FGSM": {
+    "TPR": 0.6033,
+    "FPR": 0.0967,
+    "Precision": 0.8619,
+    "F1": 0.7098,
+    "TP": 181,
+    "FP": 29,
+    "FN": 119,
+    "TN": 271,
+    "clean_level_distribution": {
+      "PASS": 271,
+      "L2": 4,
+      "L1": 22,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L2": 62,
+      "PASS": 119,
+      "L1": 76,
+      "L3_REJECT": 43
+    }
+  }
+}

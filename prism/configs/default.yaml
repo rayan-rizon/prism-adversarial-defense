@@ -1,0 +1,64 @@
+# PRISM: Predictive Runtime Immune System with Manifold Monitoring
+# Default configuration
+
+model:
+  name: resnet18
+  weights: IMAGENET1K_V1
+  layer_names:
+    - layer2
+    - layer3
+    - layer4
+  layer_weights:            # deeper layers carry stronger adversarial signal
+    layer2: 0.15
+    layer3: 0.30
+    layer4: 0.55
+
+tda:
+  n_subsample: 200
+  max_dim: 1
+  n_reference: 50          # Number of medoid reference diagrams per layer
+
+conformal:
+  alphas:
+    L1: 0.10               # 10% FPR — log + normal inference
+    L2: 0.03               # 3% FPR — input purification
+    L3: 0.005              # 0.5% FPR — expert routing or rejection
+  calibration_size: 5000
+  validation_size: 5000
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.005       # 1/200
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar10
+  image_size: 224
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 10000
+
+evaluation:
+  n_test_images: 1000
+  attacks:
+    - FGSM
+    - PGD
+    - CW
+    - Square
+    - HopSkipJump
+
+paths:
+  reference_profiles: models/reference_profiles.pkl
+  calibrator: models/calibrator.pkl
+  clean_scores: experiments/calibration/clean_scores.npy

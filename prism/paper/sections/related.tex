@@ -1,0 +1,52 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{TDA for adversarial detection.}
+Gebhart and Schrater \cite{gebhart2019adversary} were the first to apply 
+persistent homology to adversarial detection, computing topological features 
+of neuron activations to distinguish clean from adversarial inputs.
+Concurrent work at LANL \cite{lanl2024tda} uses persistent homology with 
+two-sample testing for detection in vision-language models.
+Goibert et al.\ \cite{goibert2021adversarial} analyze the network graph 
+topology of clean vs.\ adversarial inputs.
+Relative to these works, \prism's novelty lies in using TDA as the backbone 
+of a \emph{full defense pipeline} with formal FPR certificates, 
+campaign-level temporal detection, and expert recovery---not as a standalone 
+detector.
+
+\paragraph{Conformal prediction for robustness.}
+Gendler et al.\ \cite{gendler2022adversarially} (ICLR 2022) combine 
+conformal prediction with randomized smoothing to provide adversarially robust 
+prediction sets.
+Verifiable Robust Conformal Prediction (VRCP) \cite{vrcp2025} uses 
+neural network verification to tighten conformal certificates.
+Our application of conformal prediction is orthogonal: we use it to calibrate 
+a TDA-based \emph{detector} (not a predictor), providing distribution-free FPR 
+guarantees on the anomaly score threshold.
+
+\paragraph{Runtime adversarial detectors.}
+Feature squeezing \cite{xu2018feature} applies input transformations and 
+flags inconsistencies.
+Mahala\-nobis detector \cite{lee2018simple} constructs class-conditional 
+Gaussians over intermediate representations.
+LID \cite{ma2018characterizing} uses local intrinsic dimensionality.
+These approaches lack formal coverage guarantees and are vulnerable to 
+adaptive attacks that optimize for the same feature space \cite{carlini2017adversarial}.
+\prism combines topological features (harder to optimize against) with 
+conformal calibration (providing formal guarantees).
+
+\paragraph{Architecture-coupled defenses.}
+\rails \cite{wang2022rails} replaces deep network layers with 
+topological-nearest neighbor classifiers (DkNN) using topology-preserving 
+feature spaces.
+Unlike \rails, \prism wraps any pre-trained model without modifying its 
+architecture or requiring re-training.
+Input purification methods \cite{shi2021online,yoon2021adversarial} 
+apply preprocessing but require end-to-end access to the classifier.
+
+\paragraph{Temporal adversarial defense.}
+Despite extensive work on temporal adversarial attacks 
+\cite{temporal2026survey}, session-level adversarial campaign \emph{detection} 
+in neural network inference pipelines remains underexplored.
+\sacd is, to our knowledge, the first to apply BOCPD to runtime adversarial 
+campaign monitoring.

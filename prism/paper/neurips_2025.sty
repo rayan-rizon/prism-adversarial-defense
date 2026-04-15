@@ -1,0 +1,73 @@
+%% neurips_2025.sty — Stub for local compilation
+%% Replace with the official file from https://neurips.cc/Conferences/2025/PaperInformation/StyleFiles
+%%
+%% This stub reproduces the key formatting of NeurIPS 2025 (based on the 2024 template).
+%% It allows the paper to compile locally and on Overleaf for error checking.
+%% IMPORTANT: Use the official .sty for submission.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{neurips_2025}[2025/01/01 NeurIPS 2025 Style (stub)]
+
+\newif\if@preprint
+\newif\if@final
+\newif\if@nonatbib
+
+\DeclareOption{preprint}{\@preprinttrue}
+\DeclareOption{final}{\@finaltrue}
+\DeclareOption{nonatbib}{\@nonatbibtrue}
+\ProcessOptions\relax
+
+%% --- Page geometry ---
+\RequirePackage{geometry}
+\geometry{
+  paperwidth=8.5in,
+  paperheight=11in,
+  top=1in,
+  bottom=1in,
+  left=1in,
+  right=1in,
+  columnsep=0.25in
+}
+
+%% --- Two-column layout ---
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0pt}
+
+%% --- Fonts ---
+\RequirePackage{times}
+\RequirePackage{helvet}
+\RequirePackage{courier}
+
+%% --- Section formatting ---
+\RequirePackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{1em}{}
+
+%% --- Caption formatting ---
+\RequirePackage{caption}
+\captionsetup{font=small, labelfont=bf}
+
+%% --- Abstract ---
+\renewenvironment{abstract}{%
+  \begin{center}%
+    \textbf{Abstract}%
+  \end{center}%
+  \begin{quote}\small}{\end{quote}}
+
+%% --- Header/footer for preprint mode ---
+\RequirePackage{fancyhdr}
+\if@preprint
+  \pagestyle{plain}
+\else
+  \pagestyle{plain}
+\fi
+
+%% --- Paragraph style ---
+\newcommand{\paragraph}[1]{\vspace{0.5em}\noindent\textbf{#1}\ }
+
+%% --- Macros from NeurIPS template ---
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\endinput

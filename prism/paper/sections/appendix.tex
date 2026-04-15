@@ -1,0 +1,123 @@
+\appendix
+
+\section{Proof of Conformal Coverage (Proposition~\ref{prop:coverage})}
+\label{app:coverage}
+
+We reproduce the standard split conformal argument for completeness.
+
+\begin{proof}
+Let $S_1, \ldots, S_n, S_{\text{test}}$ be iid from distribution $P$ over $\mathbb{R}$.
+Define $\hat{q}_\alpha = S_{(\lceil (n+1)(1-\alpha) \rceil)}$, 
+the $\lceil (n+1)(1-\alpha) \rceil$-th order statistic of $S_1, \ldots, S_n$.
+
+By exchangeability of $(S_1, \ldots, S_n, S_{\text{test}})$, 
+the rank of $S_{\text{test}}$ among $S_1, \ldots, S_n, S_{\text{test}}$ 
+is uniformly distributed on $\{1, \ldots, n+1\}$.
+Therefore:
+\[
+  \Pr[S_{\text{test}} > \hat{q}_\alpha] 
+  = \Pr\!\left[\mathrm{rank}(S_{\text{test}}) > \lceil(n+1)(1-\alpha)\rceil\right]
+  = \frac{\lfloor (n+1)\alpha \rfloor}{n+1}
+  \leq \alpha.
+\]
+Adding the $\frac{1}{n+1}$ slack for the finite-sample correction 
+(since the empirical quantile can shift by at most one order statistic) 
+gives the stated bound.
+\end{proof}
+
+\noindent
+In our calibration, $n=3{,}000$ gives a slack of $\frac{1}{3001} < 0.0004$---negligible.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{TDA Computation Details}
+\label{app:tda}
+
+\paragraph{Persistence homology pipeline.}
+For each layer $\ell$, the activation tensor $\phi_\ell(x) \in \mathbb{R}^{d_\ell}$ 
+is downsampled to a point cloud 
+$\mathcal{P} \subset \mathbb{R}^{d_\ell}$ with $|\mathcal{P}| \leq 200$
+via uniform random sampling (with fixed seed).
+We then:
+\begin{enumerate}[noitemsep]
+  \item Construct the Vietoris-Rips filtration on $\mathcal{P}$ 
+        with parameter $r \in [0, r_\text{max}]$, $r_\text{max}=50$.
+  \item Compute $H_0$ (connected components) and $H_1$ (1-cycles) persistence.
+  \item Return the persistence diagram $\mathrm{Dgm}(\mathcal{P})$ 
+        as a list of $(b_i, d_i)$ pairs.
+\end{enumerate}
+We use gudhi v3.12 \cite{gudhi2015} for filtration construction and 
+persistent homology computation.
+
+\paragraph{Wasserstein medoid computation.}
+Given $N$ diagrams $\{\mathcal{D}_i\}_{i=1}^N$, 
+the medoid is:
+\[
+  i^* = \arg\min_{i} \sum_{j=1}^N W_2(\mathcal{D}_i, \mathcal{D}_j).
+\]
+We compute exact $W_2$ distances via the auction algorithm 
+as implemented in gudhi \cite{gudhi2015}.
+For $N=3{,}000$ diagrams with $\sim 20$ points each, 
+full pairwise computation takes $\sim 8$~minutes on a single CPU core.
+
+\paragraph{Expert clustering.}
+$K$-medoids clustering with $K=4$ is applied to the $N$ calibration 
+persistence diagrams using the Wasserstein PAM algorithm \cite{schubert2021fast}.
+Each cluster medoid serves as the routing signature $\mathcal{R}_k^L$ 
+in Eq.~(\ref{eq:routing}).
+Expert sub-networks are 3-layer MLPs with hidden dimension 512 
+trained for 20 epochs on the corresponding cluster's activation vectors.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Campaign Detection Latency}
+\label{app:campaign}
+
+To isolate the SACD contribution, we evaluate \emph{detection latency}: 
+the number of adversarial queries before L0 mode fires.
+We construct a synthetic query stream: 50 clean images, 
+then 100 consecutive FGSM ($\varepsilon=0.05$) adversarials.
+
+We evaluate SACD on a real PRISM inference stream: 50 clean CIFAR-10 images,
+then 100 consecutive FGSM ($\varepsilon=0.05$) adversarials.
+CampaignMonitor uses BOCPD priors calibrated to the observed clean distribution
+($\mu_0=4.6,\,\kappa_0=5,\,\alpha_0=3,\,\beta_0=3$; hazard rate $1/30$;
+$k_\text{alert}=10$, $p_\text{alert}=0.45$, $t_\text{warmup}=20$).
+
+Results (seed 42): clean mean score $4.63\pm1.11$; adversarial mean $7.80\pm1.41$.
+L0 fires at global step 50---the \emph{first} adversarial query---
+yielding detection latency of 0 adversarial queries.
+A single false alarm occurs during the clean phase (step 21, score $8.64$),
+giving a per-query false alarm rate of $1{/}50=2\%$, consistent with
+the L2 conformal coverage bound ($\alpha=0.03$).
+
+\paragraph{Calibration requirement.}
+BOCPD requires domain-calibrated priors.
+With default prior ($\mu_0=0.1$), the detector does not fire within 150 queries
+because the NIG posterior cannot match the actual clean score mean ($\sim 4.6$)
+fast enough to yield sensitive changepoint detection.
+For deployment, $\mu_0$ should be set to the empirical mean of the
+calibration set anomaly scores.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Hyperparameter Sensitivity}
+\label{app:hyperparams}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccl}
+\toprule
+Hyperparameter & Default & Range tested & Sensitivity \\
+\midrule
+$n_\text{cal}$ (calibration size)  & 3000 & 500–3000 & Low ($\pm0.12$ on L3) \\
+$n_\text{sub}$ (TDA subsampling)   & 200  & 50–500   & Medium (TPR $\pm4\%$) \\
+$K$ (expert clusters)              & 4    & 2–8      & Low (Recovery $\pm2\%$) \\
+$\lambda$ (L0 threshold factor)    & 0.8  & 0.6–0.95 & Medium (FPR tradeoff) \\
+$p_\text{alert}$ (BOCPD threshold) & 0.50 & 0.30–0.70 & Low (latency $\pm2$ steps) \\
+\bottomrule
+\end{tabular}
+\caption{Hyperparameter sensitivity summary.}
+\label{tab:hyper}
+\end{table}

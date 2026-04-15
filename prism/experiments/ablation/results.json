@@ -1,0 +1,66 @@
+{
+  "Full PRISM": {
+    "tpr": 0.78,
+    "fpr": 0.08,
+    "tpr_first_half": 0.78,
+    "tpr_second_half": 0.78,
+    "campaign_gain": 0.0,
+    "recovery_rate": 1.0,
+    "level_counts": {
+      "PASS": 22,
+      "L1": 35,
+      "L2": 32,
+      "L3": 11
+    },
+    "n_clean": 100,
+    "n_adv": 100
+  },
+  "No L0": {
+    "tpr": 0.78,
+    "fpr": 0.08,
+    "tpr_first_half": 0.78,
+    "tpr_second_half": 0.78,
+    "campaign_gain": 0.0,
+    "recovery_rate": 1.0,
+    "level_counts": {
+      "PASS": 22,
+      "L1": 35,
+      "L2": 32,
+      "L3": 11
+    },
+    "n_clean": 100,
+    "n_adv": 100
+  },
+  "No MoE": {
+    "tpr": 0.78,
+    "fpr": 0.08,
+    "tpr_first_half": 0.78,
+    "tpr_second_half": 0.78,
+    "campaign_gain": 0.0,
+    "recovery_rate": 0.89,
+    "level_counts": {
+      "PASS": 22,
+      "L1": 35,
+      "L2": 32,
+      "L3_REJECT": 11
+    },
+    "n_clean": 100,
+    "n_adv": 100
+  },
+  "TDA only": {
+    "tpr": 0.78,
+    "fpr": 0.08,
+    "tpr_first_half": 0.78,
+    "tpr_second_half": 0.78,
+    "campaign_gain": 0.0,
+    "recovery_rate": 0.89,
+    "level_counts": {
+      "PASS": 22,
+      "L1": 35,
+      "L2": 32,
+      "L3_REJECT": 11
+    },
+    "n_clean": 100,
+    "n_adv": 100
+  }
+}
