@@ -3,13 +3,21 @@
 # PRISM Full Evaluation — CamberCloud HPC (Student Plan)
 #
 # Plan:    Student plan — 5 GPU hrs, single NVIDIA L4, 50 GB Stash
-# Runtime: ~4h 15min total (build 40min + eval 195min + cifar100 20min)
-# Budget:  ~4.3hr GPU / 5hr budget — leaves ~45min buffer
+# Runtime: ~2.5h total on L4 (GPU ~10x speedup over CPU)
+# Budget:  ~2.5hr GPU / 5hr budget — leaves ~2.5hr buffer
 # Cost:    Free (Student plan)
 #
-# Prerequisites on the HPC node:
-#   - CIFAR-10 data already in ./data/ (upload separately via Stash)
-#   - Python 3.10+, pip available
+# Artifacts produced:
+#   models/reference_profiles.pkl  — topological medoid reference
+#   models/calibrator.pkl          — conformal thresholds (n_cal=5k, n_val=5k)
+#   models/experts.pkl             — k=4 MoE expert sub-networks
+#   experiments/evaluation/results_seed42.json
+#   experiments/evaluation/results_seed7.json
+#   experiments/evaluation/results_aggregated.json   (mean ± std across seeds)
+#   experiments/evaluation/results_fgsm_sweep.json   (ε sensitivity curve)
+#   experiments/ablation/results.json
+#   experiments/campaign/results.json
+#   experiments/generalization/cifar100_results.json
 #
 # Submit:
 #   sbatch scripts/slurm/run_full_eval.slurm
@@ -35,7 +43,10 @@ set -e   # abort on any error
 # 0. Setup
 # ---------------------------------------------------------------------------
 cd "$HOME/prism"
-mkdir -p logs models experiments/calibration
+mkdir -p logs models data experiments/calibration experiments/evaluation \
+         experiments/ablation experiments/campaign experiments/generalization
+# Note: CIFAR-10 and CIFAR-100 are downloaded automatically by torchvision
+# to ./data/ if not present (requires internet access on compute node)
 
 echo "======================================================"
 echo "PRISM Full Evaluation — CamberCloud HPC"
@@ -49,41 +60,45 @@ pip install -r requirements.txt --quiet
 
 # ---------------------------------------------------------------------------
 # 1. Build topological self-profile  (~35 min on L4)
+#    n_images=10000 → well-calibrated medoid reference
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Phase 1: Build profile (10K images, 3 layers) ---"
+echo "--- Phase 1: Build profile (10K images, layer2/3/4, dim_weights=[0.5,0.5]) ---"
 echo "Started: $(date)"
-python scripts/build_profile.py
+python scripts/build_profile.py   # default: 10000 images (see configs/default.yaml)
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
 # 2. Calibrate conformal thresholds  (~5 min)
+#    Uses split conformal: n_cal=5000 + n_val=5000
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Phase 2: Calibrate thresholds (n=5000) ---"
+echo "--- Phase 2: Calibrate thresholds (split conformal, n_cal=5k, n_val=5k) ---"
 echo "Started: $(date)"
 python scripts/calibrate_thresholds.py
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
 # 3. Train MoE experts  (~10 min on L4)
+#    k=4 topology clusters, n_samples=2000, 20 epochs
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Phase 3: Train experts ---"
+echo "--- Phase 3: Train MoE experts (k=4, n=2000, epochs=20) ---"
 echo "Started: $(date)"
 python scripts/train_experts.py
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
-# 4. Sanity checks
+# 4. Sanity checks — abort if any fail
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Sanity checks ---"
 python sanity_checks.py
-echo "Sanity checks passed: $(date)"
+echo "Sanity checks PASSED: $(date)"
 
 # ---------------------------------------------------------------------------
-# 5. Full evaluation — seed 42  (~90 min: FGSM + PGD + Square × 1000 imgs)
+# 5. Full evaluation seed=42  (~45 min on L4)
+#    FGSM ε=0.03, PGD-40, Square ε=0.05 × 1000 samples
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Phase 4a: Full eval seed=42 (n=1000) ---"
@@ -91,11 +106,12 @@ echo "Started: $(date)"
 python experiments/evaluation/run_evaluation.py \
     --n-test 1000 \
     --seed 42 \
+    --attacks FGSM PGD Square \
     --output experiments/evaluation/results_seed42.json
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
-# 6. Full evaluation — seed 7  (~90 min)
+# 6. Full evaluation seed=7  (~45 min on L4)
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Phase 4b: Full eval seed=7 (n=1000) ---"
@@ -103,23 +119,56 @@ echo "Started: $(date)"
 python experiments/evaluation/run_evaluation.py \
     --n-test 1000 \
     --seed 7 \
+    --attacks FGSM PGD Square \
     --output experiments/evaluation/results_seed7.json
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
-# 7. CIFAR-100 generalization  (~20 min on L4)
+# 7. FGSM epsilon sweep  (~20 min on L4)
+#    ε ∈ {0.01, 0.02, 0.03, 0.05, 0.10} — detection sensitivity curve
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Phase 5: CIFAR-100 generalization (n=500) ---"
+echo "--- Phase 5: FGSM epsilon sweep (n=300 per ε) ---"
+echo "Started: $(date)"
+python experiments/evaluation/run_evaluation.py \
+    --n-test 300 \
+    --sweep
+echo "Finished: $(date)"
+
+# ---------------------------------------------------------------------------
+# 8. Ablation study  (~10 min on L4)
+#    FGSM ε=0.03, n=300 clean + 300 adversarial, 4 configs
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 6: Ablation study (eps=0.03, n=300) ---"
+echo "Started: $(date)"
+python experiments/ablation/run_ablation.py --n-clean 300 --n-adv 300 --eps 0.03
+echo "Finished: $(date)"
+
+# ---------------------------------------------------------------------------
+# 9. Campaign detection experiment  (~5 min on L4)
+#    50 clean + 100 adversarial FGSM ε=0.05, verify L0 latency
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 7: Campaign detection (50 clean + 100 adv, eps=0.05) ---"
+echo "Started: $(date)"
+python experiments/campaign/run_campaign.py
+echo "Finished: $(date)"
+
+# ---------------------------------------------------------------------------
+# 10. CIFAR-100 generalization  (~15 min on L4)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 8: CIFAR-100 generalization (n_clean=500, n_adv=500, eps=0.05) ---"
 echo "Started: $(date)"
 python experiments/generalization/run_cifar100.py --n-clean 500 --n-adv 500
 echo "Finished: $(date)"
 
 # ---------------------------------------------------------------------------
-# 8. Aggregate results — compute mean ± std across seeds
+# 11. Aggregate multi-seed results
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Phase 6: Aggregate multi-seed results ---"
+echo "--- Phase 9: Aggregate results (mean ± std across seeds 42 and 7) ---"
 python - <<'PYEOF'
 import json, numpy as np
 
@@ -148,21 +197,32 @@ for attack in attacks:
 
 with open('experiments/evaluation/results_aggregated.json', 'w') as f:
     json.dump(aggregated, f, indent=2)
-print("\nSaved to experiments/evaluation/results_aggregated.json")
+print("\nSaved → experiments/evaluation/results_aggregated.json")
 PYEOF
 
 # ---------------------------------------------------------------------------
-# Done
+# Done — push all results to Stash for download
 # ---------------------------------------------------------------------------
 echo ""
 echo "======================================================"
-echo "All jobs complete: $(date)"
-echo "Results:"
-echo "  experiments/evaluation/results_seed42.json"
-echo "  experiments/evaluation/results_seed7.json"
-echo "  experiments/evaluation/results_aggregated.json"
-echo "  experiments/generalization/cifar100_results.json"
+echo "All phases complete: $(date)"
 echo ""
-echo "Download with:"
+echo "=== Results Summary ==="
+for f in \
+    experiments/evaluation/results_seed42.json \
+    experiments/evaluation/results_aggregated.json \
+    experiments/evaluation/results_fgsm_sweep.json \
+    experiments/ablation/results.json \
+    experiments/campaign/results.json \
+    experiments/generalization/cifar100_results.json; do
+    if [ -f "$f" ]; then
+        echo "  ✓ $f"
+    else
+        echo "  ✗ MISSING: $f"
+    fi
+done
+echo ""
+echo "Download results with:"
 echo "  camber stash push ~/prism/experiments/ camber://prism-results/"
+echo "  camber stash push ~/prism/models/ camber://prism-models/"
 echo "======================================================"

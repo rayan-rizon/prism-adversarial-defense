@@ -141,7 +141,11 @@ class TestCampaignMonitor:
     def test_clean_traffic_no_alert(self):
         from src.sacd.monitor import CampaignMonitor
 
-        monitor = CampaignMonitor(cp_threshold=0.5)
+        monitor = CampaignMonitor(
+            cp_threshold=0.5,
+            mu0=0.1, kappa0=1.0, alpha0=2.0, beta0=0.02,
+            alert_run_length=5, alert_run_prob=0.5,
+        )
         rng = np.random.RandomState(42)
 
         for s in rng.normal(0.1, 0.02, 200):
@@ -153,7 +157,11 @@ class TestCampaignMonitor:
     def test_campaign_detected(self):
         from src.sacd.monitor import CampaignMonitor
 
-        monitor = CampaignMonitor(cp_threshold=0.3, hazard_rate=1/50)
+        monitor = CampaignMonitor(
+            cp_threshold=0.3, hazard_rate=1/50,
+            mu0=0.1, kappa0=1.0, alpha0=2.0, beta0=0.02,
+            alert_run_length=5, alert_run_prob=0.5,
+        )
         rng = np.random.RandomState(42)
 
         # Clean phase

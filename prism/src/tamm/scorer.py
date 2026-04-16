@@ -22,6 +22,7 @@ class TopologicalScorer:
         layer_names: List[str],
         layer_weights: Optional[Dict[str, float]] = None,
         dims: Optional[List[int]] = None,
+        dim_weights: Optional[List[float]] = None,
     ):
         """
         Args:
@@ -29,10 +30,21 @@ class TopologicalScorer:
             layer_names: Ordered list of layers to score.
             layer_weights: Optional per-layer weights. Defaults to uniform.
             dims: Which homology dimensions to use (default [0, 1]).
+            dim_weights: Per-dimension weights aligned with dims.
+                         Recommended [0.7, 0.3]: H0 connectivity disruption
+                         dominates for single-step attacks (FGSM, Square);
+                         H1 loops relevant for iterative attacks (PGD).
         """
         self.ref_profiles = ref_profiles
         self.layer_names = layer_names
         self.dims = dims or [0, 1]
+
+        # Per-dimension weights (H0 vs H1)
+        if dim_weights is not None:
+            self.dim_weights = dim_weights
+        else:
+            # Equal weighting as safe default; pass explicit dim_weights for tuned behavior
+            self.dim_weights = [1.0 / len(self.dims)] * len(self.dims)
 
         if layer_weights is None:
             # Uniform weights, normalized
@@ -66,18 +78,19 @@ class TopologicalScorer:
             w = self.layer_weights[layer]
 
             layer_score = 0.0
-            n_dims = 0
-            for dim in self.dims:
+            total_weight = 0.0
+            for i, dim in enumerate(self.dims):
                 if dim >= len(input_dgms) or dim >= len(ref_dgms):
                     continue
+                dw = self.dim_weights[i] if i < len(self.dim_weights) else 1.0
                 d = TopologicalProfiler.wasserstein_dist(
                     input_dgms[dim], ref_dgms[dim]
                 )
-                layer_score += d
-                n_dims += 1
+                layer_score += dw * d
+                total_weight += dw
 
-            if n_dims > 0:
-                layer_score /= n_dims
+            if total_weight > 0:
+                layer_score /= total_weight
 
             total_score += w * layer_score
 
@@ -97,13 +110,14 @@ class TopologicalScorer:
             input_dgms = diagrams[layer]
             ref_dgms = self.ref_profiles[layer]
             s = 0.0
-            n = 0
-            for dim in self.dims:
+            tw = 0.0
+            for i, dim in enumerate(self.dims):
                 if dim >= len(input_dgms) or dim >= len(ref_dgms):
                     continue
-                s += TopologicalProfiler.wasserstein_dist(
+                dw = self.dim_weights[i] if i < len(self.dim_weights) else 1.0
+                s += dw * TopologicalProfiler.wasserstein_dist(
                     input_dgms[dim], ref_dgms[dim]
                 )
-                n += 1
-            scores[layer] = s / max(n, 1)
+                tw += dw
+            scores[layer] = s / max(tw, 1e-8)
         return scores

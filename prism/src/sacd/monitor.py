@@ -20,14 +20,14 @@ class CampaignMonitor:
         self,
         window_size: int = 100,
         cp_threshold: float = 0.3,
-        hazard_rate: float = 1 / 50,
-        mu0: float = 0.1,
-        kappa0: float = 1.0,
-        alpha0: float = 2.0,
-        beta0: float = 0.02,
-        alert_run_length: int = 5,
-        alert_run_prob: float = 0.5,
-        warmup_steps: int = 20,
+        hazard_rate: float = 1 / 30,
+        mu0: float = 7.0,     # matches clean score mean for layer2/3/4 equal dim_weights
+        kappa0: float = 5.0,
+        alpha0: float = 3.0,
+        beta0: float = 15.0,  # alpha0 * clean_var ≈ 3.0 * (2.25)^2, calibrated to clean std
+        alert_run_length: int = 10,
+        alert_run_prob: float = 0.60,  # raised from 0.45 to reduce clean-phase false alarms
+        warmup_steps: int = 35,        # raised from 20 to let BOCPD stabilize on clean data
         l0_factor: float = 0.8,
         cooldown_steps: int = 50,
     ):
@@ -156,3 +156,28 @@ class CampaignMonitor:
 
     def get_alert_log(self) -> List[Dict]:
         return list(self.alert_log)
+
+
+class NoOpCampaignMonitor:
+    """
+    Disabled campaign monitor for evaluation experiments.
+    L0 never activates — measures pure TAMM+CADG detection without L0 interference.
+    Use in run_evaluation.py to get clean TPR/FPR metrics.
+    The real CampaignMonitor is evaluated separately in campaign experiments.
+    """
+    alert_log: List[Dict] = []
+
+    def process_score(self, score: float, timestamp=None) -> Dict:
+        return {'l0_active': False, 'alert': False,
+                'step': 0, 'short_run_prob': 0.0,
+                'changepoint_prob': 0.0, 'buffer_mean': score,
+                'buffer_std': 0.0, 'run_length': 0}
+
+    def reset(self) -> None:
+        pass
+
+    def deactivate_l0(self) -> None:
+        pass
+
+    def get_alert_log(self) -> List[Dict]:
+        return []

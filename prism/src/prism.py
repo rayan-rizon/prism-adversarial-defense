@@ -50,11 +50,12 @@ class PRISM:
         tda_max_dim: int = 1,
         federation_manager: Optional[FederationManager] = None,
         layer_weights: Optional[Dict[str, float]] = None,
+        dim_weights: Optional[List[float]] = None,
     ):
         """
         Args:
             model: Pretrained PyTorch model (must be in eval mode).
-            layer_names: Names of layers to monitor (e.g., ['layer2', 'layer3', 'layer4']).
+            layer_names: Names of layers to monitor (e.g., ['layer1', 'layer4']).
             calibrator: Pre-calibrated ConformalCalibrator instance.
             ref_profiles: {layer_name: medoid_diagram_set} — the topological self-profile.
             moe: Optional TopologyAwareMoE for L3 expert routing.
@@ -64,9 +65,10 @@ class PRISM:
             tda_max_dim: Maximum homology dimension.
             federation_manager: Optional FederationManager for peer signature sharing.
                                  If provided, detections at L2/L3 are broadcast to peers.
-            layer_weights: Optional per-layer scoring weights, e.g.
-                           {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}.
-                           Defaults to uniform. Deeper layers carry stronger adversarial signal.
+            layer_weights: Optional per-layer scoring weights.
+                           Defaults to uniform.
+            dim_weights: Per-homology-dimension weights [H0_weight, H1_weight].
+                         Default [0.2, 0.8] — H1 loops more discriminative for adversarial detection.
         """
         self.model = model
         self.layer_names = layer_names
@@ -80,6 +82,7 @@ class PRISM:
             ref_profiles=ref_profiles,
             layer_names=layer_names,
             layer_weights=layer_weights,
+            dim_weights=dim_weights,
         )
         self.calibrator = calibrator
         self.threshold_mgr = TieredThresholdManager()

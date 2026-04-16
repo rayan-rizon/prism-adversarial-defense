@@ -24,15 +24,18 @@ camber login
 echo ""
 echo "=== Step 2: Upload project code ==="
 # Create a clean tarball without large binary dirs
+# Note: local dir is PRISM/, remote expects prism/ (per SLURM: cd $HOME/prism)
 TMPDIR=$(mktemp -d)
 ARCHIVE="$TMPDIR/prism-code.tar.gz"
 tar czf "$ARCHIVE" \
-    --exclude='./data' \
-    --exclude='./models' \
-    --exclude='./.git' \
-    --exclude='./__pycache__' \
-    --exclude='./experiments/calibration/*.npy' \
-    -C "$PRISM_ROOT/.." prism/
+    --transform 's|^PRISM|prism|' \
+    --exclude='PRISM/data' \
+    --exclude='PRISM/models' \
+    --exclude='PRISM/models_10k' \
+    --exclude='PRISM/.git' \
+    --exclude='PRISM/__pycache__' \
+    --exclude='PRISM/experiments/calibration/*.npy' \
+    -C "$PRISM_ROOT/.." PRISM/
 echo "Archive size: $(du -sh "$ARCHIVE" | cut -f1)"
 camber stash push "$ARCHIVE" camber://prism-code/prism-code.tar.gz
 rm -rf "$TMPDIR"
@@ -43,8 +46,11 @@ echo "=== Step 3: Upload CIFAR-10 data ==="
 if [[ -d "$PRISM_ROOT/data/cifar-10-batches-py" ]]; then
     camber stash push "$PRISM_ROOT/data/cifar-10-batches-py" camber://prism-data/cifar-10-batches-py/
     echo "CIFAR-10 uploaded."
+elif [[ -d "$PRISM_ROOT/../data/cifar-10-batches-py" ]]; then
+    camber stash push "$PRISM_ROOT/../data/cifar-10-batches-py" camber://prism-data/cifar-10-batches-py/
+    echo "CIFAR-10 (parent dir) uploaded."
 else
-    echo "WARNING: $PRISM_ROOT/data/cifar-10-batches-py not found — skipping."
+    echo "WARNING: CIFAR-10 data not found — will download on CamberCloud via torchvision."
 fi
 
 # 4. Upload CIFAR-100 data
@@ -53,8 +59,11 @@ echo "=== Step 4: Upload CIFAR-100 data ==="
 if [[ -d "$PRISM_ROOT/data/cifar-100-python" ]]; then
     camber stash push "$PRISM_ROOT/data/cifar-100-python" camber://prism-data/cifar-100-python/
     echo "CIFAR-100 uploaded."
+elif [[ -d "$PRISM_ROOT/../data/cifar-100-python" ]]; then
+    camber stash push "$PRISM_ROOT/../data/cifar-100-python" camber://prism-data/cifar-100-python/
+    echo "CIFAR-100 (parent dir) uploaded."
 else
-    echo "WARNING: $PRISM_ROOT/data/cifar-100-python not found — skipping."
+    echo "WARNING: CIFAR-100 data not found — will download on CamberCloud via torchvision."
 fi
 
 # 5. Done

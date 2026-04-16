@@ -1,2 +1,2 @@
 from .bocpd import BayesianOnlineChangepoint
-from .monitor import CampaignMonitor
+from .monitor import CampaignMonitor, NoOpCampaignMonitor

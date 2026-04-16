@@ -11,6 +11,8 @@ data/
 prism/data/
 models/*.pth
 models/*.pt
+models/*.pkl
+prism/models/*.pkl
 *.zip
 *.tar.gz
 cifar-*-batches-py/

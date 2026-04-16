@@ -59,6 +59,7 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=0.05, seed=42,
         model=backbone,
         layer_names=['layer2', 'layer3', 'layer4'],
         layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
+        dim_weights=[0.5, 0.5],
         calibrator_path='models/calibrator.pkl',
         profile_path='models/reference_profiles.pkl',
     )

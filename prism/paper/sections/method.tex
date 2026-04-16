@@ -58,7 +58,7 @@ At inference time, for input $x$, we compute:
 \end{align}
 The score $S(x)$ measures how topologically distant the current activation 
 manifold is from the clean reference.
-On clean CIFAR-10 images, we observe $S(x) \sim \mathcal{N}(4.89, 1.38^2)$ 
+On clean CIFAR-10 images, we observe $S(x) \sim \mathcal{N}(7.27, 2.15^2)$
 empirically (see Section~\ref{sec:experiments}).
 
 % ── CADG ────────────────────────────────────────────────────────────────────
@@ -98,13 +98,13 @@ This follows directly from the standard conformal coverage theorem
 \toprule
 Tier & $\alpha$ & Threshold & Action \\
 \midrule
-L1 & 0.10 & 6.81 & Log + normal inference \\
-L2 & 0.03 & 8.05 & Input purification + inference \\
-L3 & 0.005 & 9.64 & Expert routing (MoE) or reject \\
+L1 & 0.10 & 10.37 & Log + normal inference \\
+L2 & 0.03 & 12.08 & Input purification + inference \\
+L3 & 0.005 & 14.21 & Expert routing (MoE) or reject \\
 \bottomrule
 \end{tabular}
-\caption{Conformal detection tiers. Thresholds calibrated on $n{=}3000$ 
-clean CIFAR-10 images.}
+\caption{Conformal detection tiers. Thresholds calibrated on $n_\text{cal}{=}5{,}000$
+held-out clean CIFAR-10 images (split conformal, verified on $n_\text{val}{=}5{,}000$).}
 \label{tab:tiers}
 \end{table}
 

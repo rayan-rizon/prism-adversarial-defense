@@ -8,15 +8,16 @@ model:
     - layer2
     - layer3
     - layer4
-  layer_weights:            # deeper layers carry stronger adversarial signal
-    layer2: 0.15
-    layer3: 0.30
-    layer4: 0.55
+  layer_weights:
+    layer2: 0.15            # mid-level features, FGSM perturbation signal
+    layer3: 0.30            # intermediate semantic features
+    layer4: 0.55            # deep features, strongest adversarial signal
 
 tda:
   n_subsample: 200
   max_dim: 1
   n_reference: 50          # Number of medoid reference diagrams per layer
+  dim_weights: [0.5, 0.5]  # Equal H0/H1 weighting — best empirical result
 
 conformal:
   alphas:
@@ -29,8 +30,13 @@ conformal:
 campaign:
   window_size: 100
   cp_threshold: 0.3
-  hazard_rate: 0.005       # 1/200
-  l0_factor: 0.8
+  hazard_rate: 0.033       # 1/30 — detects campaign within ~30 adversarial probes
+  mu0: 7.0                 # prior mean matched to clean score mean (layer2/3/4 equal dim_weights)
+  beta0: 15.0              # alpha0 * clean_var ≈ 3.0 * 2.25^2
+  alert_run_length: 10
+  alert_run_prob: 0.60   # raised: requires stronger evidence to avoid false alarms on clean data
+  warmup_steps: 35       # raised: allows BOCPD to stabilize before enabling detection
+  l0_factor: 0.8           # lowers detection thresholds when L0 active
 
 moe:
   n_experts: 4

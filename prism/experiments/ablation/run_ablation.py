@@ -100,9 +100,9 @@ CONFIGS = {
     'TDA only':   dict(use_l0=False, use_moe=False),
 }
 
-LAYER_NAMES = ['layer1', 'layer4']
-LAYER_WEIGHTS = {'layer1': 0.50, 'layer4': 0.50}
-DIM_WEIGHTS = [0.2, 0.8]
+LAYER_NAMES = ['layer2', 'layer3', 'layer4']
+LAYER_WEIGHTS = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
+DIM_WEIGHTS = [0.5, 0.5]
 
 
 # ────────────────────────────────────────────────────────────────────────────

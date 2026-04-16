@@ -48,7 +48,7 @@ def _make_prism(node_id: str, fed_manager: FederationManager) -> PRISM:
     ).eval()
     return PRISM.from_saved(
         model=model,
-        layer_names=['layer1', 'layer2', 'layer3', 'layer4'],
+        layer_names=['layer2', 'layer3', 'layer4'],
         calibrator_path='models/calibrator.pkl',
         profile_path='models/reference_profiles.pkl',
         federation_manager=fed_manager,
@@ -128,19 +128,19 @@ def run_federation_demo(
     from src.prism import PRISM as _PRISM
     prism0 = _PRISM(
         model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
-        layer_names=['layer1', 'layer2', 'layer3', 'layer4'],
+        layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem0, federation_manager=fed0,
     )
     prism1_base = _PRISM(
         model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
-        layer_names=['layer1', 'layer2', 'layer3', 'layer4'],
+        layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem1_no_fed,  # no federation
     )
     prism1_fed = _PRISM(
         model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
-        layer_names=['layer1', 'layer2', 'layer3', 'layer4'],
+        layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem1_with_fed, federation_manager=fed1,
     )

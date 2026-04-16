@@ -52,18 +52,18 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
 
     prism = PRISM.from_saved(
         model=backbone,
-        layer_names=['layer1', 'layer4'],
-        layer_weights={'layer1': 0.50, 'layer4': 0.50},
-        dim_weights=[0.2, 0.8],
+        layer_names=['layer2', 'layer3', 'layer4'],
+        layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
+        dim_weights=[0.5, 0.5],
         calibrator_path='models/calibrator.pkl',
         profile_path='models/reference_profiles.pkl',
         # Calibrated BOCPD prior for CIFAR-10 clean scores (mean~4.6, std~1.1)
         # alert_run_prob=0.3 → fire when P(run_length≤alert_run_length)>30%
         # hazard_rate=1/30 → prior expects changepoint every ~30 steps
         campaign_monitor=CampaignMonitor(
-            mu0=4.6, kappa0=5.0, alpha0=3.0, beta0=3.0,
-            hazard_rate=1/30, alert_run_length=10, alert_run_prob=0.45,
-            warmup_steps=20, l0_factor=0.8, cooldown_steps=30,
+            mu0=7.0, kappa0=5.0, alpha0=3.0, beta0=15.0,
+            hazard_rate=1/30, alert_run_length=10, alert_run_prob=0.60,
+            warmup_steps=35, l0_factor=0.8, cooldown_steps=30,
         ),
     )
 

@@ -50,9 +50,11 @@ def build_profile(
     model = model.to(device).eval()
 
     layer_names = ['layer2', 'layer3', 'layer4']
-    # Deeper layers encode higher-level features with stronger adversarial signal.
-    # layer2: 0.15, layer3: 0.30, layer4: 0.55 — validated against ablation results.
+    # layer2/3: mid-level features where FGSM perturbations create topological change
+    # layer4: high-level semantic distortion (PGD/iterative attacks)
+    # layer4 weighted highest — carries strongest adversarial signal for iterative attacks
     layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
+    dim_weights = [0.5, 0.5]  # Equal H0/H1 weighting — best empirical result for FGSM+PGD+Square
     extractor = ActivationExtractor(model, layer_names)
     profiler = TopologicalProfiler(n_subsample=n_subsample, max_dim=1)
 
@@ -111,6 +113,7 @@ def build_profile(
         ref_profiles=ref_profiles,
         layer_names=layer_names,
         layer_weights=layer_weights,
+        dim_weights=dim_weights,
     )
 
     scores = []

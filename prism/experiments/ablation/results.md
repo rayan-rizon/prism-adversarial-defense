@@ -2,10 +2,10 @@
 
 | Configuration | TPR | FPR | Campaign Gain | Recovery Rate |
 | :--- | ---: | ---: | ---: | ---: |
-| Full PRISM | 78.0% | 8.0% | +0.0% | 100.0% |
-| No L0 | 78.0% | 8.0% | +0.0% | 100.0% |
-| No MoE | 78.0% | 8.0% | +0.0% | 89.0% |
-| TDA only | 78.0% | 8.0% | +0.0% | 89.0% |
+| Full PRISM | 75.0% | 12.0% | +10.0% | 100.0% |
+| No L0 | 53.0% | 8.0% | +22.0% | 100.0% |
+| No MoE | 75.0% | 12.0% | +10.0% | 64.0% |
+| TDA only | 53.0% | 8.0% | +22.0% | 90.0% |
 
 _Campaign Gain = TPR[second half] − TPR[first half]. Full PRISM shows positive gain as L0 lowers thresholds after campaign detection._
 

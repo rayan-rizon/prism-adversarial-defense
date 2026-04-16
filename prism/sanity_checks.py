@@ -214,6 +214,7 @@ else:
             model=model,
             layer_names=['layer2', 'layer3', 'layer4'],
             layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
+            dim_weights=[0.5, 0.5],
             calibrator_path=cal_path,
             profile_path=profile_path,
         )

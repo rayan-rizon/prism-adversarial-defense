@@ -1,0 +1,65 @@
+{
+  "FGSM": {
+    "TPR": 0.5767,
+    "FPR": 0.2767,
+    "Precision": 0.6758,
+    "F1": 0.6223,
+    "TP": 173,
+    "FP": 83,
+    "FN": 127,
+    "TN": 217,
+    "clean_level_distribution": {
+      "PASS": 217,
+      "L1": 41,
+      "L2": 24,
+      "L3_REJECT": 18
+    },
+    "adversarial_level_distribution": {
+      "PASS": 127,
+      "L1": 73,
+      "L2": 54,
+      "L3_REJECT": 46
+    }
+  },
+  "PGD": {
+    "TPR": 1.0,
+    "FPR": 0.11,
+    "Precision": 0.9009,
+    "F1": 0.9479,
+    "TP": 300,
+    "FP": 33,
+    "FN": 0,
+    "TN": 267,
+    "clean_level_distribution": {
+      "PASS": 267,
+      "L1": 21,
+      "L2": 10,
+      "L3_REJECT": 2
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 300
+    }
+  },
+  "Square": {
+    "TPR": 0.83,
+    "FPR": 0.2367,
+    "Precision": 0.7781,
+    "F1": 0.8032,
+    "TP": 249,
+    "FP": 71,
+    "FN": 51,
+    "TN": 229,
+    "clean_level_distribution": {
+      "L3_REJECT": 9,
+      "PASS": 229,
+      "L2": 17,
+      "L1": 45
+    },
+    "adversarial_level_distribution": {
+      "PASS": 51,
+      "L2": 76,
+      "L1": 74,
+      "L3_REJECT": 99
+    }
+  }
+}

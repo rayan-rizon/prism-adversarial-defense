@@ -81,56 +81,93 @@ def make_fig1():
 # Figure 2: Score Distribution Boxplot (from Table 3 in experiments.tex)
 # ─────────────────────────────────────────────────────────────────────────────
 def make_fig2():
-    """Numbers come directly from experiments.tex Table 3 / ablation results."""
+    """Numbers from experiments.tex Table 3 (recalibrated, layer2/3/4 config).
+
+    Empirical score statistics (mean ± std):
+      Clean              7.27 ± 2.15  (n=5000 held-out clean CIFAR-10)
+      FGSM ε=0.03       10.80 ± 3.10
+      FGSM ε=0.05       11.20 ± 2.90
+      Square ε=0.05     14.30 ± 2.10
+      PGD-40 ε=0.03     36.30 ± 4.60  (truncated to 22 for display)
+    Conformal thresholds (n_cal=5000):
+      L1=10.37, L2=12.08, L3=14.21
+    """
     rng = np.random.RandomState(42)
 
-    # Empirical parameters from Table 3
-    groups = {
-        'Clean':          (4.89, 1.38, 100),
-        'FGSM\nε=0.03':  (6.92, 1.91, 100),
-        'FGSM\nε=0.05':  (7.81, 2.04, 100),
-        'PGD-40\nε=0.03': (11.2, 1.87, 100),
-    }
+    # Empirical parameters from recalibrated Table 3
+    # PGD-40 is shown capped at 22 to keep the axes readable
+    groups = [
+        ('Clean',          '#5BAD6F', 7.27,  2.15, 200),
+        ('FGSM\nε=0.03',  '#E8A838', 10.80, 3.10, 200),
+        ('FGSM\nε=0.05',  '#E8A838', 11.20, 2.90, 200),
+        ('Square\nε=0.05','#E05A2B', 14.30, 2.10, 200),
+        ('PGD-40\nε=0.03','#C75B7A', 36.30, 4.60, 200),
+    ]
 
-    data  = []
+    data   = []
     labels = []
-    colors = ['#5BAD6F', '#E8A838', '#E8A838', '#C75B7A']
+    colors = []
 
-    for label, (mu, std, n) in groups.items():
+    for label, color, mu, std, n in groups:
         samples = rng.normal(mu, std, n)
         samples = np.clip(samples, 0, None)
         data.append(samples)
         labels.append(label)
+        colors.append(color)
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # Split into two panels: left for non-PGD, right inset for PGD
+    fig, (ax_main, ax_pgd) = plt.subplots(
+        1, 2, figsize=(8, 4),
+        gridspec_kw={'width_ratios': [4, 1]},
+        sharey=False
+    )
 
-    bp = ax.boxplot(data, patch_artist=True, notch=False,
-                    medianprops=dict(color='white', linewidth=2.0),
-                    whiskerprops=dict(linewidth=1.2),
-                    capprops=dict(linewidth=1.2),
-                    flierprops=dict(marker='o', markersize=3,
-                                   markerfacecolor='#888', alpha=0.4))
-
-    for patch, color in zip(bp['boxes'], colors):
+    # ── Main panel (Clean + FGSM + Square) ──
+    bp = ax_main.boxplot(data[:4], patch_artist=True, notch=False,
+                         medianprops=dict(color='white', linewidth=2.0),
+                         whiskerprops=dict(linewidth=1.2),
+                         capprops=dict(linewidth=1.2),
+                         flierprops=dict(marker='o', markersize=3,
+                                        markerfacecolor='#888', alpha=0.4))
+    for patch, color in zip(bp['boxes'], colors[:4]):
         patch.set_facecolor(color)
         patch.set_alpha(0.82)
 
     # Threshold reference lines
-    thresholds = {'L1 (α=0.10)': (6.81, '#E8A838'),
-                  'L2 (α=0.03)': (8.05, '#E05A2B'),
-                  'L3 (α=0.005)': (9.64, '#C75B7A')}
-    for name, (val, col) in thresholds.items():
-        ax.axhline(val, color=col, linestyle='--', linewidth=1.0, alpha=0.75)
-        ax.text(4.55, val + 0.08, name, fontsize=7, color=col, va='bottom')
+    th_cfg = [('L1=10.37', 10.37, '#E8A838'),
+              ('L2=12.08', 12.08, '#E05A2B'),
+              ('L3=14.21', 14.21, '#C75B7A')]
+    for name, val, col in th_cfg:
+        ax_main.axhline(val, color=col, linestyle='--', linewidth=1.0, alpha=0.85)
+        ax_main.text(4.55, val + 0.18, name, fontsize=7, color=col, va='bottom')
 
-    ax.set_xticks(range(1, len(labels)+1))
-    ax.set_xticklabels(labels, fontsize=9)
-    ax.set_ylabel('PRISM Anomaly Score $S(x)$', fontsize=10)
-    ax.set_title('Score Distributions: Clean vs Adversarial Inputs', fontsize=10)
-    ax.grid(axis='y', alpha=0.3, linewidth=0.7)
-    ax.set_ylim(0, 17)
+    ax_main.set_xticks(range(1, 5))
+    ax_main.set_xticklabels(labels[:4], fontsize=8.5)
+    ax_main.set_ylabel('PRISM Anomaly Score $S(x)$', fontsize=10)
+    ax_main.set_title('Score Distributions: Clean vs Adversarial', fontsize=10)
+    ax_main.grid(axis='y', alpha=0.3, linewidth=0.7)
+    ax_main.set_ylim(0, 22)
 
-    fig.tight_layout()
+    # ── PGD panel ──
+    bp2 = ax_pgd.boxplot([data[4]], patch_artist=True, notch=False,
+                          medianprops=dict(color='white', linewidth=2.0),
+                          whiskerprops=dict(linewidth=1.2),
+                          capprops=dict(linewidth=1.2),
+                          flierprops=dict(marker='o', markersize=3,
+                                         markerfacecolor='#888', alpha=0.4))
+    bp2['boxes'][0].set_facecolor(colors[4])
+    bp2['boxes'][0].set_alpha(0.82)
+    ax_pgd.set_xticks([1])
+    ax_pgd.set_xticklabels([labels[4]], fontsize=8.5)
+    ax_pgd.set_title('PGD-40', fontsize=9)
+    ax_pgd.grid(axis='y', alpha=0.3, linewidth=0.7)
+    ax_pgd.set_ylim(20, 50)
+    ax_pgd.axhline(14.21, color='#C75B7A', linestyle='--', linewidth=1.0, alpha=0.6)
+    ax_pgd.text(1.1, 14.5, 'L3', fontsize=7, color='#C75B7A', va='bottom')
+    # Indicate break
+    ax_pgd.spines['left'].set_linestyle('--')
+
+    fig.tight_layout(pad=1.2)
     fig.savefig('paper/figures/fig2_score_dist.pdf', dpi=150, bbox_inches='tight')
     fig.savefig('paper/figures/fig2_score_dist.png', dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -153,11 +190,19 @@ def make_fig3():
 
     # Try to load real calibrator + scores; fall back to simulation
     real_scores = None
-    try:
-        real_scores = np.load('experiments/calibration/clean_scores.npy')
-        print("  Using real clean scores from experiments/calibration/clean_scores.npy")
-    except FileNotFoundError:
-        print("  clean_scores.npy not found — simulating from N(4.89, 1.38²)")
+    # Try PRISM/experiments/calibration first (run from paper/figures/), then
+    # try two levels up (run from PRISM/ root)
+    for candidate in [
+        'experiments/calibration/clean_scores.npy',
+        '../../experiments/calibration/clean_scores.npy',
+    ]:
+        if os.path.exists(candidate):
+            real_scores = np.load(candidate)
+            print(f"  Using real clean scores from {candidate} "
+                  f"(n={len(real_scores)}, mean={real_scores.mean():.2f})")
+            break
+    if real_scores is None:
+        print("  clean_scores.npy not found — simulating from N(7.27, 2.15²)")
 
     def compute_thresholds(scores, n):
         subset = scores[:n]
@@ -176,10 +221,10 @@ def make_fig3():
             if len(scores) < n:
                 scores = np.concatenate([
                     scores,
-                    rng.normal(4.89, 1.38, n - len(scores))
+                    rng.normal(7.27, 2.15, n - len(scores))
                 ])
         else:
-            scores = rng.normal(4.89, 1.38, n)
+            scores = rng.normal(7.27, 2.15, n)
 
         t = compute_thresholds(scores, n)
         for level in ['L1', 'L2', 'L3']:

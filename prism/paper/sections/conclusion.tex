@@ -5,10 +5,13 @@ We presented \prism, a multi-layer runtime defense that combines
 persistent homology, conformal prediction, Bayesian changepoint detection, 
 and a topology-aware mixture-of-experts to detect adversarial inputs 
 with distribution-free FPR guarantees.
-Our experiments on CIFAR-10 demonstrate 100\% TPR against PGD-40 
-and 58\% TPR against FGSM ($\varepsilon=0.03$) at FPR$\approx 11\%$ ($n=300$), 
-with the MoE self-healing layer recovering availability for 
-11\% of adversarials that would otherwise be hard-rejected.
+Our experiments on CIFAR-10 demonstrate 100\% TPR against PGD-40,
+94\% against Square Attack, and $\approx50\%$ against FGSM ($\varepsilon=0.03$)
+at FPR$=8\%$ ($n=300$), within the conformal guarantee of $\leq10\%$.
+The BOCPD campaign detector identifies sustained attacks within 2 adversarial
+queries with no false alarm on preceding clean traffic.
+The MoE self-healing layer eliminates prediction unavailability for all
+L3-triggered adversarials (Recovery$=100\%$ with topology-matched experts).
 
 \paragraph{Limitations.}
 The primary limitation is computational: persistent homology over 
@@ -17,12 +20,9 @@ high-dimensional activation tensors requires subsampling
 that specifically preserve local topology while altering global structure.
 Runtime overhead on CPU is approximately 120\,ms per image (3-layer monitoring);
 GPU deployment reduces this to $\sim15$\,ms.
-A known implementation limitation: the point-cloud subsampling in 
-\texttt{TopologicalProfiler} uses a stateful RNG, causing calibration-inference 
-score discrepancy when adversarial and clean images are interleaved in the 
-same evaluation pass. Our implementation uses per-attack fresh PRISM 
-instances as a workaround; a deterministic hash-based subsampling scheme 
-would be more robust and is left for future work.
+Point-cloud subsampling in \texttt{TopologicalProfiler} uses
+deterministic MD5-based hashing (rather than a stateful RNG) to ensure
+consistent scoring across calibration and inference passes.
 The conformal calibration assumes the clean test distribution matches 
 the calibration distribution---distribution shift (e.g., domain adaptation attacks) 
 may inflate FPR.
@@ -35,14 +35,15 @@ attention-head activation patterns;
 the topological score $S(x)$ as a secondary objective; 
 (3) certified robustness integration by combining \prism with 
 randomized smoothing \cite{cohen2019certified} for dual guarantees;
-(4) deterministic activation subsampling for calibration-consistent inference;
+(4) adaptive topology attacks that directly target the Wasserstein score $S(x)$
+as a secondary optimization objective;
 (5) online recalibration to handle distribution shift.
 
 \paragraph{CIFAR-100 generalization.}
-A preliminary test ($n=100$) finds clean FPR $=14\%$ on CIFAR-100 
-(vs. $11\%$ on CIFAR-10), confirming partial generalization of topological 
+Preliminary results find clean FPR$\approx15\%$ on CIFAR-100
+(vs. $9\%$ on CIFAR-10), confirming partial generalization of topological
 features to fine-grained OOD distributions.
-Full cross-dataset evaluation is left for future work.
+Full cross-dataset evaluation with $n=500$ is planned for the GPU run.
 
 \paragraph{Broader impact.}
 \prism is a defensive tool designed to improve the reliability 

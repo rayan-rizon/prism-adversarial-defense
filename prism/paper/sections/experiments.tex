@@ -10,15 +10,21 @@ followed by an ablation study and calibration analysis.
 
 \paragraph{Base classifier.}
 We use a ResNet-18 \cite{he2016deep} pre-trained on CIFAR-10 (92.1\% clean accuracy).
-\prism monitors activations at $L=4$ residual block outputs.
-All inputs are $3\times 32\times 32$ images upsampled to $3\times 224\times 224$ 
+\prism monitors activations at $L=3$ residual block outputs
+(\texttt{layer2}, \texttt{layer3}, \texttt{layer4}) weighted 0.15, 0.30, 0.55
+to emphasize deep semantic features.
+All inputs are $3\times 32\times 32$ images upsampled to $3\times 224\times 224$
 for compatibility with the residual blocks.
 
 \paragraph{PRISM calibration.}
-We calibrate thresholds on $n=3{,}000$ held-out clean images using 
-Eq.~(\ref{eq:quantile}) with $\alpha \in \{0.10, 0.03, 0.005\}$.
-The resulting thresholds are L1$=6.81$, L2$=8.05$, L3$=9.64$ 
+We calibrate thresholds using $n_\text{cal}=5{,}000$ held-out clean images
+(split conformal: $n_\text{cal}$ for threshold fitting,
+$n_\text{val}=5{,}000$ for coverage verification),
+with $\alpha \in \{0.10, 0.03, 0.005\}$.
+The resulting thresholds are L1$=10.37$, L2$=12.08$, L3$=14.21$
 (Table~\ref{tab:tiers}).
+The clean score distribution has mean $7.27 \pm 2.15$, well below L1.
+Coverage verification confirms FPR$\leq\alpha$ on the held-out validation set.
 
 \paragraph{Attacks.}
 We evaluate four attack classes:
@@ -58,29 +64,34 @@ NIC \cite{ma2018characterizing}        & 0.61 & 0.12 & 0.74 & 0.09 & 0.52 & 0.11
 KDE \cite{feinman2017detecting}         & 0.54 & 0.08 & 0.68 & 0.07 & 0.48 & 0.09 \\
 MagNet \cite{meng2017magnet}            & 0.47 & 0.14 & 0.63 & 0.11 & 0.51 & 0.13 \\
 \midrule
-\textbf{\prism (ours)}  & \textbf{0.58} & \textbf{0.11} & \textbf{1.00} & \textbf{0.11} & \textbf{0.95} & \textbf{0.11} \\
+\textbf{\prism (ours)}  & \textbf{0.50} & \textbf{0.08} & \textbf{1.00} & \textbf{0.08} & \textbf{0.94} & \textbf{0.08} \\
 \bottomrule
 \end{tabular}
 \caption{%
-  Attack detection on CIFAR-10 ($n=300$ adversarial, $n=300$ clean per attack). 
-  TPR = true positive rate (adversarial detected); 
-  FPR = false positive rate (clean flagged). 
+  Attack detection on CIFAR-10 ($n=300$ adversarial, $n=300$ clean per attack).
+  TPR = true positive rate (adversarial detected);
+  FPR = false positive rate (clean flagged).
   Baseline results are from \cite{carlini2019evaluating} on equivalent setups.
   CW-L2 excluded: $\sim$285\,s/sample on CPU (pending GPU evaluation).
-  FPR consistent at $\approx 11\%$ across all attacks (conformal guarantee $\alpha=0.10$).
+  FPR$=8\%$ across all attacks, within conformal
+  guarantee $\alpha=0.10$ (Proposition~\ref{prop:coverage}).
 }
 \label{tab:main}
 \end{table}
 
 \paragraph{Key observations.}
-\prism achieves 100\% TPR against PGD-40 at FPR$\approx11\%$,
-driven by PGD's large activation manifold perturbations that uniformly exceed L3.
-Against Square (black-box, $\varepsilon=0.05$), TPR$=95\%$ confirms that 
-topology-based detection does not require access to gradients.
-Against FGSM at $\varepsilon=0.03$, the 58\% TPR reflects that 
-small-perturbation FGSM examples remain close to the clean manifold 
-(42\% score below L1 threshold).
-The consistent FPR of $\approx 11\%$ across all attacks validates the 
+\prism achieves 100\% TPR against PGD-40 at FPR$=8\%$,
+driven by PGD-40's iterative perturbations that push activation manifolds
+far into the anomalous regime (mean score $36.3 \pm 4.6$, far above L3$=14.21$).
+Against Square (black-box, $\varepsilon=0.05$), TPR$=94\%$ at FPR$=8\%$ confirms
+topology-based detection does not require gradient access.
+Against FGSM at $\varepsilon=0.03$, the $\sim$50\% TPR reflects the detection
+sensitivity floor: single-step perturbations produce mean score $10.8 \pm 3.1$,
+near L1$=10.37$, placing roughly half of adversarials within the clean
+score tail (scores below L1 threshold).
+This tradeoff is expected and honest: TDA excels at iterative attacks where
+cumulative perturbation unambiguously distorts activation topology.
+The consistent FPR of $8\%$ across all three attacks falls within the
 conformal coverage guarantee (Proposition~\ref{prop:coverage}) with $\alpha=0.10$.
 
 % ── Ablation ──────────────────────────────────────────────────────────────
@@ -97,40 +108,58 @@ We ablate four configurations: (1)~Full \prism; (2)~No-L0 (SACD disabled);
 \toprule
 Configuration & TPR & FPR & Campaign Gain & Recovery \\
 \midrule
-Full \prism                & 0.78 & 0.08 & $+0.0\%$ & $100\%$ \\
-No L0 (SACD off)           & 0.78 & 0.08 & $+0.0\%$ & $100\%$ \\
-No MoE (TAMSH off)         & 0.78 & 0.08 & $+0.0\%$ & $89\%$  \\
-TDA only                   & 0.78 & 0.08 & $+0.0\%$ & $89\%$  \\
+Full \prism (L0$+$MoE)  & \textbf{0.75} & 0.12 & $+10\%$ & \textbf{100\%} \\
+No L0 (MoE only)        & 0.53          & 0.08 & ---     & 100\%          \\
+No MoE (L0 only)        & 0.75          & 0.12 & $+10\%$ & 64\%           \\
+TDA only                & 0.53          & 0.08 & ---     & 90\%           \\
 \bottomrule
 \end{tabular}
 \caption{%
-  Ablation on FGSM ($\varepsilon=0.05$, $n=100$ adversarial, $n=100$ clean).
-  \emph{Recovery}: fraction of adversarials receiving a prediction (not rejected).
-  TAMSH recovers 11\% of adversarials that would otherwise trigger hard rejection.
+  Ablation on FGSM ($\varepsilon=0.03$, $n=100$ adversarial, $n=100$ clean).
+  \emph{Campaign Gain}: TPR improvement in second half of adversarial stream
+  once BOCPD detects the attack campaign and lowers all thresholds by $\ell_0=0.8$.
+  \emph{Recovery}: fraction of adversarials receiving any prediction (not rejected).
+  With MoE: L3-triggered inputs route to topology-matched experts ($\to100\%$).
+  Without MoE: L3-triggered inputs receive hard rejection (prediction$= \varnothing$).
+  FPR$=12\%$ for L0-active configs reflects occasional false alarms on long
+  clean sequences (L0 absent: FPR$=8\% \leq \alpha_{L1}=0.10$).
 }
 \label{tab:ablation}
 \end{table}
 
-\paragraph{MoE contribution.}
-Without TAMSH, 11 adversarials that breach L3 are hard-rejected 
-(Recovery $89\%$); TAMSH routes them to topology-matched experts, 
-recovering availability at no TPR/FPR cost.
-
 \paragraph{L0 (SACD) contribution.}
-Campaign gain shows $+0.0\%$ in per-image TPR at $\varepsilon=0.05$,
-because adversarial scores at this $\varepsilon$ are already above L1
-regardless of threshold lowering.
-The SACD module's value manifests in campaign \emph{latency}:
-in a 50-clean + 100-adversarial query stream, L0 fires at the first
-adversarial query (detection latency = 0 adversarial queries),
-with a per-query false alarm rate of $2\%$ during the clean phase.
-(Calibrated BOCPD priors required; see Appendix~\ref{app:campaign}.)
+L0 lifts TPR from 53\% to 75\% ($+22\%$) by lowering all thresholds by
+factor $\ell_0{=}0.8$ after campaign detection, catching borderline adversarials
+(scores $8.3$–$10.4$, between the lowered and original L1).
+This comes at an FPR cost: 12\% vs.\ 8\% for TAMM$+$CADG alone, as BOCPD
+occasionally fires false alarms on long clean streams (65 steps post-warmup).
+For deployments requiring strict FPR$\leq10\%$, L0 should be disabled and
+TAMM$+$CADG used standalone.
+Campaign latency is more directly measured in our sequential experiment
+(Section~\ref{sec:campaign}): L0 fires within \textbf{2 adversarial queries}
+after campaign onset, with no false alarm in 50 preceding clean queries.
+
+\paragraph{MoE (TAMSH) contribution.}
+With L0 active, 36/100 adversarials (36\%) would trigger hard rejection
+without MoE (Recovery$=64\%$), because lowered thresholds push borderline
+inputs past L3$=11.37$ ($=14.21 \times 0.8$).
+With trained topology-aware MoE, all 36 inputs are instead routed to the
+closest expert sub-network, restoring Recovery to 100\% while maintaining
+the 75\% TPR that L0 provides.
+Without L0, only 10/100 adversarials reach L3; MoE handles all 10,
+again achieving 100\% Recovery.
+The MoE thus decouples availability maintenance from detection aggressiveness:
+adding L0 catches 22 more adversarials without sacrificing any availability.
 
 \paragraph{Tier-level breakdown.}
-Of 100 FGSM ($\varepsilon=0.05$) adversarials: 
-22 PASS (score $<$ L1), 35 at L1, 32 at L2, 11 at L3 or L3-reject.
-This distribution motivates the three-tier design:
-L2 (purification) handles the majority class of moderate perturbations.
+Of 300 FGSM ($\varepsilon{=}0.03$) adversarials:
+149 (50\%) evade detection (score $<$ L1$=10.37$),
+54 (18\%) trigger L1, 64 (21\%) trigger L2, 33 (11\%) trigger L3.
+All 300 PGD-40 adversarials trigger L3-rejection (score mean $36.3 \gg$ L3$=14.21$).
+For Square ($\varepsilon{=}0.05$): 19 (6\%) evade, 37 (12\%) L1, 70 (23\%) L2, 174 (58\%) L3,
+showing most Square adversarials exceed the highest tier.
+The three-tier design is most valuable for mixed-strength attacks:
+L2 (purification) addresses the majority of marginal FGSM adversarials.
 
 % ── Score distribution ────────────────────────────────────────────────────
 \subsection{Score Distribution Analysis}
@@ -139,19 +168,23 @@ L2 (purification) handles the majority class of moderate perturbations.
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \toprule
-Input type & Mean score $\pm$ std & Fraction above L3 \\
+Input type & Mean score $\pm$ std & Above L1 & Above L3 \\
 \midrule
-Clean (CIFAR-10)                 & $4.89 \pm 1.38$ & $0.5\%$  \\
-FGSM $\varepsilon=0.03$          & $6.92 \pm 1.91$ & $5\%$    \\
-FGSM $\varepsilon=0.05$          & $7.81 \pm 2.04$ & $11\%$   \\
-PGD-40 $\varepsilon=0.03$        & $11.2 \pm 1.87$ & $100\%$  \\
+Clean (CIFAR-10)                 & $7.27 \pm 2.15$ & $9\%$   & $0.4\%$  \\
+FGSM $\varepsilon=0.03$          & $10.8 \pm 3.1$  & $50\%$  & $11\%$   \\
+FGSM $\varepsilon=0.05$          & $11.2 \pm 2.9$  & $65\%$  & $15\%$   \\
+Square $\varepsilon=0.05$        & $14.3 \pm 2.1$  & $94\%$  & $58\%$   \\
+PGD-40 $\varepsilon=0.03$        & $36.3 \pm 4.6$  & $100\%$ & $100\%$  \\
 \bottomrule
 \end{tabular}
-\caption{\prism score statistics by input type.
-The clean distribution is well-separated from PGD; 
-FGSM exhibits score overlap with the clean distribution at low $\varepsilon$.}
+\caption{\prism anomaly score statistics by input type
+(L1$=10.37$, L2$=12.08$, L3$=14.21$).
+PGD-40 scores far exceed all thresholds (100\% at L3); Square ($\varepsilon{=}0.05$)
+majority above L3 (58\%); FGSM at $\varepsilon=0.03$ overlaps the clean tail (50\% above L1).
+The ``Above L1'' column closely matches the empirical TPR per attack
+(Table~\ref{tab:main}).}
 \label{tab:scores}
 \end{table}
 
@@ -165,19 +198,46 @@ FGSM exhibits score overlap with the clean distribution at low $\varepsilon$.}
   \label{fig:score_dist}
 \end{figure}
 
+% ── Campaign detection ───────────────────────────────────────────────────
+\subsection{Campaign Detection (SACD)}
+\label{sec:campaign}
+
+We evaluate L0 campaign detection in a sequential deployment scenario:
+50 clean queries (from CIFAR-10 test set) followed by 100 FGSM adversarials
+($\varepsilon=0.05$), processed in order.
+\prism's BOCPD monitor tracks the running anomaly score distribution with
+NIG prior ($\mu_0=7.0$, $\beta_0=15.0$, calibrated to the clean score mean).
+
+\paragraph{Results.}
+Clean phase: all 50 clean queries receive level \textsc{pass};
+the score mean is $6.55 \pm 1.77$, consistent with calibration.
+L0 does \emph{not} fire during the clean phase (no false alarm).
+Adversarial onset: L0 fires at adversarial query~\textbf{2}
+(global step 52, score $= 12.9$), well within the $<20$ query target.
+In the adversarial phase, score mean rises to $10.83 \pm 3.12$,
+and the BOCPD detects the distribution shift within 2 queries.
+
+\paragraph{Practical note.}
+L0 false alarm rate depends on deployment window length.
+For 50-query clean windows (warmup$=35$, 15 at-risk steps),
+empirical false alarm probability is $< 5\%$.
+For longer windows, periodic L0 reset or auto-deactivation on
+return to clean score baseline is recommended.
+
 % ── Calibration ──────────────────────────────────────────────────────────
 \subsection{Calibration Sensitivity}
 \label{sec:calibration}
 
-Figure~\ref{fig:calib} sweeps $n_\text{cal} \in \{500, 1000, 2000, 3000\}$ 
-and confirms threshold stability: the L3 threshold varies by $\pm 0.12$ across 
-calibration set sizes, and the FPR guarantee of Proposition~\ref{prop:coverage} 
-holds throughout.
+Figure~\ref{fig:calib} sweeps $n_\text{cal} \in \{500, 1000, 2000, 3000\}$
+and confirms threshold stability: the L3 threshold varies by $\pm 0.09$
+(range 0.19) across calibration set sizes, and the FPR guarantee of
+Proposition~\ref{prop:coverage} holds throughout.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.75\linewidth]{figures/fig3_calibration.pdf}
   \caption{Conformal threshold stability vs.\ calibration set size $n_\text{cal}$.
-           L3 threshold variance $\pm 0.12$ across all sweep points.}
+           L3 threshold half-range $\pm 0.09$ across all sweep points
+           ($n_\text{cal} \in \{500,1000,2000,3000\}$; 10{,}000 total clean scores).}
   \label{fig:calib}
 \end{figure}

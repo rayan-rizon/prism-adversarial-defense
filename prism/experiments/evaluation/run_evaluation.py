@@ -47,6 +47,7 @@ except ImportError:
 
 from src.prism import PRISM
 from src.cadg.calibrate import ConformalCalibrator
+from src.sacd.monitor import NoOpCampaignMonitor
 
 # Normalization constants — must match build_profile.py
 _MEAN = [0.485, 0.456, 0.406]
@@ -82,6 +83,7 @@ def run_evaluation(
     output_path: str = 'experiments/evaluation/results.json',
     seed: int = 42,
     attacks_to_run: list = None,
+    _fgsm_eps_override: float = None,  # Override FGSM eps for sweep; None = use default 0.03
 ):
     if not ART_AVAILABLE:
         print("Cannot run evaluation without ART. Exiting.")
@@ -100,6 +102,7 @@ def run_evaluation(
 
     layer_names = ['layer2', 'layer3', 'layer4']
     layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
+    dim_weights = [0.5, 0.5]  # Equal H0/H1 weighting — best for mixed attack types
 
     # --- Load PRISM (requires pre-built profiles and calibrator) ---
     calibrator_path = 'models/calibrator.pkl'
@@ -118,6 +121,7 @@ def run_evaluation(
         calibrator_path=calibrator_path,
         profile_path=profile_path,
         layer_weights=layer_weights,
+        dim_weights=dim_weights,
     )
 
     # --- Setup ART classifier ---
@@ -141,7 +145,7 @@ def run_evaluation(
     # Square is fast (score-based, no gradient) and complementary to white-box attacks.
     if n_test >= 100:
         attacks = {
-            'FGSM': FastGradientMethod(classifier, eps=0.30),   # ε=0.30 (~76.5/255)
+            'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),
             'PGD': ProjectedGradientDescent(
                 classifier, eps=0.03, max_iter=40, eps_step=0.007
             ),
@@ -150,7 +154,7 @@ def run_evaluation(
         print(f"Note: CW excluded for n_test={n_test} (too slow on CPU).")
     else:
         attacks = {
-            'FGSM': FastGradientMethod(classifier, eps=0.30),   # ε=0.30 (~76.5/255)
+            'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),  # ε=0.03 (~8/255) standard benchmark
             'PGD': ProjectedGradientDescent(
                 classifier, eps=0.03, max_iter=40, eps_step=0.007
             ),
@@ -183,13 +187,19 @@ def run_evaluation(
         print(f"Evaluating: {attack_name}")
         print(f"{'='*50}")
 
-        # Fresh PRISM instance → fresh TopologicalProfiler RNG → consistent FPR
+        # Fresh PRISM instance with NoOpCampaignMonitor:
+        # Evaluation measures pure TAMM+CADG detection (TPR/FPR).
+        # L0 campaign detection is evaluated separately in experiments/campaign/.
+        # Using active L0 here inflates FPR because BOCPD fires false alarms
+        # during the 300-sample clean phase, then lowers thresholds for all subsequent samples.
         prism_attack = PRISM.from_saved(
             model=model,
             layer_names=layer_names,
             calibrator_path=calibrator_path,
             profile_path=profile_path,
             layer_weights=layer_weights,
+            dim_weights=dim_weights,
+            campaign_monitor=NoOpCampaignMonitor(),
         )
 
         tp, fp, fn, tn = 0, 0, 0, 0
@@ -272,6 +282,54 @@ def run_evaluation(
     return results
 
 
+def run_fgsm_sweep(
+    epsilons: list = None,
+    n_test: int = 300,
+    data_root: str = './data',
+    output_path: str = 'experiments/evaluation/results_fgsm_sweep.json',
+    seed: int = 42,
+):
+    """
+    FGSM epsilon sweep for detection sensitivity curve.
+    Runs FGSM at multiple epsilon values to show TPR vs ε tradeoff.
+    Essential for honest paper presentation of TDA's sensitivity limits.
+    """
+    if epsilons is None:
+        epsilons = [0.01, 0.02, 0.03, 0.05, 0.10]
+
+    # Run evaluation once per epsilon, collect results
+    sweep_results = {}
+    for eps in epsilons:
+        print(f"\n{'='*50}")
+        print(f"FGSM sweep: ε={eps:.3f}")
+        r = run_evaluation(
+            n_test=n_test,
+            data_root=data_root,
+            output_path=None,   # don't save per-epsilon
+            seed=seed,
+            attacks_to_run=['FGSM'],
+            _fgsm_eps_override=eps,
+        )
+        if r and 'FGSM' in r:
+            sweep_results[f'FGSM_eps_{eps:.3f}'] = r['FGSM']
+            print(f"  ε={eps:.3f}: TPR={r['FGSM']['TPR']:.4f} FPR={r['FGSM']['FPR']:.4f}")
+
+    # Print curve
+    print(f"\n{'='*50}")
+    print(f"{'ε':>8} {'TPR':>8} {'FPR':>8}")
+    for key, v in sweep_results.items():
+        eps = float(key.split('_')[-1])
+        print(f"{eps:>8.3f} {v['TPR']:>8.4f} {v['FPR']:>8.4f}")
+
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump(sweep_results, f, indent=2)
+        print(f"Sweep results saved to {output_path}")
+
+    return sweep_results
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="PRISM full attack evaluation")
@@ -282,6 +340,11 @@ if __name__ == '__main__':
     parser.add_argument('--attacks',  nargs='+',
                         default=['FGSM', 'PGD', 'CW', 'Square'],
                         help='Attacks to run (default: FGSM PGD CW Square)')
+    parser.add_argument('--sweep', action='store_true',
+                        help='Run FGSM epsilon sweep instead of main eval')
     args = parser.parse_args()
-    run_evaluation(n_test=args.n_test, data_root=args.data_root,
-                   output_path=args.output, attacks_to_run=args.attacks)
+    if args.sweep:
+        run_fgsm_sweep(n_test=args.n_test, data_root=args.data_root)
+    else:
+        run_evaluation(n_test=args.n_test, data_root=args.data_root,
+                       output_path=args.output, attacks_to_run=args.attacks)
