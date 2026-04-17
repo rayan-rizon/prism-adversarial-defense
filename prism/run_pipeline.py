@@ -148,14 +148,21 @@ def main():
             ['scripts/train_ensemble_scorer.py',
              '--n-train', str(n_train),
              '--data-root', args.data_root],
-            "Phase 3: Persistence ensemble scorer training"
+            "Phase 3: Persistence ensemble scorer training (FGSM+PGD, eps=8/255)"
         )
-        # Re-calibrate thresholds for the new ensemble score
+        # Phase 3.5: Re-calibrate thresholds for the ensemble composite score
         run_step(
             ['scripts/calibrate_ensemble.py',
              '--data-root', args.data_root],
             "Phase 3.5: Ensemble conformal calibration"
         )
+        # Phase 3.6: High-power FPR report on val split (n=1000)
+        run_step(
+            ['scripts/compute_ensemble_val_fpr.py',
+             '--data-root', args.data_root],
+            "Phase 3.6: Ensemble val FPR report (n=1000, Wilson CI ~+/-1.5%)"
+        )
+
 
     # ── Phase 4: Train MoE experts ───────────────────────────────────────────
     if 4 in phases:

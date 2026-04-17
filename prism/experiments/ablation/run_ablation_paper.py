@@ -81,9 +81,28 @@ def wilson_ci(k, n, z=1.96):
 
 def build_prism(cfg, model, device):
     """Construct PRISM with components enabled/disabled per ablation config."""
-    cal_path  = 'models/calibrator.pkl'
+    # TDA-only uses the BASE Wasserstein calibrator (calibrator_base.pkl).
+    # This was saved by calibrate_testset.py and is NOT overwritten by
+    # calibrate_ensemble.py (which writes to calibrator.pkl only).
+    # This gives a fair, non-degenerate comparison: TDA-only uses proper
+    # conformal thresholds calibrated on raw Wasserstein scores.
+    if cfg.get('tda_only', False):
+        cal_path = 'models/calibrator_base.pkl'
+        ens_path = None   # no ensemble scorer
+    else:
+        cal_path = 'models/calibrator.pkl'
+        ens_path = 'models/ensemble_scorer.pkl' if cfg.get('use_ensemble', True) else None
+
     prof_path = 'models/reference_profiles.pkl'
-    ens_path  = 'models/ensemble_scorer.pkl' if cfg.get('use_ensemble', True) else None
+
+    # Verify calibrator_base.pkl exists for TDA-only
+    if not os.path.exists(cal_path):
+        if cfg.get('tda_only', False):
+            print(f"WARNING: {cal_path} not found. Falling back to calibrator.pkl.")
+            print("  Re-run 'python run_pipeline.py --phases 2' to regenerate calibrator_base.pkl.")
+            cal_path = 'models/calibrator.pkl'
+        else:
+            raise FileNotFoundError(f"{cal_path} not found.")
 
     prism = PRISM.from_saved(
         model=model,
@@ -99,13 +118,8 @@ def build_prism(cfg, model, device):
     if not cfg.get('use_moe', True):
         prism.moe = None
 
-    # TDA-only: bypass conformal classifier — everything above L1 threshold becomes PASS
-    # We achieve this by patching the calibrator alpha to 1.0 (all clean pass)
-    if cfg.get('tda_only', False):
-        prism.calibrator.alphas = {'L1': 1.0, 'L2': 1.0, 'L3': 1.0}
-        prism.calibrator.calibrate(np.array([0.0] * 100 + [1e9]))  # trivial thresholds
-
     return prism
+
 
 
 def evaluate_config(config_name, cfg, model, art_clf, dataset,

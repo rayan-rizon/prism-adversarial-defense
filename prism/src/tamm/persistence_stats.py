@@ -11,14 +11,15 @@ collectively shift total persistence, feature count, and entropy.
 
 Features per (layer, dimension):
   - wasserstein_dist  : raw W2 distance to reference medoid
-  - total_persistence : Σ(death - birth)  — sensitive to micro-feature density
+  - total_persistence : Sum(death - birth)  — sensitive to micro-feature density
   - max_persistence   : max(death - birth) — sensitive to structural destruction
   - n_features        : count of features above birth_threshold
-  - entropy           : -Σ p_i log p_i, p_i = (d_i-b_i)/total_pers — shape complexity
+  - entropy           : -Sum p_i log p_i, p_i = (d_i-b_i)/total_pers — shape complexity
   - mean_persistence  : total / n_features (or 0 if empty)
 
-These 6 scalars × 2 dims (H0, H1) × 3 layers = 36-dim feature vector.
-A logistic regression trained conformally on this vector achieves meaningful
+These 6 scalars x 2 dims (H0, H1) x 3 layers = 36-dim feature vector.
+Note: wasserstein_dist IS one of the 6 features per (layer,dim), not separate.
+A logistic regression trained conformally on this 36-dim vector achieves meaningful
 FGSM separation (validated in the audit: Wasserstein alone cannot).
 """
 import numpy as np
@@ -115,8 +116,8 @@ def extract_feature_vector(
 ) -> np.ndarray:
     """
     Build the full 36-dimensional feature vector for one input:
-      6 stats × 2 dims × 3 layers = 36 features
-    (plus 1 Wasserstein distance per (layer, dim) = 6 more → 42-dim total)
+      6 stats x 2 dims x 3 layers = 36 features
+    Wasserstein distance is the first of the 6 stats per (layer, dim) block.
 
     Features are ordered: for each layer, for each dim:
       [wasserstein_dist, total_persistence, max_persistence,

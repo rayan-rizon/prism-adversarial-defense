@@ -1,25 +1,25 @@
 {
   "FGSM": {
-    "TPR": 0.9267,
+    "TPR": 0.85,
     "TPR_CI_95": [
-      0.8915,
-      0.9511
+      0.8052,
+      0.886
     ],
-    "FPR": 0.09,
+    "FPR": 0.0733,
     "FPR_CI_95": [
-      0.0626,
-      0.1278
+      0.0489,
+      0.1085
     ],
-    "Precision": 0.9115,
-    "F1": 0.919,
-    "TP": 278,
-    "FP": 27,
-    "FN": 22,
-    "TN": 273,
+    "Precision": 0.9206,
+    "F1": 0.8839,
+    "TP": 255,
+    "FP": 22,
+    "FN": 45,
+    "TN": 278,
     "n_adv": 300,
     "n_clean": 300,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.09,
+      "FPR_L1_plus": 0.0733,
       "FPR_L2_plus": 0.0133,
       "FPR_L3_plus": 0.0033,
       "target_L1": 0.1,
@@ -30,16 +30,16 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 273,
-      "L1": 23,
+      "PASS": 278,
+      "L1": 18,
       "L2": 3,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 143,
-      "L2": 75,
-      "L1": 60,
-      "PASS": 22
+      "L3_REJECT": 129,
+      "L1": 54,
+      "L2": 72,
+      "PASS": 45
     }
   },
   "PGD": {
@@ -48,21 +48,21 @@
       0.9874,
       1.0
     ],
-    "FPR": 0.09,
+    "FPR": 0.0733,
     "FPR_CI_95": [
-      0.0626,
-      0.1278
+      0.0489,
+      0.1085
     ],
-    "Precision": 0.9174,
-    "F1": 0.9569,
+    "Precision": 0.9317,
+    "F1": 0.9646,
     "TP": 300,
-    "FP": 27,
+    "FP": 22,
     "FN": 0,
-    "TN": 273,
+    "TN": 278,
     "n_adv": 300,
     "n_clean": 300,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.09,
+      "FPR_L1_plus": 0.0733,
       "FPR_L2_plus": 0.0133,
       "FPR_L3_plus": 0.0033,
       "target_L1": 0.1,
@@ -73,8 +73,8 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 273,
-      "L1": 23,
+      "PASS": 278,
+      "L1": 18,
       "L2": 3,
       "L3_REJECT": 1
     },
@@ -83,26 +83,26 @@
     }
   },
   "Square": {
-    "TPR": 0.7967,
+    "TPR": 0.7833,
     "TPR_CI_95": [
-      0.7475,
-      0.8383
+      0.7333,
+      0.8262
     ],
-    "FPR": 0.09,
+    "FPR": 0.0733,
     "FPR_CI_95": [
-      0.0626,
-      0.1278
+      0.0489,
+      0.1085
     ],
-    "Precision": 0.8985,
-    "F1": 0.8445,
-    "TP": 239,
-    "FP": 27,
-    "FN": 61,
-    "TN": 273,
+    "Precision": 0.9144,
+    "F1": 0.8438,
+    "TP": 235,
+    "FP": 22,
+    "FN": 65,
+    "TN": 278,
     "n_adv": 300,
     "n_clean": 300,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.09,
+      "FPR_L1_plus": 0.0733,
       "FPR_L2_plus": 0.0133,
       "FPR_L3_plus": 0.0033,
       "target_L1": 0.1,
@@ -113,16 +113,16 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 273,
-      "L1": 23,
+      "PASS": 278,
+      "L1": 18,
       "L2": 3,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 103,
-      "L2": 71,
-      "L1": 65,
-      "PASS": 61
+      "L3_REJECT": 105,
+      "L2": 76,
+      "PASS": 65,
+      "L1": 54
     }
   },
   "_meta": {
@@ -138,12 +138,12 @@
       "Square"
     ],
     "latency": {
-      "mean_ms": 157.71,
-      "std_ms": 29.61,
-      "min_ms": 126.97,
-      "max_ms": 443.06,
-      "p50_ms": 150.14,
-      "p95_ms": 203.84,
+      "mean_ms": 107.98,
+      "std_ms": 23.55,
+      "min_ms": 77.26,
+      "max_ms": 291.92,
+      "p50_ms": 101.47,
+      "p95_ms": 148.14,
       "n": 200,
       "target_ms": 100,
       "pass": false

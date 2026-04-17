@@ -100,7 +100,14 @@ def calibrate_testset(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'wb') as f:
         pickle.dump(calibrator, f)
-    print(f"\nCalibrator saved → {output_path}")
+    print(f"\nCalibrator saved -> {output_path}")
+
+    # Also save as calibrator_base.pkl so TDA-only ablation can load the base
+    # Wasserstein calibrator even after calibrate_ensemble.py overwrites calibrator.pkl
+    base_path = os.path.join(os.path.dirname(output_path), 'calibrator_base.pkl')
+    with open(base_path, 'wb') as f:
+        pickle.dump(calibrator, f)
+    print(f"Base calibrator copy saved -> {base_path}")
 
     return calibrator, report
 
