@@ -233,6 +233,14 @@ def run_evaluation_full(
         ),
     }
 
+    if AA_AVAILABLE:
+        # AutoAttack uses the raw PyTorch model directly, not ART
+        all_attacks['AutoAttack'] = lambda: _AA(
+            norm_model, norm='Linf', eps=EPS_LINF_STANDARD, version='standard',
+            device=device
+        )
+
+
     attacks_to_run = attacks_to_run or ['FGSM', 'PGD', 'CW', 'Square']
     # CW is extremely slow on CPU — warn
     if 'CW' in attacks_to_run and str(device) == 'cpu' and n_test > 100:
@@ -300,10 +308,18 @@ def run_evaluation_full(
             # ── Adversarial input ──────────────────────────────────────────
             x_np = x_pixel.cpu().numpy()
             try:
-                x_adv_np = attack.generate(x_np)
+                if attack_name == 'AutoAttack':
+                    # AutoAttack operates on batches of tensors and needs labels
+                    _, y = pixel_dataset[int(i)]
+                    y_tensor = torch.tensor([y]).to(device)
+                    x_adv_batch = attack.run_standard_evaluation(x_pixel.to(device), y_tensor, bs=1)
+                    x_adv_np = x_adv_batch.cpu().numpy()
+                else:
+                    x_adv_np = attack.generate(x_np)
             except Exception as e:
                 print(f"  Attack failed on sample {i}: {e}")
                 continue
+
 
             x_adv = _NORMALIZE(torch.tensor(x_adv_np[0])).unsqueeze(0).to(device)
             _, lv_adv, _ = prism_attack.defend(x_adv)
