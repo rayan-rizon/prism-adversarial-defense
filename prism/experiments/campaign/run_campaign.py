@@ -66,6 +66,11 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
             warmup_steps=35, l0_factor=0.8, cooldown_steps=30,
         ),
     )
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    backbone = backbone.to(device)
+    wrapped  = wrapped.to(device)
+    prism.model = backbone
+    prism.extractor.model = backbone
 
     # ── Load dataset ──────────────────────────────────────────────────────────
     ds = torchvision.datasets.CIFAR10(
@@ -97,7 +102,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
     print("Phase 1: Clean queries")
     for t, idx in enumerate(clean_idx):
         pixel_img, _ = ds[int(idx)]
-        norm_img = _NORM(pixel_img).unsqueeze(0)
+        norm_img = _NORM(pixel_img).unsqueeze(0).to(device)
         _, level, meta = prism.defend(norm_img)
         s = meta.get('anomaly_score', 0.0)
         scores.append(s)
@@ -117,7 +122,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
         pixel_img, _ = ds[int(idx)]
         x_np = pixel_img.unsqueeze(0).numpy()
         x_adv_np = fgsm.generate(x_np)
-        x_adv_norm = _NORM(torch.tensor(x_adv_np[0])).unsqueeze(0)
+        x_adv_norm = _NORM(torch.tensor(x_adv_np[0])).unsqueeze(0).to(device)
 
         _, level, meta = prism.defend(x_adv_norm)
         s = meta.get('anomaly_score', 0.0)
@@ -168,7 +173,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
         'all_levels': levels,
     }
     os.makedirs('experiments/campaign', exist_ok=True)
-    with open('experiments/campaign/results.json', 'w') as f:
+    with open('experiments/campaign/results.json', 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=2)
     print(f"\n  Saved → experiments/campaign/results.json")
     return result

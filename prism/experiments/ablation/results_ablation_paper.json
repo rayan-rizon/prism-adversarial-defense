@@ -1,0 +1,126 @@
+{
+  "Full PRISM": {
+    "config": "Full PRISM",
+    "FGSM": {
+      "TPR": 0.32,
+      "TPR_CI_95": [
+        0.2076,
+        0.4581
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0435,
+        0.2136
+      ],
+      "F1": 0.4507,
+      "TP": 16,
+      "FP": 5,
+      "FN": 34,
+      "TN": 45,
+      "clean_levels": {
+        "PASS": 45,
+        "L1": 4,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L2": 5,
+        "PASS": 34,
+        "L1": 11
+      }
+    },
+    "mean_TPR": 0.32,
+    "mean_FPR": 0.1
+  },
+  "No L0": {
+    "config": "No L0",
+    "FGSM": {
+      "TPR": 0.32,
+      "TPR_CI_95": [
+        0.2076,
+        0.4581
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0435,
+        0.2136
+      ],
+      "F1": 0.4507,
+      "TP": 16,
+      "FP": 5,
+      "FN": 34,
+      "TN": 45,
+      "clean_levels": {
+        "PASS": 45,
+        "L1": 4,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L2": 5,
+        "PASS": 34,
+        "L1": 11
+      }
+    },
+    "mean_TPR": 0.32,
+    "mean_FPR": 0.1
+  },
+  "No MoE": {
+    "config": "No MoE",
+    "FGSM": {
+      "TPR": 0.32,
+      "TPR_CI_95": [
+        0.2076,
+        0.4581
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0435,
+        0.2136
+      ],
+      "F1": 0.4507,
+      "TP": 16,
+      "FP": 5,
+      "FN": 34,
+      "TN": 45,
+      "clean_levels": {
+        "PASS": 45,
+        "L1": 4,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L2": 5,
+        "PASS": 34,
+        "L1": 11
+      }
+    },
+    "mean_TPR": 0.32,
+    "mean_FPR": 0.1
+  },
+  "TDA only": {
+    "config": "TDA only",
+    "FGSM": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9286,
+        1.0
+      ],
+      "FPR": 1.0,
+      "FPR_CI_95": [
+        0.9286,
+        1.0
+      ],
+      "F1": 0.6667,
+      "TP": 50,
+      "FP": 50,
+      "FN": 0,
+      "TN": 0,
+      "clean_levels": {
+        "L3_REJECT": 50
+      },
+      "adv_levels": {
+        "L3_REJECT": 50
+      }
+    },
+    "mean_TPR": 1.0,
+    "mean_FPR": 1.0
+  }
+}

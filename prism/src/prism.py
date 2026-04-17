@@ -43,6 +43,7 @@ class PRISM:
         layer_names: List[str],
         calibrator: ConformalCalibrator,
         ref_profiles: Dict[str, list],
+        ensemble_scorer: Optional[Any] = None,
         moe: Optional[TopologyAwareMoE] = None,
         memory: Optional[ImmuneMemory] = None,
         campaign_monitor: Optional[CampaignMonitor] = None,
@@ -58,17 +59,15 @@ class PRISM:
             layer_names: Names of layers to monitor (e.g., ['layer1', 'layer4']).
             calibrator: Pre-calibrated ConformalCalibrator instance.
             ref_profiles: {layer_name: medoid_diagram_set} — the topological self-profile.
+            ensemble_scorer: Optional PersistenceEnsembleScorer for improved detection.
             moe: Optional TopologyAwareMoE for L3 expert routing.
             memory: Optional ImmuneMemory for fast-path attack recognition.
             campaign_monitor: Optional CampaignMonitor for L0 campaign detection.
             tda_n_subsample: Points to subsample for TDA computation.
             tda_max_dim: Maximum homology dimension.
             federation_manager: Optional FederationManager for peer signature sharing.
-                                 If provided, detections at L2/L3 are broadcast to peers.
             layer_weights: Optional per-layer scoring weights.
-                           Defaults to uniform.
             dim_weights: Per-homology-dimension weights [H0_weight, H1_weight].
-                         Default [0.2, 0.8] — H1 loops more discriminative for adversarial detection.
         """
         self.model = model
         self.layer_names = layer_names
@@ -78,12 +77,15 @@ class PRISM:
         self.profiler = TopologicalProfiler(
             n_subsample=tda_n_subsample, max_dim=tda_max_dim
         )
-        self.scorer = TopologicalScorer(
-            ref_profiles=ref_profiles,
-            layer_names=layer_names,
-            layer_weights=layer_weights,
-            dim_weights=dim_weights,
-        )
+        if ensemble_scorer is not None:
+            self.scorer = ensemble_scorer
+        else:
+            self.scorer = TopologicalScorer(
+                ref_profiles=ref_profiles,
+                layer_names=layer_names,
+                layer_weights=layer_weights,
+                dim_weights=dim_weights,
+            )
         self.calibrator = calibrator
         self.threshold_mgr = TieredThresholdManager()
 
@@ -104,6 +106,7 @@ class PRISM:
         layer_names: List[str],
         calibrator_path: str,
         profile_path: str,
+        ensemble_path: Optional[str] = None,
         **kwargs,
     ) -> 'PRISM':
         """
@@ -114,6 +117,7 @@ class PRISM:
             layer_names: Layers to monitor.
             calibrator_path: Path to pickled ConformalCalibrator.
             profile_path: Path to pickled reference profiles dict.
+            ensemble_path: Optional path to pickled PersistenceEnsembleScorer.
         """
         calibrator = cls._load_pickle(calibrator_path)
         ref_profiles = cls._load_pickle(profile_path)
@@ -123,11 +127,27 @@ class PRISM:
         if not isinstance(ref_profiles, dict):
             raise TypeError(f"Expected dict for ref_profiles, got {type(ref_profiles)}")
 
+        ensemble_scorer = None
+        if ensemble_path and Path(ensemble_path).exists():
+            # PersistenceEnsembleScorer requires loading with base_scorer
+            from .cadg.ensemble_scorer import PersistenceEnsembleScorer
+            from .tamm.scorer import TopologicalScorer
+            base_scorer = TopologicalScorer(
+                ref_profiles=ref_profiles,
+                layer_names=layer_names,
+                layer_weights=kwargs.get('layer_weights'),
+                dim_weights=kwargs.get('dim_weights'),
+            )
+            ensemble_scorer = PersistenceEnsembleScorer.load(
+                ensemble_path, base_scorer, layer_names
+            )
+
         return cls(
             model=model,
             layer_names=layer_names,
             calibrator=calibrator,
             ref_profiles=ref_profiles,
+            ensemble_scorer=ensemble_scorer,
             **kwargs,
         )
 
