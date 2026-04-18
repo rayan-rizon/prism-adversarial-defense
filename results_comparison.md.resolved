@@ -231,3 +231,205 @@ Paper claims architecture-agnostic, but only ResNet-18 is evaluated. Must add �
 ❌ **What's still missing**: CW + AutoAttack benchmarks, n=1000 evaluation for tight TPR CIs, architecture generalization, and A100 latency confirmation.
 
 The correct path forward is a single well-designed CamberCloud run: `n=1000, attacks=[FGSM, PGD, Square, CW, AutoAttack]`.
+
+
+---
+
+# Appendix: Original Deep Audit Report (Pre-Hardening)
+*The following report represents the audit findings that triggered the research-grade hardening phase.*
+
+# PRISM: Deep Research Audit Report
+**Audit Date**: 2026-04-17 | **Evaluator**: Automated Cross-Check + Code Review
+
+---
+
+## Executive Summary
+
+The current results are **internally consistent** — every stored metric is mathematically verifiable from the raw confusion matrices. However, there are **5 critical issues** and **4 important gaps** that must be resolved before the paper is publishable. The most severe issue is a **methodological flaw in the ensemble scorer training** that may inflate reported FGSM detection results; this must be addressed for the paper to survive peer review.
+
+---
+
+## 1. Metric Cross-Check (Automated Verification)
+
+All computed metrics verified by re-deriving from raw confusion matrix (TP/FP/FN/TN):
+
+| Attack | TPR | FPR | F1 | CI-TPR | CI-FPR | All Match? |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **FGSM** | 0.9267 | 0.0900 | 0.9190 | [0.8915, 0.9511] | [0.0626, 0.1278] | ✅ |
+| **PGD** | 1.0000 | 0.0900 | 0.9569 | [0.9874, 1.0000] | [0.0626, 0.1278] | ✅ |
+| **Square** | 0.7967 | 0.0900 | 0.8445 | [0.7475, 0.8383] | [0.0626, 0.1278] | ✅ |
+
+**Wilson 95% CIs** re-verified: ✅ All match stored values exactly.  
+**Per-tier FPR** (L1/L2/L3): ✅ All tier FPRs recomputed correctly from `clean_level_distribution`.  
+**ε value**: ✅ `eps_linf = 0.03137255 = 8/255` exactly (matches RobustBench standard).
+
+---
+
+## 2. Target Metric Compliance
+
+| Metric | Actual | Target | Status | Notes |
+|:---|:---:|:---:|:---:|:---|
+| FGSM TPR | 0.9267 | ≥ 0.90 | ✅ | CI lower bound 0.8915 — borderline |
+| PGD TPR | 1.0000 | ≥ 0.95 | ✅ | Perfect detection |
+| Square TPR | 0.7967 | ≥ 0.80 | ⚠️ **MISS** | CI [0.7475, 0.8383] — target is *not* in CI |
+| FPR (L1) | 0.0900 | ≤ 0.10 | ✅ | 9/300 margin |
+| FPR (L2) | 0.0133 | ≤ 0.03 | ✅ | Well within target |
+| FPR (L3) | 0.0033 | ≤ 0.005 | ✅ | Well within target |
+| Latency (mean) | 157.7 ms | ≤ 100 ms | ❌ **FAIL** | On GPU |
+| Latency (p95) | 203.8 ms | ≤ 150 ms | ❌ **FAIL** | On GPU |
+
+> [!CAUTION]
+> **Square Attack TPR is 0.7967 vs target ≥ 0.80.** The entire 95% confidence interval [0.7475, 0.8383] sits below or at 0.80. This is a **real metric failure**, not a statistical artifact. It cannot be reported as a pass.
+
+> [!CAUTION]
+> **Latency (157.7 ms mean, 203.8 ms p95) is failing on GPU.** The latency benchmark runs TDA on single samples sequentially — this is the dominant cost. If the paper claims real-time defense capability, this needs to be either: (a) fixed via batching/GPU-accelerated Ripser, or (b) the latency target must be dropped/renegotiated in the paper framing.
+
+---
+
+## 3. Critical Methodological Issues
+
+### 🔴 CRITICAL #1: Ensemble Training ε Mismatch
+
+**The ensemble scorer is trained with `fgsm_eps=0.03` (≈ 0.0300) but evaluated with `eps = 8/255 ≈ 0.0314`.**
+
+- `train_ensemble_scorer.py` default: `fgsm_eps = 0.03`
+- `run_evaluation_full.py` evaluation: `EPS_LINF_STANDARD = 8/255 = 0.03137`
+
+This is a **4.6% epsilon gap**. The ensemble's logistic component is trained to detect perturbations at ε=0.03 but tested at ε=0.0314. While this gap is small, for a research paper this *must* be consistent. The correct fix is to set `fgsm_eps = 8/255` in the training script, or explicitly justify why a different training epsilon is used (e.g., "we train on slightly smaller ε to ensure the detector generalizes").
+
+**Fix:** Change `fgsm_eps` default in `train_ensemble_scorer.py` from `0.03` to `8/255`, or add a clear justification in the paper.
+
+---
+
+### 🔴 CRITICAL #2: Ensemble Scorer Trains on Data From the Same Distribution as the Evaluator
+
+The ensemble logistic component is trained on **CIFAR-10 training images with FGSM/PGD attacks at ε=0.03** using a **ResNet-18 pretrained on ImageNet**. The final evaluation uses the same ResNet-18, same CIFAR-10 distribution, same attack type.
+
+This means **the logistic regression has been trained to specifically detect the feature signatures that this exact model/attack combination produces**. This is fine only if the paper explicitly frames PRISM as:
+- Model-specific (trained and tested on the same ResNet-18), OR
+- Makes a generalization claim with supporting experiments across multiple architectures
+
+> [!IMPORTANT]
+> **If the paper claims PRISM is "architecture-agnostic", you must show at least one experiment with a different backbone (e.g., ResNet-50, VGG-16, or a ViT).** Without this, the claim is unverifiable and will be flagged by reviewers.
+
+---
+
+### 🔴 CRITICAL #3: FPR Is Not Independent Across Attacks
+
+The identical FPR (0.0900) and identical `clean_level_distribution` across FGSM, PGD, and Square attacks reveals that **the same 300 clean images are being scored fresh for each attack evaluation** — but the FPR measurement is structurally redundant. 
+
+For a publishable paper, the **canonical FPR should be reported once** (measured once on the clean test split, not re-measured per attack). The current setup is not incorrect, but it overstates the diversity of evidence for the FPR claim.
+
+**More importantly:** The FPR CI [0.0626, 0.1278] is very wide at n=300. For a published paper, FPR requires higher statistical power. The L1 FPR of 0.0900 is within the CI of 0.1000, meaning it is not statistically distinguishable from a 10% false alarm rate. **At n=300 you cannot confidently rule out FPR > 10%.**
+
+**Fix:** Report FPR on the 2000-sample calibration validation split (which you already have: `val_scores.npy`). That gives n=2000, shrinking the CI to ~±1.5%.
+
+---
+
+### 🔴 CRITICAL #4: Logistic Regression Hyperparameter Not Justified
+
+The logistic regression uses `C=1.0` (default regularization). For a published paper, this must either be:
+1. Cross-validated on a held-out split, OR
+2. Justified theoretically (e.g., "we use L2 regularization with C=1 to prevent overfitting, as the feature space is known to be low-dimensional...")
+
+The current code has no cross-validation for `C`. This is a minor but citable methodological gap.
+
+---
+
+### 🟡 IMPORTANT #5: Composite Score Formula Is Ad-Hoc and Unstable
+
+The composite anomaly score in `ensemble_scorer.py` line 129:
+```python
+logit_score_scaled = (logit_score + 4.0) * (w_score / 8.0 + 1e-4)
+```
+
+This formula has two **hard-coded magic numbers** (`4.0` and `8.0`) that are not justified anywhere:
+- `4.0`: assumes the logit score is centered around −4 for clean samples
+- `8.0`: assumes the Wasserstein score is typically around 8 for normalization
+
+If the Wasserstein score distribution shifts (e.g., on a different dataset or model), these constants will cause the composite score to behave unpredictably. **This is not peer-review defensible without ablation showing these are robust choices.**
+
+**Fix:** Either derive these constants analytically from the calibration data, or replace the scaling with a proper Z-score normalization based on clean-score statistics.
+
+---
+
+## 4. Gaps vs. Publication Standard
+
+| Item | Status | Priority |
+|:---|:---:|:---:|
+| Sample size n=300 (paper standard is n≥500 for detection) | ⚠️ Low | High |
+| Missing CW (Carlini-Wagner L2) attack results | ❌ Missing | High |
+| Missing AutoAttack (gold standard benchmark) | ❌ Missing | High |
+| No cross-architecture experiment | ❌ Missing | High |
+| No comparison to baseline defenses | ❌ Missing | Medium |
+| Square TPR below target | ❌ FAIL | High |
+| Latency on GPU fails 100ms target | ❌ FAIL | Medium |
+| Ablation results not yet integrated (Phase 7 running) | ⏳ Pending | Medium |
+| Feature dimension inconsistency (doc says 36, code says 42) | ⚠️ Bug | Medium |
+
+---
+
+## 5. Feature Dimension Inconsistency (Code Bug)
+
+In `persistence_stats.py` line 20:
+```
+# These 6 scalars × 2 dims (H0, H1) × 3 layers = 36-dim feature vector.
+```
+But line 119 says `= 42-dim total` (adding Wasserstein distances separately).
+
+In `ensemble_scorer.py` line 86:
+```python
+return len(self.layer_names) * len(self.dims) * 6  # → 3 × 2 × 6 = 36
+```
+
+But `extract_feature_vector()` returns 6 features per (layer, dim) **including** the Wasserstein distance in position 0. So the actual vector is **36-dim**. The model's `n_features` property returns 36, but `ensemble_scorer.py` line 5 says "42-dimensional" in the docstring.
+
+The confusion between 36 and 42 runs throughout the codebase. This is a documentation bug that must be resolved — pick one number and make it consistent everywhere.
+
+---
+
+## 6. What Must Be Fixed Before Submission
+
+### Must Fix (Blockers)
+1. **Square TPR**: Needs to reach ≥ 0.80. Either tune the ensemble or report it honestly as a limitation. Do not claim it passes.
+2. **Epsilon consistency**: Set `fgsm_eps = 8/255` in `train_ensemble_scorer.py`.
+3. **FPR statistical power**: Report FPR on n=2000 validation split, not per-attack n=300.
+4. **Feature dimension doc**: Fix all references to 36 vs 42 consistently.
+
+### Should Fix (Peer Review Risks)
+5. **Magic numbers in composite score**: Document and justify the `(+4.0)` and `(/8.0)` constants.
+6. **Logistic C hyperparameter**: Add cross-validation or justification.
+7. **Add CW and AutoAttack results**: These are the standard evaluation benchmarks.
+8. **Scale n_test to ≥ 500**: Standard for NeurIPS/ICML/ICLR papers.
+
+### Paper Framing Fix Required
+9. **Architecture-agnostic claim**: Add at least one additional backbone experiment OR remove the "architecture-agnostic" claim from the paper abstract/contributions.
+
+---
+
+## 7. What Is Correct and Research-Grade
+
+✅ **Split conformal prediction protocol**: Rigorous. Cal/Val/Eval splits are correctly separated.  
+✅ **Wilson 95% CIs**: Correctly computed and stored for every metric.  
+✅ **Eval split isolation**: Test indices 8000–9999 never seen during profiling or calibration.  
+✅ **Ensemble training data**: Uses CIFAR-10 *training* set — zero test-set leakage.  
+✅ **Attack parameters**: ε=8/255, PGD with 40 steps — matches RobustBench standard.  
+✅ **All metrics recompute exactly from TP/FP/FN/TN**: No arithmetic errors.  
+✅ **Seed documented**: seed=42 reported in metadata for reproducibility.  
+✅ **Device documented**: `"device": "cuda"` in metadata.  
+
+---
+
+## 8. Recommended Next Steps (Priority Order)
+
+```
+1. IMMEDIATE  Fix fgsm_eps = 8/255, re-train ensemble, re-calibrate, re-evaluate
+2. IMMEDIATE  Report FPR on n=2000 validation split
+3. IMMEDIATE  Fix feature dim inconsistency (36 vs 42)
+4. BEFORE SUBMIT  Increase n_test to 500+ per attack on CamberCloud
+5. BEFORE SUBMIT  Add CW + AutoAttack evaluations
+6. BEFORE SUBMIT  Justify/remove Square TPR miss or improve detection
+7. BEFORE SUBMIT  Document composite score formula with ablation
+8. OPTIONAL   Add 1 non-ResNet experiment for architecture-agnostic claim
+```
+
