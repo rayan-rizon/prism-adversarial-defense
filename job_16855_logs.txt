@@ -1,0 +1,1 @@
+API error: code=15, message=Failed to issue sts to get logs: job status is not completed, failed, or running

@@ -37,6 +37,7 @@ try:
         CarliniL2Method,
         SquareAttack,
         HopSkipJump,
+        AutoAttack,
     )
     from art.estimators.classification import PyTorchClassifier
     ART_AVAILABLE = True
@@ -143,26 +144,17 @@ def run_evaluation(
     # --- Define attacks ---
     # CW excluded for n_test>=100: ~285s/sample on CPU → impractical.
     # Square is fast (score-based, no gradient) and complementary to white-box attacks.
-    if n_test >= 100:
-        attacks = {
-            'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),
-            'PGD': ProjectedGradientDescent(
-                classifier, eps=0.03, max_iter=40, eps_step=0.007
-            ),
-            'Square': SquareAttack(classifier, eps=0.05, max_iter=1000),
-        }
-        print(f"Note: CW excluded for n_test={n_test} (too slow on CPU).")
-    else:
-        attacks = {
-            'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),  # ε=0.03 (~8/255) standard benchmark
-            'PGD': ProjectedGradientDescent(
-                classifier, eps=0.03, max_iter=40, eps_step=0.007
-            ),
-            'CW': CarliniL2Method(
-                classifier, max_iter=100, confidence=0.0
-            ),
-            'Square': SquareAttack(classifier, eps=0.05, max_iter=1000),
-        }
+    attacks = {
+        'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),  # ε=0.03 (~8/255) standard benchmark
+        'PGD': ProjectedGradientDescent(
+            classifier, eps=0.03, max_iter=40, eps_step=0.007
+        ),
+        'CW': CarliniL2Method(
+            classifier, max_iter=100, confidence=0.0
+        ),
+        'Square': SquareAttack(classifier, eps=0.05, max_iter=1000),
+        'AutoAttack': AutoAttack(estimator=classifier, eps=8/255),
+    }
 
     # Filter attacks if a subset was requested
     if attacks_to_run is not None:

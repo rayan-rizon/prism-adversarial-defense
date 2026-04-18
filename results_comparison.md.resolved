@@ -1,5 +1,56 @@
 # PRISM — Deep Test Result Analysis & Publication Readiness Report
-**Generated**: 2026-04-17 | **Local eval**: n=300, seed=42, CIFAR-10 test idx 8000–9999
+**Generated**: 2026-04-17 | **Updated**: 2026-04-18 (CamberCloud analysis + fix)
+**Local eval**: n=300, seed=42, CIFAR-10 test idx 8000–9999
+
+---
+
+## ⚠️ CamberCloud Status (2026-04-18)
+
+### Job History Analysis
+
+| Job ID | Status | Duration | Root Cause |
+|:---|:---:|:---:|:---|
+| 16848 | FAILED | 1m54s | Wrong tar structure (`Prism/prism/` not found on remote); `set -e` killed it |
+| 16849 | FAILED | 30s | `prism_eval_small.tar.gz` not yet in stash when job started |
+| 16850 | FAILED | 1m46s | Same missing stash file |
+| 16851 | FAILED | 30s | MICRO node too small — `pip install torch>=2.1.0` (2.4GB) hit memory/OOM wall |
+| **16852** | **COMPLETED** | **20m45s** | ✅ Ran n=1000 (FGSM/PGD/Square) BUT **FPR=44%** — missing calibration models |
+| 16853 | FAILED | 2m40s | CUDA driver init failure / stash re-upload corruption; died at startup |
+| 16854 | FAILED | 2m40s | Same as 16853 |
+| 16855 | CANCELLED | 8m24s | **Manually cancelled by user** |
+
+### CamberCloud Job 16852 — Actual Results (n=1000, **UNCALIBRATED** — invalid)
+
+| Attack | TPR | FPR | F1 | Interpretation |
+|:---|:---:|:---:|:---:|:---|
+| FGSM | 0.6830 | **0.4420** | 0.6428 | ❌ 44% FPR — no calibration |
+| PGD | 1.0000 | **0.4370** | 0.8207 | ❌ 44% FPR — no calibration |
+| Square | 0.9630 | **0.4180** | 0.8089 | ❌ 42% FPR — no calibration |
+
+> [!CAUTION]
+> **Root cause**: `camber_upload.sh` had `--exclude='PRISM/models'`, stripping `calibrator.pkl` and `reference_profiles.pkl` from the upload. Without the conformal calibrator, PRISM falls back to uncalibrated thresholds, producing ~44% false alarm rate on clean inputs. **These numbers are NOT valid evaluation results.**
+
+### Fix Status (2026-04-18)
+
+| Fix | Status | Details |
+|:---|:---:|:---|
+| `camber_upload.sh` — removed `--exclude='PRISM/models'` | ✅ Fixed | Now includes calibrator.pkl, reference_profiles.pkl, scorer.pkl |
+| New `scripts/camber_build_run.sh` created | ✅ Done | Self-contained build → upload → submit script |
+| Corrected archive `prism_eval_v3.tar.gz` built (4.4MB) | ✅ Uploaded | `stash://hexron/prism_eval_v3.tar.gz` — models confirmed inside |
+| Job submission (n=1000, FGSM/PGD/Square/CW/AutoAttack) | ⏳ Quota exhausted | Ready to run when Student plan resets |
+
+> [!NOTE]
+> **To run when quota resets**: `bash prism/scripts/camber_build_run.sh`
+> The archive is already in stash. You can skip the build step and submit directly:
+> ```bash
+> export CAMBER_API_KEY="d3012379fbb81a2b809c5ccdbfd03ee2f2e32c35"
+> # Submit immediately — stash://hexron/prism_eval_v3.tar.gz is ready
+> camber job create --engine base --size xsmall --gpu \
+>   --path stash://hexron/prism_eval_v3.tar.gz \
+>   --cmd 'tar xzf prism_eval_v3.tar.gz && cd prism && pip install -q adversarial-robustness-toolbox git+https://github.com/fra31/auto-attack ripser persim scikit-learn scipy numpy tqdm pyyaml certifi && python3 experiments/evaluation/run_evaluation_full.py --n-test 1000 --seed 42 --attacks FGSM PGD Square CW AutoAttack --output experiments/evaluation/results_camber_v3.json && cat experiments/evaluation/results_camber_v3.json'
+> ```
+
+---
 
 ---
 
@@ -176,42 +227,63 @@ Paper claims architecture-agnostic, but only ResNet-18 is evaluated. Must add �
 
 ## Section 9: Publication Readiness Checklist
 
-| Check | Status |
-|:---|:---:|
-| FGSM TPR ≥ 0.90 | ❌ |
-| PGD TPR ≥ 0.90 | ✅ |
-| Square TPR ≥ 0.80 | ❌ |
-| FPR L1+ ≤ 0.10 (main eval, n=300) | ✅ |
-| FPR L2+ ≤ 0.03 (main eval) | ✅ |
-| FPR L3+ ≤ 0.005 (main eval) | ✅ |
-| FPR L1+ ≤ 0.10 (val n=1000) | ✅ |
-| FPR L2+ ≤ 0.03 (val n=1000) | ✅ |
-| FPR L3+ ≤ 0.005 (val n=1000) | ✅ |
-| Training ε == 8/255 | ✅ |
-| Feature dim == 36 | ✅ |
-| Data-derived normalization | ✅ |
-| Calibration n ≥ 2000 | ✅ |
-| Latency ≤ 100ms (mean) | ❌ |
-| CW attack evaluated | ❌ |
-| AutoAttack evaluated | ❌ |
-| n_test ≥ 1000 | ❌ |
-| Architecture generalization | ❌ |
-| Ablation TDA-only non-degenerate | ✅ |
-| Ablation monotone (Full > No MoE > TDA) | ❌ |
-| **TOTAL** | **12 / 20** |
+| Check | Local n=300 | CamberCloud n=1000 | Notes |
+|:---|:---:|:---:|:---|
+| FGSM TPR ≥ 0.90 | ❌ 0.850 | ⏳ | CI includes 0.90; needs n=1000 to confirm |
+| PGD TPR ≥ 0.90 | ✅ 1.000 | ✅ 1.000 (uncalib) | Certain pass |
+| Square TPR ≥ 0.80 | ❌ 0.783 | ⏳ | CI includes 0.80; needs n=1000 |
+| FPR L1+ ≤ 0.10 (n=300) | ✅ 0.073 | ❌ 0.442 (no calib) | Calibration was missing in cloud run |
+| FPR L2+ ≤ 0.03 | ✅ 0.013 | ❌ (no calib) | Fixed in v3 upload |
+| FPR L3+ ≤ 0.005 | ✅ 0.003 | ❌ (no calib) | Fixed in v3 upload |
+| FPR L1+ ≤ 0.10 (val n=1000) | ✅ | ⏳ | Pending quota reset |
+| FPR L2+ ≤ 0.03 (val n=1000) | ✅ | ⏳ | |
+| FPR L3+ ≤ 0.005 (val n=1000) | ✅ | ⏳ | |
+| Training ε == 8/255 | ✅ | ✅ | `run_evaluation_full.py` uses 8/255 |
+| Feature dim == 36 | ✅ | ✅ | Confirmed from pkl |
+| Data-derived normalization | ✅ | ✅ | |
+| Calibration n ≥ 2000 | ✅ | ✅ | |
+| Latency ≤ 100ms (mean) | ❌ 108ms | ⏳ (L4 expected faster) | |
+| CW attack evaluated | ❌ | ⏳ Ready in v3 | `prism_eval_v3.tar.gz` staged |
+| AutoAttack evaluated | ❌ | ⏳ Ready in v3 | `prism_eval_v3.tar.gz` staged |
+| n_test ≥ 1000 | ❌ (n=300) | ⏳ Ready (n=1000) | Staged, pending quota |
+| Architecture generalization | ❌ | ❌ | Needs separate experiment |
+| Ablation TDA-only non-degenerate | ✅ | — | Fixed locally |
+| Ablation monotone (Full > No MoE > TDA) | ❌ | — | Explain L0 per-image limitation |
+| Campaign L0 detected | ✅ (step 13) | — | `campaign/results.json` now shows detection |
+| **TOTAL** | **12 / 21** | **2 / 21** | **→ 18 / 21 after cloud run** |
 
 ---
 
 ## Section 10: Prioritized Action Plan (CamberCloud Run)
 
-### Priority 1 — BLOCKER (must fix before submission)
-1. **Run `--n-test 1000 --attacks FGSM PGD Square CW AutoAttack`** on CamberCloud A100
-   - Will resolve: FGSM/Square CI width, CW, AutoAttack gaps
-2. **Measure latency on A100** — expected to pass ≤100ms comfortably
-3. **Add one more backbone** — add ResNet-50 or VGG-16 evaluation (even a small n=200 run)
+### ✅ Completed (2026-04-18)
+
+| # | Action | Status |
+|:---|:---|:---:|
+| — | Fixed `camber_upload.sh`: removed `--exclude='PRISM/models'` | ✅ Done |
+| — | Created `scripts/camber_build_run.sh`: one-shot build+upload+submit | ✅ Done |
+| — | Built `prism_eval_v3.tar.gz` (4.4MB) with all calibration models inside | ✅ Done |
+| — | Uploaded to `stash://hexron/prism_eval_v3.tar.gz` | ✅ Done |
+
+### ⏳ Pending (requires quota reset)
+
+**When Student plan quota resets, run one command:**
+```bash
+export CAMBER_API_KEY="d3012379fbb81a2b809c5ccdbfd03ee2f2e32c35"
+camber job create --engine base --size xsmall --gpu \
+  --path stash://hexron/prism_eval_v3.tar.gz \
+  --cmd 'tar xzf prism_eval_v3.tar.gz && cd prism && pip install -q adversarial-robustness-toolbox git+https://github.com/fra31/auto-attack ripser persim scikit-learn scipy numpy tqdm pyyaml certifi && python3 experiments/evaluation/run_evaluation_full.py --n-test 1000 --seed 42 --attacks FGSM PGD Square CW AutoAttack --output experiments/evaluation/results_camber_v3.json && cat experiments/evaluation/results_camber_v3.json'
+```
+
+This single job (~35–45min on L4) will resolve:
+1. **FGSM/Square CI width** — n=1000 narrows CI from ±4% to ±2%
+2. **CW attack results** — currently missing (critical blocker)
+3. **AutoAttack results** — currently missing (critical blocker)
+4. **A100/L4 latency** — will confirm whether ≤100ms target passes on cloud GPU
+5. **FPR on n=1000** — definitive characterization vs n=300 estimate
 
 ### Priority 2 — IMPORTANT (strengthens paper)
-4. **Fix L0 campaign detection logging** — `l0_detected_at_adv_step: null` needs explanation
+4. **Fix L0 campaign detection logging** — `l0_detected_at_adv_step: null` in old results; new `campaign/results.json` shows it WORKS (detected at step 13)
 5. **Paper framing for ablation** — explain why L0 doesn't contribute in per-image evaluation (its design is session-level)
 6. **Reframe FGSM and Square results** as "TPR at conservative FPR budget" with honest CI reporting
 

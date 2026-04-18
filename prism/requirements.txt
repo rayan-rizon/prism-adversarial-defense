@@ -11,7 +11,7 @@ persim>=0.3.1
 
 # Adversarial evaluation
 adversarial-robustness-toolbox>=1.16.0
-autoattack>=0.1
+git+https://github.com/fra31/auto-attack
 robustbench>=1.1
 
 # Conformal prediction
