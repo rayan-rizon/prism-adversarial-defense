@@ -33,3 +33,6 @@ tmp_logs/
 # Testing
 .pytest_cache/
 .benchmarks/
+
+# Build artifacts
+prism/temp_cargo/
