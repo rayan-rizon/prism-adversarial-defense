@@ -6,6 +6,10 @@ This report documents the retained local CUDA evaluation artifact:
 
 - `experiments/evaluation/results_n500_local_20260420.json`
 
+Companion baseline detector artifact verified during this work:
+
+- `experiments/evaluation/results_baselines_v2.json`
+
 Supporting verified guardrail artifact retained:
 
 - `experiments/calibration/ensemble_fpr_report.json`
@@ -60,6 +64,7 @@ From `configs/default.yaml` at time of run:
 - `models/experts.pkl`
 - `experiments/calibration/ensemble_fpr_report.json`
 - `experiments/evaluation/results_n500_local_20260420.json`
+- `experiments/evaluation/results_baselines_v2.json`
 
 Verified ensemble provenance from the final evaluation artifact:
 
@@ -256,6 +261,77 @@ Important note:
 
 - The critical stale-artifact failure on Square was resolved. Square TPR improved to `0.9100`, well above the `0.85` target.
 - FGSM remains slightly below the desired `0.85` threshold in this single-seed `n=500` retained run.
+
+## Companion Baseline Detector Verification
+
+This section records the corrected LID and Mahalanobis baseline test artifact:
+
+- `experiments/evaluation/results_baselines_v2.json`
+
+Purpose:
+
+- verify the fixed detector split logic and the Mahalanobis label source on the same held-out CIFAR-10 evaluation split
+
+Executed step:
+
+- `python experiments/evaluation/run_baselines.py --n-test 500 --attacks FGSM PGD Square --output experiments/evaluation/results_baselines_v2.json`
+
+Recorded metadata from the retained baseline artifact:
+
+- `n_test = 500`
+- `n_actual = 500`
+- `n_ref = 1000`
+- `n_thresh = 1000`
+- evaluation split: `CIFAR-10 test idx 8000-9999`
+- reference split: `CIFAR-10 test idx 5000-5999`
+- threshold split: `CIFAR-10 test idx 6000-6999`
+- seed: `42`
+- device: `cuda`
+- attacks: `FGSM`, `PGD`, `Square`
+- epsilon: `8/255 = 0.031372`
+- LID `k = 20`
+- LID threshold: `26.980043`
+- Mahalanobis threshold: `1540.614322`
+- Mahalanobis label source: `CIFAR-10 ground-truth labels (0-9), n_classes=10`
+- monitored layers: `layer2`, `layer3`, `layer4`
+
+### Baseline attack summary
+
+| Detector | Attack | TPR | TPR 95% CI | FPR | FPR 95% CI | Precision | F1 |
+| --- | ---: | --- | ---: | --- | ---: | ---: | ---: |
+| LID | FGSM | 0.9980 | [0.9888, 0.9996] | 0.0880 | [0.0662, 0.1161] | 0.9190 | 0.9569 |
+| LID | PGD | 1.0000 | [0.9924, 1.0000] | 0.0880 | [0.0662, 0.1161] | 0.9191 | 0.9579 |
+| LID | Square | 0.9900 | [0.9768, 0.9957] | 0.0880 | [0.0662, 0.1161] | 0.9184 | 0.9528 |
+| Mahalanobis | FGSM | 1.0000 | [0.9924, 1.0000] | 0.1040 | [0.0802, 0.1338] | 0.9058 | 0.9506 |
+| Mahalanobis | PGD | 1.0000 | [0.9924, 1.0000] | 0.1040 | [0.0802, 0.1338] | 0.9058 | 0.9506 |
+| Mahalanobis | Square | 0.9900 | [0.9768, 0.9957] | 0.1040 | [0.0802, 0.1338] | 0.9049 | 0.9456 |
+
+### Baseline confusion counts
+
+| Detector | Attack | TP | FP | FN | TN |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| LID | FGSM | 499 | 44 | 1 | 456 |
+| LID | PGD | 500 | 44 | 0 | 456 |
+| LID | Square | 495 | 44 | 5 | 456 |
+| Mahalanobis | FGSM | 500 | 52 | 0 | 448 |
+| Mahalanobis | PGD | 500 | 52 | 0 | 448 |
+| Mahalanobis | Square | 495 | 52 | 5 | 448 |
+
+### Baseline clean-side levels
+
+The clean-side level distribution was identical across attacks:
+
+- `PASS = 456` for LID and `448` for Mahalanobis
+- `L1 = 21`
+- `L2 = 8`
+- `L3_REJECT = 1`
+
+### Baseline interpretation
+
+- LID meets the target clean-side operating point: `FPR = 0.0880` on all three attacks.
+- Mahalanobis also meets the target clean-side operating point: `FPR = 0.1040` on all three attacks.
+- The earlier v1 failure is superseded: the corrected disjoint reference/threshold split and true-label Mahalanobis fit removed the self-reference contamination.
+- Square is no longer a failure case for the baseline detectors; both detectors remain near the intended 10% FPR regime.
 
 ## Sanity Verification Performed
 

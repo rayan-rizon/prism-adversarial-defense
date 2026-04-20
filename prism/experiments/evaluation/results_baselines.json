@@ -1,0 +1,155 @@
+{
+  "LID": {
+    "FGSM": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "FPR": 1.0,
+      "FPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "Precision": 0.5,
+      "F1": 0.6667,
+      "TP": 500,
+      "FP": 500,
+      "FN": 0,
+      "TN": 0,
+      "n_adv": 500,
+      "n_clean": 500
+    },
+    "PGD": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "FPR": 1.0,
+      "FPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "Precision": 0.5,
+      "F1": 0.6667,
+      "TP": 500,
+      "FP": 500,
+      "FN": 0,
+      "TN": 0,
+      "n_adv": 500,
+      "n_clean": 500
+    },
+    "Square": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "FPR": 1.0,
+      "FPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "Precision": 0.5,
+      "F1": 0.6667,
+      "TP": 500,
+      "FP": 500,
+      "FN": 0,
+      "TN": 0,
+      "n_adv": 500,
+      "n_clean": 500
+    }
+  },
+  "Mahalanobis": {
+    "FGSM": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "FPR": 0.76,
+      "FPR_CI_95": [
+        0.7207,
+        0.7954
+      ],
+      "Precision": 0.5682,
+      "F1": 0.7246,
+      "TP": 500,
+      "FP": 380,
+      "FN": 0,
+      "TN": 120,
+      "n_adv": 500,
+      "n_clean": 500
+    },
+    "PGD": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9924,
+        1.0
+      ],
+      "FPR": 0.76,
+      "FPR_CI_95": [
+        0.7207,
+        0.7954
+      ],
+      "Precision": 0.5682,
+      "F1": 0.7246,
+      "TP": 500,
+      "FP": 380,
+      "FN": 0,
+      "TN": 120,
+      "n_adv": 500,
+      "n_clean": 500
+    },
+    "Square": {
+      "TPR": 0.998,
+      "TPR_CI_95": [
+        0.9888,
+        0.9996
+      ],
+      "FPR": 0.76,
+      "FPR_CI_95": [
+        0.7207,
+        0.7954
+      ],
+      "Precision": 0.5677,
+      "F1": 0.7237,
+      "TP": 499,
+      "FP": 380,
+      "FN": 1,
+      "TN": 120,
+      "n_adv": 500,
+      "n_clean": 500
+    }
+  },
+  "_meta": {
+    "n_test": 500,
+    "n_actual": 500,
+    "n_cal": 2000,
+    "eval_split": "CIFAR-10 test idx 8000-9999",
+    "cal_split": "CIFAR-10 test idx 5000-6999",
+    "seed": 42,
+    "device": "cuda",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square"
+    ],
+    "eps": 0.031373,
+    "lid_k": 20,
+    "lid_threshold": 0.827889,
+    "maha_threshold": 673.740776,
+    "maha_label_source": "backbone argmax pseudo-labels on clean calibration images",
+    "layer_names": [
+      "layer2",
+      "layer3",
+      "layer4"
+    ],
+    "elapsed_s": 354.9,
+    "references": {
+      "LID": "Ma et al., 2018. Characterizing Adversarial Subspaces Using Local Intrinsic Dimensionality. ICLR 2018.",
+      "Mahalanobis": "Lee et al., 2018. A Simple Unified Framework for Detecting Out-of-Distribution Samples and Adversarial Attacks. NeurIPS 2018."
+    }
+  }
+}

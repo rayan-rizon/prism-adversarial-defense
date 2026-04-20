@@ -1,0 +1,154 @@
+{
+  "AdaptivePGD_lambda_0.0": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9924,
+      1.0
+    ],
+    "FPR": 0.06,
+    "FPR_CI_95": [
+      0.0423,
+      0.0844
+    ],
+    "Precision": 0.9434,
+    "F1": 0.9709,
+    "TP": 500,
+    "FP": 30,
+    "FN": 0,
+    "TN": 470,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.06,
+      "FPR_L2_plus": 0.018,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 470,
+      "L1": 21,
+      "L2": 8,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 500
+    },
+    "lambda": 0.0,
+    "pgd_steps": 40,
+    "eps": 0.031373
+  },
+  "AdaptivePGD_lambda_1.0": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9924,
+      1.0
+    ],
+    "FPR": 0.06,
+    "FPR_CI_95": [
+      0.0423,
+      0.0844
+    ],
+    "Precision": 0.9434,
+    "F1": 0.9709,
+    "TP": 500,
+    "FP": 30,
+    "FN": 0,
+    "TN": 470,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.06,
+      "FPR_L2_plus": 0.018,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 470,
+      "L1": 21,
+      "L2": 8,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 500
+    },
+    "lambda": 1.0,
+    "pgd_steps": 40,
+    "eps": 0.031373
+  },
+  "AdaptivePGD_lambda_5.0": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9924,
+      1.0
+    ],
+    "FPR": 0.06,
+    "FPR_CI_95": [
+      0.0423,
+      0.0844
+    ],
+    "Precision": 0.9434,
+    "F1": 0.9709,
+    "TP": 500,
+    "FP": 30,
+    "FN": 0,
+    "TN": 470,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.06,
+      "FPR_L2_plus": 0.018,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 470,
+      "L1": 21,
+      "L2": 8,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 500
+    },
+    "lambda": 5.0,
+    "pgd_steps": 40,
+    "eps": 0.031373
+  },
+  "_meta": {
+    "n_test": 500,
+    "n_actual": 500,
+    "eval_split": "CIFAR-10 test idx 8000-9999",
+    "seed": 42,
+    "eps": 0.031373,
+    "eps_note": "8/255 standard",
+    "pgd_steps": 40,
+    "step_size": 0.007843,
+    "lambdas": [
+      0.0,
+      1.0,
+      5.0
+    ],
+    "device": "cuda",
+    "elapsed_s": 1185.1,
+    "attack_design": "BPDA adaptive PGD: combined loss = -CE + \u03bb * \u03a3_layer ||a_layer(x_adv) - a_layer(x_clean)||\u2082 / D_layer. \u03bb=0 is standard PGD. Reference: Athalye et al. 2018 (Obfuscated Gradients Give a False Sense of Security, ICML).",
+    "layer_names": [
+      "layer2",
+      "layer3",
+      "layer4"
+    ]
+  }
+}

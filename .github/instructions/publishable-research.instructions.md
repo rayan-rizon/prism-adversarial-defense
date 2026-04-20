@@ -1,4 +1,4 @@
-now---
+---
 description: "Use when writing or modifying PRISM experiments, evaluation scripts, paper sections, result summaries, or claims. Enforces publication-grade correctness, reproducibility, and no fabricated data."
 name: "PRISM Publishable Research Rules"
 applyTo:
