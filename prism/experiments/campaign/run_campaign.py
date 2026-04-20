@@ -20,10 +20,14 @@ from art.estimators.classification import PyTorchClassifier
 from src.prism import PRISM
 from src.tamsh.experts import TopologyAwareMoE
 from src.sacd.monitor import CampaignMonitor
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+)
 
-# ── Transforms ───────────────────────────────────────────────────────────────
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+# ── Transforms ─────────────────────────────────────────────────────────────────
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 
 class _NormalizedResNet(torch.nn.Module):
     def __init__(self, backbone):
@@ -38,7 +42,7 @@ _PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
 _NORM  = T.Normalize(_MEAN, _STD)
 
 
-def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
+def run_campaign_experiment(n_clean=50, n_adv=100, eps=EPS_LINF_STANDARD, seed=42):
     print(f"=== Real PRISM Campaign Detection ===")
     print(f"  n_clean={n_clean}, n_adv={n_adv}, eps={eps}\n")
 
@@ -52,9 +56,9 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
 
     prism = PRISM.from_saved(
         model=backbone,
-        layer_names=['layer2', 'layer3', 'layer4'],
-        layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
-        dim_weights=[0.5, 0.5],
+        layer_names=LAYER_NAMES,
+        layer_weights=LAYER_WEIGHTS,
+        dim_weights=DIM_WEIGHTS,
         calibrator_path='models/calibrator.pkl',
         profile_path='models/reference_profiles.pkl',
         # Calibrated BOCPD prior for CIFAR-10 clean scores (mean~4.6, std~1.1)
@@ -82,7 +86,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
         model=wrapped,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, 224, 224),
-        nb_classes=10,
+        nb_classes=1000,  # ResNet-18 ImageNet backbone has 1000 output classes
         clip_values=(0.0, 1.0),
     )
     fgsm = FastGradientMethod(art_clf, eps=eps)
@@ -179,5 +183,171 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=0.05, seed=42):
     return result
 
 
+def run_campaign_multitrial(
+    n_trials: int = 10,
+    seeds: list = None,
+    n_clean: int = 50,
+    n_adv: int = 100,
+    eps: float = EPS_LINF_STANDARD,
+    output_path: str = 'experiments/campaign/results_multitrial.json',
+):
+    """
+    Run run_campaign_experiment() over ≥10 independent random seeds and
+    report aggregated detection statistics suitable for publication.
+
+    Each trial is a fresh PRISM monitor seeing the same scenario
+    (n_clean clean images → n_adv FGSM adversarials) drawn from
+    independently-seeded random index subsets of the CIFAR-10 test set.
+
+    Reported statistics
+    -------------------
+    - detection_rate : fraction of trials where L0 fired during adversarial phase
+    - false_alarm_rate: fraction of trials where L0 fired during clean phase
+    - latency_mean_steps : mean adversarial steps before detection (detected trials only)
+    - latency_std_steps  : std dev (detected trials only)
+    - latency_CI_95      : [lo, hi] via t-distribution (n≥2) or [mean, mean] (n=1)
+    - P_detect_lt_20     : P(detection < 20 adversarial queries) across trials
+
+    Output format
+    -------------
+    {
+      "n_trials": ...,
+      "per_trial": { "0": {...}, ... },    # keyed by trial index
+      "aggregate": { ... },
+      "metadata": { ... }
+    }
+    """
+    from scipy import stats as _stats
+
+    if seeds is None:
+        seeds = list(range(n_trials))
+
+    print(f"\n{'='*65}")
+    print(f"Multi-trial campaign detection: n_trials={n_trials}")
+    print(f"n_clean={n_clean}, n_adv={n_adv}, eps={eps:.4f} ({eps*255:.1f}/255)")
+    print(f"{'='*65}\n")
+
+    per_trial = {}
+    detected_latencies = []   # steps before detection (detected trials only)
+    false_alarms = 0
+    detections = 0
+
+    for trial_idx, seed in enumerate(seeds[:n_trials]):
+        print(f"\n--- Trial {trial_idx+1}/{n_trials}  (seed={seed}) ---")
+        result = run_campaign_experiment(
+            n_clean=n_clean, n_adv=n_adv, eps=eps, seed=seed
+        )
+        per_trial[str(trial_idx)] = result
+
+        if result['false_alarm']:
+            false_alarms += 1
+
+        if result['l0_detected_at_adv_step'] is not None:
+            detections += 1
+            detected_latencies.append(result['l0_detected_at_adv_step'])
+
+    n_completed = len(seeds[:n_trials])
+    detection_rate = detections / max(n_completed, 1)
+    false_alarm_rate = false_alarms / max(n_completed, 1)
+
+    # ── Latency statistics (detected trials only) ─────────────────────────────
+    latency_stats = {}
+    if detected_latencies:
+        arr = np.array(detected_latencies)
+        lat_mean = float(arr.mean())
+        lat_std  = float(arr.std(ddof=1)) if len(arr) > 1 else 0.0
+        n_det = len(arr)
+        if n_det >= 2:
+            se = lat_std / np.sqrt(n_det)
+            t_crit = _stats.t.ppf(0.975, df=n_det - 1)
+            ci_lo = lat_mean - t_crit * se
+            ci_hi = lat_mean + t_crit * se
+        else:
+            ci_lo = ci_hi = lat_mean
+        p_lt_20 = float(np.mean(arr < 20))
+        latency_stats = {
+            'mean_steps': round(lat_mean, 2),
+            'std_steps':  round(lat_std, 2),
+            'CI_95':      [round(ci_lo, 2), round(ci_hi, 2)],
+            'median':     round(float(np.median(arr)), 2),
+            'min':        int(arr.min()),
+            'max':        int(arr.max()),
+            'P_lt_20_queries': round(p_lt_20, 4),
+            'n_detected': n_det,
+        }
+    else:
+        latency_stats = {
+            'mean_steps': None, 'std_steps': None, 'CI_95': None,
+            'P_lt_20_queries': 0.0, 'n_detected': 0,
+        }
+
+    aggregate = {
+        'detection_rate':   round(detection_rate, 4),
+        'false_alarm_rate': round(false_alarm_rate, 4),
+        'n_trials':         n_completed,
+        'n_detected':       detections,
+        'n_false_alarms':   false_alarms,
+        **latency_stats,
+    }
+
+    output = {
+        'n_trials':   n_completed,
+        'seeds':      seeds[:n_trials],
+        'per_trial':  per_trial,
+        'aggregate':  aggregate,
+        'metadata': {
+            'n_clean': n_clean,
+            'n_adv':   n_adv,
+            'eps':     round(eps, 6),
+            'eps_255': round(eps * 255, 2),
+        },
+    }
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2)
+    print(f"\nMulti-trial results saved → {output_path}")
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print(f"\n{'='*65}")
+    print(f"Detection rate:    {detection_rate:.2%}  ({detections}/{n_completed} trials)")
+    print(f"False alarm rate:  {false_alarm_rate:.2%}  ({false_alarms}/{n_completed} trials)")
+    if latency_stats.get('mean_steps') is not None:
+        print(f"Detection latency: {latency_stats['mean_steps']:.1f}±{latency_stats['std_steps']:.1f} steps  "
+              f"95%CI={latency_stats['CI_95']}")
+        print(f"P(detect < 20q):   {latency_stats['P_lt_20_queries']:.2%}")
+    print(f"{'='*65}")
+
+    return output
+
+
 if __name__ == '__main__':
-    run_campaign_experiment()
+    import argparse
+    parser = argparse.ArgumentParser(description="PRISM campaign detection experiment")
+    parser.add_argument('--n-clean',     type=int, default=50)
+    parser.add_argument('--n-adv',       type=int, default=100)
+    parser.add_argument('--eps',         type=float, default=EPS_LINF_STANDARD)
+    parser.add_argument('--seed',        type=int, default=42)
+    parser.add_argument('--multi-trial', action='store_true',
+                        help='Run over 10 seeds and aggregate (paper mode)')
+    parser.add_argument('--n-trials',    type=int, default=10)
+    parser.add_argument('--output',      default='experiments/campaign/results.json')
+    args = parser.parse_args()
+
+    if args.multi_trial:
+        multi_out = args.output.replace('.json', '_multitrial.json')
+        run_campaign_multitrial(
+            n_trials=args.n_trials,
+            seeds=list(range(args.n_trials)),
+            n_clean=args.n_clean,
+            n_adv=args.n_adv,
+            eps=args.eps,
+            output_path=multi_out,
+        )
+    else:
+        run_campaign_experiment(
+            n_clean=args.n_clean,
+            n_adv=args.n_adv,
+            eps=args.eps,
+            seed=args.seed,
+        )

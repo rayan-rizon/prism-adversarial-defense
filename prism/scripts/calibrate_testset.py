@@ -64,7 +64,7 @@ def calibrate_testset(
     print("\n=== Conformal Thresholds (fitted on test-cal split) ===")
     for level, threshold in thresholds.items():
         alpha = calibrator.alphas[level]
-        print(f"  {level:2s} (α={alpha:.3f}): threshold = {threshold:.6f}")
+        print(f"  {level:2s} (alpha={alpha:.3f}): threshold = {threshold:.6f}")
 
     # ── Verify guarantee on held-out validation split ─────────────────────────
     print("\n=== FPR Verification on Validation Split ===")

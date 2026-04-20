@@ -25,6 +25,21 @@ Standard attack parameters (matching RobustBench convention):
   Square : L∞, ε=8/255, 5000 queries
   AutoAttack: L∞, ε=8/255 (apgd-ce + apgd-t + fab + square)
 
+PIPELINE GATE
+-------------
+After any change to PersistenceEnsembleScorer, the feature vector, or the
+scorer code, you MUST re-run in order:
+  1. python scripts/train_ensemble_scorer.py
+  2. python scripts/calibrate_ensemble.py
+  3. python scripts/compute_ensemble_val_fpr.py
+  4. python experiments/evaluation/run_evaluation_full.py  (this script)
+Skipping steps 1-3 causes the silent regressions documented in
+results_n500_20260419.json (FGSM TPR 0.832->0.622) and
+results_n500_retrained_20260419.json (L2/L3 FPR targets violated).
+
+Local attacks only: FGSM, PGD, Square.
+CW and AutoAttack: remote-only (Thundercompute), after local targets pass.
+
 USAGE
 -----
   cd prism/
@@ -66,18 +81,18 @@ except ImportError:
 
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    EVAL_IDX,   # single source of truth -- do not redeclare below
+)
 
-# ── Constants (must match build_profile_testset.py) ───────────────────────────
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+# ── Constants ─────────────────────────────────────────────────────────────────
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 _PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
-
-# Standard L∞ perturbation budget: 8 pixels / 255 ≈ 0.0314
-EPS_LINF_STANDARD = 8 / 255   # ≈ 0.0314
-
-# Held-out evaluation split (MUST NOT overlap with profile / cal / val)
-EVAL_IDX = (8000, 10000)
+# EVAL_IDX is imported from src.config (configs/default.yaml splits.eval_idx).
 
 
 class _NormalizedResNet(torch.nn.Module):
@@ -160,11 +175,17 @@ def run_evaluation_full(
     output_path: str = 'experiments/evaluation/results_paper.json',
     attacks_to_run: list = None,
     seed: int = 42,
+    checkpoint_interval: int = 100,
+    device_str: str = None,
+    square_max_iter: int = 5000,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device_str is not None:
+        device = torch.device(device_str)
+    else:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     print(f"Evaluation: n_test={n_test}, "
           f"eval_split=test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]")
@@ -177,9 +198,9 @@ def run_evaluation_full(
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()
 
-    layer_names   = ['layer2', 'layer3', 'layer4']
-    layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
-    dim_weights   = [0.5, 0.5]
+    layer_names   = LAYER_NAMES
+    layer_weights = LAYER_WEIGHTS
+    dim_weights   = DIM_WEIGHTS
 
     # ── PRISM ──────────────────────────────────────────────────────────────────
     cal_path  = 'models/calibrator.pkl'
@@ -201,6 +222,20 @@ def run_evaluation_full(
         dim_weights=dim_weights,
         campaign_monitor=NoOpCampaignMonitor(),
     )
+
+    # ── Capture ensemble provenance for _meta (audit trail) ───────────────────
+    _ens_scorer = getattr(prism_base, 'scorer', None)
+    _ens_meta = {
+        'use_dct':          getattr(_ens_scorer, 'use_dct', None),
+        'training_attacks': getattr(_ens_scorer, 'training_attacks', None),
+        'training_n':       getattr(_ens_scorer, 'training_n', None),
+        'training_eps':     getattr(_ens_scorer, 'training_eps', None),
+        'n_features':       getattr(_ens_scorer, 'n_features', None),
+    }
+    print(f"Ensemble provenance: use_dct={_ens_meta['use_dct']}, "
+          f"training_attacks={_ens_meta['training_attacks']}, "
+          f"training_n={_ens_meta['training_n']}, "
+          f"n_features={_ens_meta['n_features']}")
 
     # ── ART classifier ─────────────────────────────────────────────────────────
     # NOTE: must be on the same device as the main model so CW / PGD
@@ -237,7 +272,7 @@ def run_evaluation_full(
             binary_search_steps=5, batch_size=64,
         ),
         'Square': lambda: SquareAttack(
-            classifier, eps=EPS_LINF_STANDARD, max_iter=5000, nb_restarts=1,
+            classifier, eps=EPS_LINF_STANDARD, max_iter=square_max_iter, nb_restarts=1,
         ),
     }
 
@@ -340,6 +375,17 @@ def run_evaluation_full(
             else:
                 fn += 1
 
+            if (j + 1) % checkpoint_interval == 0:
+                _n_adv = tp + fn
+                _n_clean = fp + tn
+                _tpr = tp / max(_n_adv, 1)
+                _fpr = fp / max(_n_clean, 1)
+                _prec = tp / max(tp + fp, 1)
+                _f1 = 2 * _prec * _tpr / max(_prec + _tpr, 1e-8)
+                print(f"\n  [Checkpoint {j+1}/{len(all_imgs_pixel)}] TPR={_tpr:.4f} "
+                      f"({'✅' if _tpr >= 0.88 else '❌' if _tpr < 0.70 else '⚠'}) | "
+                      f"FPR={_fpr:.4f} ({'✅' if _fpr <= 0.10 else '❌'}) | F1={_f1:.4f}")
+
         # Metrics
         n_adv   = tp + fn
         n_clean = fp + tn
@@ -409,6 +455,7 @@ def run_evaluation_full(
         'attacks':      attacks_to_run,
         'latency':      latency,
         'device':       str(device),
+        'ensemble':     _ens_meta,
     }
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -483,6 +530,140 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps):
     }
 
 
+def run_evaluation_multiseed(
+    seeds: list = None,
+    n_test: int = 1000,
+    data_root: str = './data',
+    output_path: str = 'experiments/evaluation/results_paper_multiseed.json',
+    attacks_to_run: list = None,
+    checkpoint_interval: int = 100,
+):
+    """
+    Run run_evaluation_full() over multiple seeds and aggregate statistics.
+
+    Different seeds sample different subsets of EVAL_IDX=(8000,10000) —
+    providing genuine variance estimates for paper reporting.
+
+    Each per-seed result is stored as-is; the aggregate reports mean±std
+    over seeds for TPR, FPR, and F1 per attack.  Wilson CI is also
+    pooled across seeds via the sum of TP/FP/FN/TN counts.
+
+    Output format
+    -------------
+    {
+      "seeds": [42, ...],
+      "per_seed": { "42": {...full single-seed result...}, ... },
+      "aggregate": {
+        "FGSM": {
+          "TPR_mean": ..., "TPR_std": ...,
+          "FPR_mean": ..., "FPR_std": ...,
+          "F1_mean":  ..., "F1_std":  ...,
+          "TPR_CI_95_pooled": [...],   # from pooled TP / n
+          "FPR_CI_95_pooled": [...],
+        },
+        ...
+      },
+      "metadata": { "n_test": ..., "eps": ..., "eval_split": ... }
+    }
+    """
+    if seeds is None:
+        seeds = [42, 123, 456, 789, 999]
+
+    attacks_to_run = attacks_to_run or ['FGSM', 'PGD', 'Square']
+
+    print(f"\n{'='*65}")
+    print(f"Multi-seed evaluation: seeds={seeds}")
+    print(f"n_test={n_test}, attacks={attacks_to_run}")
+    print(f"{'='*65}\n")
+
+    per_seed_results = {}
+    for seed in seeds:
+        print(f"\n{'─'*65}")
+        print(f"Running seed={seed}")
+        print(f"{'─'*65}")
+        # Each seed writes its own checkpoint file; we collect the return value.
+        seed_out = os.path.join(
+            os.path.dirname(output_path),
+            f"results_paper_seed{seed}.json",
+        )
+        result = run_evaluation_full(
+            n_test=n_test,
+            data_root=data_root,
+            output_path=seed_out,
+            attacks_to_run=attacks_to_run,
+            seed=seed,
+            checkpoint_interval=checkpoint_interval,
+        )
+        per_seed_results[str(seed)] = result
+
+    # ── Aggregate across seeds ────────────────────────────────────────────────
+    aggregate = {}
+    for atk in attacks_to_run:
+        tprs, fprs, f1s = [], [], []
+        pool_tp = pool_fp = pool_fn = pool_tn = 0
+
+        for seed_str, seed_res in per_seed_results.items():
+            atk_res = seed_res.get('attacks', {}).get(atk)
+            if atk_res is None:
+                continue
+            tprs.append(atk_res['TPR'])
+            fprs.append(atk_res['FPR'])
+            f1s.append(atk_res['F1'])
+            pool_tp += atk_res.get('TP', 0)
+            pool_fp += atk_res.get('FP', 0)
+            pool_fn += atk_res.get('FN', 0)
+            pool_tn += atk_res.get('TN', 0)
+
+        if not tprs:
+            continue
+
+        pool_n_adv   = pool_tp + pool_fn
+        pool_n_clean = pool_fp + pool_tn
+        aggregate[atk] = {
+            'TPR_mean':          round(float(np.mean(tprs)), 4),
+            'TPR_std':           round(float(np.std(tprs, ddof=1) if len(tprs) > 1 else 0.0), 4),
+            'FPR_mean':          round(float(np.mean(fprs)), 4),
+            'FPR_std':           round(float(np.std(fprs, ddof=1) if len(fprs) > 1 else 0.0), 4),
+            'F1_mean':           round(float(np.mean(f1s)),  4),
+            'F1_std':            round(float(np.std(f1s, ddof=1) if len(f1s) > 1 else 0.0),  4),
+            'TPR_CI_95_pooled':  [round(v, 4) for v in wilson_ci(pool_tp, pool_n_adv)],
+            'FPR_CI_95_pooled':  [round(v, 4) for v in wilson_ci(pool_fp, pool_n_clean)],
+            'n_seeds':           len(tprs),
+            'pool_TP': pool_tp, 'pool_FP': pool_fp,
+            'pool_FN': pool_fn, 'pool_TN': pool_tn,
+        }
+
+    multi_seed_output = {
+        'seeds':     seeds,
+        'per_seed':  per_seed_results,
+        'aggregate': aggregate,
+        'metadata': {
+            'n_test':      n_test,
+            'eps':         round(EPS_LINF_STANDARD, 6),
+            'eps_255':     round(EPS_LINF_STANDARD * 255, 2),
+            'eval_split':  list(EVAL_IDX),
+            'attacks':     attacks_to_run,
+        },
+    }
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(multi_seed_output, f, indent=2)
+    print(f"\nMulti-seed results saved → {output_path}")
+
+    # ── Print summary table ────────────────────────────────────────────────────
+    print(f"\n{'='*65}")
+    print(f"{'Attack':10} {'TPR mean±std':>20} {'FPR mean±std':>20} {'F1 mean±std':>20}")
+    print(f"{'─'*65}")
+    for atk, ag in aggregate.items():
+        print(f"{atk:10} {ag['TPR_mean']:.4f}±{ag['TPR_std']:.4f}"
+              f"  {ag['FPR_mean']:.4f}±{ag['FPR_std']:.4f}"
+              f"  {ag['F1_mean']:.4f}±{ag['F1_std']:.4f}")
+    print(f"{'='*65}")
+
+    return multi_seed_output
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="PRISM paper-quality evaluation")
@@ -493,11 +674,36 @@ if __name__ == '__main__':
                         default=['FGSM', 'PGD', 'Square'],
                         help='FGSM PGD CW Square AutoAttack')
     parser.add_argument('--seed',      type=int, default=42)
+    parser.add_argument('--checkpoint-interval', type=int, default=100,
+                        help='Interval for printing live metrics')
+    parser.add_argument('--device', default=None,
+                        help='Force device: cpu or cuda (default: auto-detect)')
+    parser.add_argument('--square-max-iter', type=int, default=5000,
+                        help='Max iterations for Square attack (default: 5000)')
+    parser.add_argument('--multi-seed', action='store_true',
+                        help='Run over 5 seeds and report mean±std (paper mode)')
+    parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
+                        help='Seeds to use with --multi-seed')
     args = parser.parse_args()
-    run_evaluation_full(
-        n_test=args.n_test,
-        data_root=args.data_root,
-        output_path=args.output,
-        attacks_to_run=args.attacks,
-        seed=args.seed,
-    )
+
+    if args.multi_seed:
+        multi_out = args.output.replace('.json', '_multiseed.json')
+        run_evaluation_multiseed(
+            seeds=args.seeds,
+            n_test=args.n_test,
+            data_root=args.data_root,
+            output_path=multi_out,
+            attacks_to_run=args.attacks,
+            checkpoint_interval=args.checkpoint_interval,
+        )
+    else:
+        run_evaluation_full(
+            n_test=args.n_test,
+            data_root=args.data_root,
+            output_path=args.output,
+            attacks_to_run=args.attacks,
+            seed=args.seed,
+            checkpoint_interval=args.checkpoint_interval,
+            device_str=args.device,
+            square_max_iter=args.square_max_iter,
+        )

@@ -66,14 +66,14 @@ class TestTopologicalProfiler:
 
     def test_compute_reference_medoid_returns_diagram(self):
         dgms = [self.profiler.compute_diagram(self._make_act()) for _ in range(10)]
-        medoid = self.profiler.compute_reference_medoid(dgms, dim=1)
+        medoid = self.profiler.compute_reference_medoid(dgms, dims=[0, 1], dim_weights=[0.5, 0.5])
         assert isinstance(medoid, list)
         assert len(medoid) >= 1
 
     def test_medoid_is_one_of_input_diagrams(self):
         """Medoid must be exactly one of the input diagrams (K-medoid)."""
         dgms = [self.profiler.compute_diagram(self._make_act()) for _ in range(8)]
-        medoid = self.profiler.compute_reference_medoid(dgms, dim=1)
+        medoid = self.profiler.compute_reference_medoid(dgms, dims=[0, 1], dim_weights=[0.5, 0.5])
         # Check identity: medoid H0 must match at least one input H0
         found = any(np.array_equal(medoid[0], d[0]) for d in dgms)
         assert found, "Medoid is not one of the input diagrams"
@@ -143,7 +143,9 @@ class TestTopologicalScorer:
         ref_profiles = {}
         for layer in layer_names:
             dgms = [profiler.compute_diagram(RNG.randn(80, 16)) for _ in range(5)]
-            ref_profiles[layer] = profiler.compute_reference_medoid(dgms, dim=1)
+            ref_profiles[layer] = profiler.compute_reference_medoid(
+                dgms, dims=[0, 1], dim_weights=[0.5, 0.5]
+            )
 
         self.scorer = TopologicalScorer(ref_profiles, layer_names)
         self.profiler = profiler

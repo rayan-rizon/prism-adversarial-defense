@@ -96,21 +96,35 @@ class TopologicalProfiler:
         return float(wasserstein_distance(dgm_a, dgm_b, order=order))
 
     def compute_reference_medoid(
-        self, diagrams_list: List[List[PersistenceDiagram]],
-        dim: int = 1
+        self,
+        diagrams_list: List[List[PersistenceDiagram]],
+        dims: Optional[List[int]] = None,
+        dim_weights: Optional[List[float]] = None,
     ) -> List[PersistenceDiagram]:
         """
         Select the medoid diagram from a collection — the diagram whose
-        mean Wasserstein distance to all others is minimized.
+        mean weighted Wasserstein distance to all others is minimized.
 
-        This fixes the plan's bug of storing all 10K raw diagrams
-        without computing a representative reference.
+        Medoid selection uses the SAME weighted multi-dimension criterion as
+        TopologicalScorer.score(), so the reference diagram is optimal with
+        respect to the actual scoring metric used at inference time.
+
+        Previously this function accepted a single ``dim: int = 1`` argument,
+        which caused a mismatch: the medoid was chosen to minimise H1 distance
+        only, while scoring aggregates H0 and H1 with equal weight.  This
+        inflated anomaly scores on clean inputs whose H0 topology deviated
+        from the H1-optimal medoid, degrading conformal calibration quality.
 
         Args:
             diagrams_list: List of N diagram sets, each being [H0, H1, ...].
-            dim: Which homology dimension to use for medoid selection.
+            dims: Homology dimensions to include in the distance criterion.
+                Defaults to all dimensions present in the first diagram.
+            dim_weights: Per-dimension weights (must sum to 1.0 if provided).
+                Defaults to uniform weighting across dims.
         Returns:
             The medoid diagram set [H0, H1, ...].
+        Raises:
+            ValueError: If diagrams_list is empty.
         """
         n = len(diagrams_list)
         if n == 0:
@@ -118,24 +132,42 @@ class TopologicalProfiler:
         if n == 1:
             return diagrams_list[0]
 
-        # For tractability, subsample if we have too many diagrams
+        # Resolve dims and weights from first diagram if not supplied
+        n_dims_available = len(diagrams_list[0])
+        if dims is None:
+            dims = list(range(n_dims_available))
+        if dim_weights is None:
+            dim_weights = [1.0 / len(dims)] * len(dims)
+        if len(dim_weights) != len(dims):
+            raise ValueError(
+                f"len(dim_weights)={len(dim_weights)} must match len(dims)={len(dims)}"
+            )
+        # Normalise weights to sum to 1
+        w_sum = sum(dim_weights)
+        if w_sum <= 0:
+            raise ValueError("dim_weights must sum to a positive value")
+        dim_weights = [w / w_sum for w in dim_weights]
+
+        # For tractability, subsample candidates when collection is large
         max_medoid_candidates = 200
         if n > max_medoid_candidates:
             indices = self.rng.choice(n, max_medoid_candidates, replace=False)
             candidates = [diagrams_list[i] for i in indices]
         else:
             candidates = diagrams_list
-            indices = list(range(n))
 
         nc = len(candidates)
 
-        # Compute pairwise Wasserstein distances on the target dimension
+        # Compute pairwise weighted Wasserstein distances across all dims
         dist_matrix = np.zeros((nc, nc))
         for i in range(nc):
             for j in range(i + 1, nc):
-                d = self.wasserstein_dist(
-                    candidates[i][dim], candidates[j][dim]
-                )
+                d = 0.0
+                for dim, w in zip(dims, dim_weights):
+                    if dim < len(candidates[i]) and dim < len(candidates[j]):
+                        d += w * self.wasserstein_dist(
+                            candidates[i][dim], candidates[j][dim]
+                        )
                 dist_matrix[i, j] = d
                 dist_matrix[j, i] = d
 

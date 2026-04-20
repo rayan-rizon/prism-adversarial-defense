@@ -9,15 +9,15 @@ model:
     - layer3
     - layer4
   layer_weights:
-    layer2: 0.15            # mid-level features, FGSM perturbation signal
+    layer2: 0.30            # mid-level features, FGSM perturbation signal
     layer3: 0.30            # intermediate semantic features
-    layer4: 0.55            # deep features, strongest adversarial signal
+    layer4: 0.40            # deep features, strongest adversarial signal
 
 tda:
   n_subsample: 200
   max_dim: 1
   n_reference: 50          # Number of medoid reference diagrams per layer
-  dim_weights: [0.5, 0.5]  # Equal H0/H1 weighting — best empirical result
+  dim_weights: [0.70, 0.30]  # H0 emphasis for single-step attacks
 
 conformal:
   alphas:
@@ -26,6 +26,19 @@ conformal:
     L3: 0.005              # 0.5% FPR — expert routing or rejection
   calibration_size: 5000
   validation_size: 5000
+  # Conservative per-level alpha multiplier applied at calibration time.
+  # Calibration thresholds are fitted with alpha * cal_alpha_factor, then
+  # verified on the val split against the published alpha (exchangeability
+  # slack buffer to absorb cal/val distribution shift).
+  cal_alpha_factor: 0.7    # 70% of published target (was 0.8 → tightened for L3)
+
+# CIFAR-10 test-set split indices — single source of truth.
+# ANY script that references these must import from src.config, never hardcode.
+splits:
+  profile_idx: [0, 5000]       # 5000 images: reference-profile medoids
+  cal_idx:     [5000, 7000]    # 2000 images: conformal threshold calibration
+  val_idx:     [7000, 8000]    # 1000 images: FPR verification (strict)
+  eval_idx:    [8000, 10000]   # 2000 images: held out, sampled per seed in multi-seed eval
 
 campaign:
   window_size: 100

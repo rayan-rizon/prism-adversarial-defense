@@ -1,4 +1,4 @@
-"""
+﻿"""
 Expert Sub-Network Training (Phase 4, Weeks 14-17)
 
 1. Loads clean persistence diagrams from the profiling phase
@@ -29,6 +29,7 @@ from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamsh.experts import ExpertSubNetwork
 from src.tamsh.gating import cluster_diagrams_by_topology
+from src.config import N_SUBSAMPLE, MAX_DIM
 
 
 def train_experts(
@@ -53,7 +54,7 @@ def train_experts(
 
     layer_names = ['layer2', 'layer3', 'layer4']
     extractor = ActivationExtractor(model, layer_names)
-    profiler = TopologicalProfiler(n_subsample=200, max_dim=1)
+    profiler = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
     # --- Load data ---
     transform = T.Compose([
@@ -85,7 +86,7 @@ def train_experts(
         dgms = profiler.compute_diagram(act_np)
         all_diagrams.append(dgms)
 
-        # Store activation pairs for training (layer3 → layer4)
+        # Store activation pairs for training (layer3 -> layer4)
         layer3_acts.append(acts['layer3'].cpu())
         layer4_acts.append(acts['layer4'].cpu())
 
@@ -123,12 +124,12 @@ def train_experts(
         print(f"  Cluster {c}: {count} samples")
 
     # --- Train expert per cluster ---
-    # Expert: layer3_flat → layer4_flat
+    # Expert: layer3_flat -> layer4_flat
     l3_shape = layer3_acts[0].squeeze(0).shape  # (C3, H3, W3)
     l4_shape = layer4_acts[0].squeeze(0).shape  # (C4, H4, W4)
     input_dim = int(np.prod(l3_shape))
     output_dim = int(np.prod(l4_shape))
-    print(f"\nExpert dimensions: {input_dim} → {output_dim}")
+    print(f"\nExpert dimensions: {input_dim} -> {output_dim}")
 
     experts = []
     for c in range(k):

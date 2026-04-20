@@ -82,7 +82,7 @@ def prism_instance(resnet_model):
     ref_profiles = {}
     for layer in layer_names:
         ref_profiles[layer] = profiler.compute_reference_medoid(
-            all_diagrams[layer], dim=1
+            all_diagrams[layer], dims=[0, 1], dim_weights=[0.5, 0.5]
         )
 
     # Build scorer + calibrate on these 30 images

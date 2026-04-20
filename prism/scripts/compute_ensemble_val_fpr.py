@@ -1,4 +1,4 @@
-"""
+﻿"""
 Compute Ensemble Val FPR — High-Statistical-Power FPR Report
 
 Scores the validation split (CIFAR-10 test idx 7000-7999, n=1000) through
@@ -32,14 +32,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
+from src.config import IMAGENET_MEAN, IMAGENET_STD, VAL_IDX, LAYER_WEIGHTS, DIM_WEIGHTS
 
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 _PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
-
-# Validation split: must not overlap with cal (5000-6999) or eval (8000-9999)
-VAL_IDX = (7000, 8000)  # 1000 images
+# VAL_IDX imported from src.config (configs/default.yaml splits.val_idx)
 
 
 def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple:
@@ -64,8 +63,8 @@ def compute_ensemble_val_fpr(
 
     # ── Load PRISM with ensemble scorer ───────────────────────────────────────
     layer_names   = ['layer2', 'layer3', 'layer4']
-    layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
-    dim_weights   = [0.5, 0.5]
+    layer_weights = LAYER_WEIGHTS
+    dim_weights   = DIM_WEIGHTS
 
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()

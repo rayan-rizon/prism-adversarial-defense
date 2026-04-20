@@ -22,9 +22,13 @@ os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
 ssl._create_default_https_context = ssl.create_default_context
 
 from src.prism import PRISM
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+)
 
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 
 _PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
 _NORM  = T.Normalize(_MEAN, _STD)
@@ -41,7 +45,7 @@ class _NormalizedResNet(torch.nn.Module):
         return self.backbone((x - self.mean) / self.std)
 
 
-def run_cifar100_test(n_clean=200, n_adv=200, eps=0.05, seed=42,
+def run_cifar100_test(n_clean=200, n_adv=200, eps=EPS_LINF_STANDARD, seed=42,
                       data_root='./data',
                       output_path='experiments/generalization/cifar100_results.json'):
 
@@ -57,9 +61,9 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=0.05, seed=42,
 
     prism = PRISM.from_saved(
         model=backbone,
-        layer_names=['layer2', 'layer3', 'layer4'],
-        layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
-        dim_weights=[0.5, 0.5],
+        layer_names=LAYER_NAMES,
+        layer_weights=LAYER_WEIGHTS,
+        dim_weights=DIM_WEIGHTS,
         calibrator_path='models/calibrator.pkl',
         profile_path='models/reference_profiles.pkl',
     )
@@ -86,7 +90,7 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=0.05, seed=42,
             model=wrapped,
             loss=torch.nn.CrossEntropyLoss(),
             input_shape=(3, 224, 224),
-            nb_classes=1000,  # ImageNet backbone (ResNet-18) has 1000 output classes
+            nb_classes=1000,  # ResNet-18 ImageNet backbone has 1000 output classes
             clip_values=(0.0, 1.0),
         )
         fgsm = FastGradientMethod(art_clf, eps=eps)
@@ -177,4 +181,4 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=0.05, seed=42,
 
 
 if __name__ == '__main__':
-    run_cifar100_test(n_clean=200, n_adv=200, eps=0.05)
+    run_cifar100_test(n_clean=200, n_adv=200, eps=EPS_LINF_STANDARD)

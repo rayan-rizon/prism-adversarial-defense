@@ -74,6 +74,7 @@ class PersistenceEnsembleScorer:
         training_eps: Optional[float] = None,
         training_attacks: Optional[List[str]] = None,
         training_n: Optional[int] = None,
+        use_dct: bool = False,
     ):
         """
         Args:
@@ -111,18 +112,22 @@ class PersistenceEnsembleScorer:
         self.training_eps = training_eps
         self.training_attacks = training_attacks or []
         self.training_n = training_n
+        self.use_dct = use_dct  # True when 37-dim DCT feature was used in training
 
     @property
     def n_features(self) -> int:
-        """Feature vector dimension: 6 stats x len(dims) x len(layer_names)."""
-        return len(self.layer_names) * len(self.dims) * 6
+        """Feature vector dimension: 6 stats × len(dims) × len(layer_names) [+ 1 DCT]."""
+        return len(self.layer_names) * len(self.dims) * 6 + (1 if self.use_dct else 0)
 
     def extract_features(
-        self, diagrams: Dict[str, List[PersistenceDiagram]]
+        self,
+        diagrams: Dict[str, List[PersistenceDiagram]],
+        image: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """Extract 36-dim feature vector from persistence diagrams."""
+        """Extract 36- or 37-dim feature vector. 37-dim when image is provided (DCT)."""
         ref = self.base_scorer.ref_profiles
-        return extract_feature_vector(diagrams, ref, self.layer_names, self.dims)
+        return extract_feature_vector(diagrams, ref, self.layer_names, self.dims,
+                                      image=image)
 
     def _normalise(self, x: np.ndarray) -> np.ndarray:
         """Z-score normalisation using training statistics."""
@@ -138,13 +143,22 @@ class PersistenceEnsembleScorer:
         logit = float(np.dot(self.logistic_weights, feat_norm) + self.logistic_bias)
         return float(1.0 / (1.0 + np.exp(-logit)))
 
-    def score(self, diagrams: Dict[str, List[PersistenceDiagram]]) -> float:
+    def score(
+        self,
+        diagrams: Dict[str, List[PersistenceDiagram]],
+        image: Optional[np.ndarray] = None,
+    ) -> float:
         """
         Compute composite anomaly score.
 
         Uses data-derived normalisation (logit_shift, w_score_mean) instead of
         hard-coded magic numbers, making the formula robust and reproducible.
 
+        Args:
+            diagrams: Persistence diagrams keyed by layer name.
+            image: Optional (C, H, W) float32 image (normalised). Required when
+                   use_dct=True; if omitted with use_dct=True, falls back to
+                   base Wasserstein score to avoid feature dimension mismatch.
         Returns:
             Scalar — higher means more likely adversarial.
             Falls back to base Wasserstein score if logistic is not fitted.
@@ -154,7 +168,10 @@ class PersistenceEnsembleScorer:
         if not self._logistic_fitted:
             return w_score
 
-        feat = self.extract_features(diagrams)
+        if self.use_dct and image is None:
+            return w_score  # safe fallback: logistic expects 37-dim but image missing
+
+        feat = self.extract_features(diagrams, image=image)
         logit_prob = self._logistic_prob(feat)
 
         # Convert probability to raw logit (unbounded)
@@ -276,6 +293,8 @@ class PersistenceEnsembleScorer:
             'training_eps': self.training_eps,
             'training_attacks': self.training_attacks,
             'training_n': self.training_n,
+            # Feature engineering flags
+            'use_dct': self.use_dct,
         }
         with open(path, 'wb') as f:
             pickle.dump(data, f)
@@ -301,6 +320,7 @@ class PersistenceEnsembleScorer:
             training_eps=data.get('training_eps'),
             training_attacks=data.get('training_attacks'),
             training_n=data.get('training_n'),
+            use_dct=data.get('use_dct', False),
         )
         scorer._logistic_fitted = data.get('_logistic_fitted', False)
         return scorer

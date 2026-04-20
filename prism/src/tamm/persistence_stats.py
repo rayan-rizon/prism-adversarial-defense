@@ -25,6 +25,12 @@ FGSM separation (validated in the audit: Wasserstein alone cannot).
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
+try:
+    from scipy.fft import dctn as _dctn
+    _SCIPY_AVAILABLE = True
+except ImportError:
+    _SCIPY_AVAILABLE = False
+
 from .tda import TopologicalProfiler, PersistenceDiagram
 
 
@@ -32,6 +38,35 @@ from .tda import TopologicalProfiler, PersistenceDiagram
 _ENTROPY_EPS = 1e-10
 # Features with persistence below this are considered noise (ripser artefacts)
 _BIRTH_THRESHOLD = 1e-6
+
+
+def compute_dct_energy(image: np.ndarray) -> float:
+    """
+    Compute log high-frequency DCT energy of an image.
+
+    Square attacks perturb pixel statistics more than latent topology; this
+    feature captures the high-frequency noise signature they leave in pixel
+    space, supplementing the 36 persistence statistics.
+
+    Args:
+        image: (C, H, W) float32 array (ImageNet-normalised or [0, 1]).
+    Returns:
+        log(\u03a3 high_freq_coeff\u00b2 + 1e-8) \u2014 scalar float.
+        Returns 0.0 if scipy is unavailable or image is None.
+    """
+    if not _SCIPY_AVAILABLE or image is None:
+        return 0.0
+    arr = np.asarray(image, dtype=np.float32)
+    if arr.ndim == 2:
+        arr = arr[np.newaxis]  # treat as single-channel
+    energy = 0.0
+    for c in range(arr.shape[0]):
+        coeffs = _dctn(arr[c], norm='ortho')
+        H, W = coeffs.shape
+        mask = np.ones_like(coeffs, dtype=bool)
+        mask[: H // 4, : W // 4] = False  # exclude low-frequency quadrant
+        energy += float(np.sum(coeffs[mask] ** 2))
+    return float(np.log(energy + 1e-8))
 
 
 def _persistence_stats(dgm: PersistenceDiagram,
@@ -113,23 +148,30 @@ def extract_feature_vector(
     ref_profiles: Dict[str, List[PersistenceDiagram]],
     layer_names: List[str],
     dims: List[int] = (0, 1),
+    image: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
-    Build the full 36-dimensional feature vector for one input:
-      6 stats x 2 dims x 3 layers = 36 features
-    Wasserstein distance is the first of the 6 stats per (layer, dim) block.
+    Build the 36- or 37-dimensional feature vector for one input.
+    Base: 6 stats \u00d7 2 dims \u00d7 3 layers = 36 features.
+    Optional 37th: log high-frequency DCT energy when *image* is provided.
 
-    Features are ordered: for each layer, for each dim:
+    The DCT feature captures pixel-space noise from gradient-free attacks
+    (Square) that leave weaker latent-topology signatures.
+
+    Features ordered: for each layer, for each dim:
       [wasserstein_dist, total_persistence, max_persistence,
        n_features, entropy, mean_persistence]
+    Then, if image is not None: [dct_energy].
 
     Args:
         diagrams: {layer: [H0, H1, ...]} for the current input.
         ref_profiles: {layer: [H0, H1, ...]} medoid reference profiles.
         layer_names: Ordered list of layers to include.
         dims: Which homology dimensions to include (default [0, 1]).
+        image: Optional (C, H, W) float32 image (normalised). When provided,
+               appends the DCT high-frequency energy as the 37th feature.
     Returns:
-        1-D float32 array of length len(layer_names) * len(dims) * 6.
+        1-D float32 array of length 36 (no image) or 37 (with image).
     """
     features = []
     for layer in layer_names:
@@ -154,6 +196,9 @@ def extract_feature_vector(
                 stats['entropy'],
                 stats['mean_persistence'],
             ])
+
+    if image is not None:
+        features.append(compute_dct_energy(image))
 
     return np.array(features, dtype=np.float32)
 

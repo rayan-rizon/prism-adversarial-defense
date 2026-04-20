@@ -52,12 +52,16 @@ except ImportError:
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor, CampaignMonitor
 from src.tamsh.experts import TopologyAwareMoE, ExpertSubNetwork
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+)
 
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 _PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
-EPS              = 8 / 255  # standard 8/255
+EPS              = EPS_LINF_STANDARD  # 8/255
 
 
 class _NormalizedResNet(torch.nn.Module):
@@ -106,9 +110,9 @@ def build_prism(cfg, model, device):
 
     prism = PRISM.from_saved(
         model=model,
-        layer_names=['layer2', 'layer3', 'layer4'],
-        layer_weights={'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55},
-        dim_weights=[0.5, 0.5],
+        layer_names=LAYER_NAMES,
+        layer_weights=LAYER_WEIGHTS,
+        dim_weights=DIM_WEIGHTS,
         calibrator_path=cal_path,
         profile_path=prof_path,
         ensemble_path=ens_path,
@@ -214,20 +218,306 @@ def write_markdown_paper(results: dict, attacks: list, outpath: str):
     print(f"Markdown saved → {outpath}")
 
 
+def run_ablation_multiseed(
+    seeds: list = None,
+    n: int = 500,
+    attacks_to_run: list = None,
+    data_root: str = './data',
+    output_dir: str = None,
+):
+    """
+    Run the full ablation over multiple random seeds and aggregate with
+    paired t-tests comparing each variant against "Full PRISM".
+
+    Why paired: same seed → same sample indices → same images seen by every
+    config variant in a given seed → genuine paired comparison.
+
+    Statistical note
+    ----------------
+    With n_seeds=5 (default) the paired t-test has ~30–60% power to detect
+    a 1-pp TPR delta at α=0.05 (Cohen's d ≈ 0.5, two-tailed).  Results
+    with p > 0.05 should be reported honestly as "not statistically
+    significant at the chosen sample size" — the components' value is
+    architectural (conformal guarantees, Bayesian temporal modeling),
+    not empirically dominant at n=5.
+
+    Output
+    ------
+    JSON: results_ablation_multiseed.json
+    MD:   results_ablation_multiseed.md
+    """
+    from scipy import stats as _stats
+
+    if seeds is None:
+        seeds = [42, 123, 456, 789, 999]
+    if attacks_to_run is None:
+        attacks_to_run = ['FGSM', 'PGD', 'Square']
+    if output_dir is None:
+        output_dir = os.path.dirname(os.path.abspath(__file__))
+
+    configs = {
+        'Full PRISM': {'use_ensemble': True,  'use_l0': True,  'use_moe': True,  'tda_only': False},
+        'No L0':      {'use_ensemble': True,  'use_l0': False, 'use_moe': True,  'tda_only': False},
+        'No MoE':     {'use_ensemble': True,  'use_l0': True,  'use_moe': False, 'tda_only': False},
+        'TDA only':   {'use_ensemble': False, 'use_l0': False, 'use_moe': False, 'tda_only': True},
+    }
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"\n{'='*65}")
+    print(f"Multi-seed ablation: seeds={seeds}")
+    print(f"n={n}, attacks={attacks_to_run}, device={device}")
+    print(f"{'='*65}\n")
+
+    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+    model = model.to(device).eval()
+
+    norm_cpu = _NormalizedResNet(
+        torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval()
+    ).eval()
+    art_clf = PyTorchClassifier(
+        model=norm_cpu,
+        loss=torch.nn.CrossEntropyLoss(),
+        input_shape=(3, 224, 224),
+        nb_classes=1000,   # ResNet-18 ImageNet backbone
+        clip_values=(0.0, 1.0),
+    )
+
+    attacks = {}
+    if 'FGSM' in attacks_to_run:
+        attacks['FGSM'] = FastGradientMethod(art_clf, eps=EPS)
+    if 'PGD' in attacks_to_run:
+        attacks['PGD'] = ProjectedGradientDescent(
+            art_clf, eps=EPS, eps_step=EPS/4, max_iter=40, num_random_init=1
+        )
+    if 'Square' in attacks_to_run:
+        attacks['Square'] = SquareAttack(art_clf, eps=EPS, max_iter=5000)
+
+    dataset = torchvision.datasets.CIFAR10(
+        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
+    )
+
+    # ── Collect per-seed results ───────────────────────────────────────────────
+    # Structure: per_seed[seed_str][config_name][attack_name] = {TPR, FPR, F1, ...}
+    per_seed = {}
+    for seed in seeds:
+        print(f"\n{'─'*65}")
+        print(f"Seed {seed}")
+        print(f"{'─'*65}")
+        rng = np.random.RandomState(seed)
+        eval_pool = list(range(8000, 10000))
+        sample_idx = rng.choice(eval_pool, min(n, len(eval_pool)), replace=False)
+
+        seed_results = {}
+        for config_name, cfg in configs.items():
+            print(f"\n  [{config_name}]")
+            seed_results[config_name] = evaluate_config(
+                config_name, cfg, model, art_clf, dataset,
+                sample_idx, device, attacks
+            )
+        per_seed[str(seed)] = seed_results
+
+    # ── Aggregate: mean ± std across seeds per config × attack ───────────────
+    aggregate = {}
+    for config_name in configs:
+        aggregate[config_name] = {}
+        for atk in attacks_to_run:
+            tprs = [per_seed[str(s)][config_name].get(atk, {}).get('TPR') for s in seeds]
+            fprs = [per_seed[str(s)][config_name].get(atk, {}).get('FPR') for s in seeds]
+            f1s  = [per_seed[str(s)][config_name].get(atk, {}).get('F1')  for s in seeds]
+            tprs = [v for v in tprs if v is not None]
+            fprs = [v for v in fprs if v is not None]
+            f1s  = [v for v in f1s  if v is not None]
+            if not tprs:
+                continue
+            aggregate[config_name][atk] = {
+                'TPR_mean': round(float(np.mean(tprs)), 4),
+                'TPR_std':  round(float(np.std(tprs, ddof=1) if len(tprs) > 1 else 0.0), 4),
+                'FPR_mean': round(float(np.mean(fprs)), 4),
+                'FPR_std':  round(float(np.std(fprs, ddof=1) if len(fprs) > 1 else 0.0), 4),
+                'F1_mean':  round(float(np.mean(f1s)),  4),
+                'F1_std':   round(float(np.std(f1s, ddof=1) if len(f1s) > 1 else 0.0),  4),
+            }
+        # mean over attacks
+        mean_tprs = [aggregate[config_name][a]['TPR_mean'] for a in attacks_to_run
+                     if a in aggregate[config_name]]
+        mean_fprs = [aggregate[config_name][a]['FPR_mean'] for a in attacks_to_run
+                     if a in aggregate[config_name]]
+        aggregate[config_name]['mean_TPR'] = round(float(np.mean(mean_tprs)), 4) if mean_tprs else 0.0
+        aggregate[config_name]['mean_FPR'] = round(float(np.mean(mean_fprs)), 4) if mean_fprs else 0.0
+
+    # ── Paired t-tests vs "Full PRISM" ────────────────────────────────────────
+    # Null hypothesis: variant TPR == Full PRISM TPR (paired, two-tailed)
+    # Cohen's d = mean(diff) / std(diff)   [paired variant]
+    statistical_tests = {}
+    ref_config = 'Full PRISM'
+    for config_name in configs:
+        if config_name == ref_config:
+            continue
+        statistical_tests[config_name] = {}
+        for atk in attacks_to_run:
+            ref_tprs = [per_seed[str(s)][ref_config].get(atk, {}).get('TPR') for s in seeds]
+            cmp_tprs = [per_seed[str(s)][config_name].get(atk, {}).get('TPR') for s in seeds]
+            ref_tprs = [v for v in ref_tprs if v is not None]
+            cmp_tprs = [v for v in cmp_tprs if v is not None]
+
+            n_pairs = min(len(ref_tprs), len(cmp_tprs))
+            if n_pairs < 2:
+                statistical_tests[config_name][atk] = {
+                    't_stat': None, 'p_value': None, 'cohens_d': None,
+                    'mean_delta': None, 'note': 'insufficient_data',
+                }
+                continue
+
+            ref_arr = np.array(ref_tprs[:n_pairs])
+            cmp_arr = np.array(cmp_tprs[:n_pairs])
+            diffs = ref_arr - cmp_arr  # positive = Full PRISM better
+
+            t_stat, p_value = _stats.ttest_rel(ref_arr, cmp_arr)
+            # Paired Cohen's d = mean(diff) / std(diff, ddof=1)
+            cohens_d = float(np.mean(diffs) / np.std(diffs, ddof=1)) if np.std(diffs, ddof=1) > 0 else 0.0
+
+            statistical_tests[config_name][atk] = {
+                't_stat':      round(float(t_stat), 4),
+                'p_value':     round(float(p_value), 4),
+                'cohens_d':    round(cohens_d, 4),
+                'mean_delta':  round(float(np.mean(diffs)), 4),
+                'significant': bool(p_value < 0.05),
+                'note': (
+                    'Full PRISM significantly better'  if p_value < 0.05 and np.mean(diffs) > 0 else
+                    'variant significantly better'      if p_value < 0.05 and np.mean(diffs) < 0 else
+                    'no significant difference'
+                ),
+            }
+
+    output = {
+        'seeds':             seeds,
+        'per_seed':          per_seed,
+        'aggregate':         aggregate,
+        'statistical_tests': statistical_tests,
+        'metadata': {
+            'n_per_seed':  n,
+            'attacks':     attacks_to_run,
+            'eps':         round(EPS, 6),
+            'eps_255':     round(EPS * 255, 2),
+            'eval_split':  [8000, 10000],
+            'reference':   ref_config,
+            'test':        'paired two-tailed t-test (scipy.stats.ttest_rel)',
+            'effect_size': "Cohen's d (paired)",
+        },
+    }
+
+    json_path = os.path.join(output_dir, 'results_ablation_multiseed.json')
+    md_path   = os.path.join(output_dir, 'results_ablation_multiseed.md')
+
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2)
+    print(f"\nJSON saved → {json_path}")
+
+    _write_markdown_multiseed(aggregate, statistical_tests, attacks_to_run, seeds, md_path)
+
+    # ── Print summary ─────────────────────────────────────────────────────────
+    print(f"\n{'='*65}")
+    print(f"{'Config':20} {'Mean TPR mean±std':>22} {'Mean FPR mean±std':>22}")
+    print(f"{'─'*65}")
+    for config_name in configs:
+        ag = aggregate.get(config_name, {})
+        tpr_vals = [ag.get(a, {}).get('TPR_mean', 0.0) for a in attacks_to_run if a in ag]
+        fpr_vals = [ag.get(a, {}).get('FPR_mean', 0.0) for a in attacks_to_run if a in ag]
+        tpr_stds = [ag.get(a, {}).get('TPR_std',  0.0) for a in attacks_to_run if a in ag]
+        fpr_stds = [ag.get(a, {}).get('FPR_std',  0.0) for a in attacks_to_run if a in ag]
+        if tpr_vals:
+            print(f"{config_name:20} {np.mean(tpr_vals):.4f}±{np.mean(tpr_stds):.4f}"
+                  f"  {np.mean(fpr_vals):.4f}±{np.mean(fpr_stds):.4f}")
+    print()
+    print("Paired t-test vs 'Full PRISM' (per attack):")
+    for config_name, atk_tests in statistical_tests.items():
+        for atk, test in atk_tests.items():
+            sig = '*' if test.get('significant') else ' '
+            p   = test.get('p_value')
+            d   = test.get('cohens_d')
+            delta = test.get('mean_delta')
+            if p is not None:
+                print(f"  {config_name:12} {atk:8} delta={delta:+.4f}  "
+                      f"p={p:.3f}{sig}  d={d:.3f}  [{test['note']}]")
+    print(f"{'='*65}")
+
+    return output
+
+
+def _write_markdown_multiseed(aggregate, statistical_tests, attacks, seeds, outpath):
+    """Write multi-seed ablation table with statistical annotations."""
+    lines = [
+        "# PRISM Ablation Study — Multi-Seed Results\n",
+        f"Seeds: {seeds}  |  Attacks: {', '.join(attacks)}  |  ε=8/255\n",
+        "_Values reported as mean ± std across seeds. "
+        "Statistical comparison vs 'Full PRISM' via paired two-tailed t-test._\n",
+    ]
+
+    for atk in attacks:
+        lines.append(f"\n## {atk} (ε={EPS:.4f}={EPS*255:.0f}/255)\n")
+        lines.append("| Configuration | TPR mean±std | FPR mean±std | F1 mean±std "
+                     "| Δ TPR vs Full | p-value | Cohen's d |")
+        lines.append("| :--- | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for config_name, cfg_agg in aggregate.items():
+            if atk not in cfg_agg:
+                continue
+            a = cfg_agg[atk]
+            tpr_cell = f"{a['TPR_mean']:.4f}±{a['TPR_std']:.4f}"
+            fpr_cell = f"{a['FPR_mean']:.4f}±{a['FPR_std']:.4f}"
+            f1_cell  = f"{a['F1_mean']:.4f}±{a['F1_std']:.4f}"
+
+            if config_name in statistical_tests and atk in statistical_tests[config_name]:
+                t = statistical_tests[config_name][atk]
+                delta = f"{t['mean_delta']:+.4f}" if t['mean_delta'] is not None else "—"
+                p     = f"{t['p_value']:.3f}{'*' if t.get('significant') else ''}" if t['p_value'] is not None else "—"
+                d     = f"{t['cohens_d']:.3f}" if t['cohens_d'] is not None else "—"
+            else:
+                delta, p, d = "(ref)", "—", "—"
+
+            lines.append(f"| {config_name} | {tpr_cell} | {fpr_cell} | {f1_cell} "
+                         f"| {delta} | {p} | {d} |")
+
+    lines.append("\n_* p < 0.05 (two-tailed paired t-test, n=seeds)_\n")
+    lines.append("_Cohen's d: |d| < 0.2 = negligible, 0.2-0.5 = small, > 0.5 = medium_\n")
+    lines.append("\n**Interpretation note**: Components with p > 0.05 provide "
+                 "formal guarantees (conformal FPR bounds, Bayesian temporal model) "
+                 "that are not captured by mean TPR alone.\n")
+
+    with open(outpath, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    print(f"Markdown saved → {outpath}")
+
+
+def main():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--n',         type=int, default=500,
                         help='Images per config per attack (default 500)')
     parser.add_argument('--fast',      action='store_true',
-                        help='n=50 quick sanity check')
+                        help='n=50 for a quick sanity check')
     parser.add_argument('--attacks',   nargs='+',
                         default=['FGSM', 'PGD', 'Square'])
     parser.add_argument('--data-root', default='./data')
+    parser.add_argument('--multi-seed', action='store_true',
+                        help='Run over 5 seeds and report mean±std + paired t-test (paper mode)')
+    parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
+                        help='Seeds to use with --multi-seed')
     args = parser.parse_args()
 
     n = 50 if args.fast else args.n
 
-    # ── Setup ────────────────────────────────────────────────────────────────
+    if args.multi_seed:
+        out_dir = os.path.dirname(os.path.abspath(__file__))
+        run_ablation_multiseed(
+            seeds=args.seeds,
+            n=n,
+            attacks_to_run=args.attacks,
+            data_root=args.data_root,
+            output_dir=out_dir,
+        )
+        return
+
+    # ── Single-seed run ───────────────────────────────────────────────────────
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     print(f"Ablation: n={n} per config, attacks={args.attacks}, ε=8/255")

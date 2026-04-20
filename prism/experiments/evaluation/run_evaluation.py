@@ -37,7 +37,6 @@ try:
         CarliniL2Method,
         SquareAttack,
         HopSkipJump,
-        AutoAttack,
     )
     from art.estimators.classification import PyTorchClassifier
     ART_AVAILABLE = True
@@ -49,10 +48,11 @@ except ImportError:
 from src.prism import PRISM
 from src.cadg.calibrate import ConformalCalibrator
 from src.sacd.monitor import NoOpCampaignMonitor
+from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD
 
-# Normalization constants — must match build_profile.py
-_MEAN = [0.485, 0.456, 0.406]
-_STD  = [0.229, 0.224, 0.225]
+# Normalization constants from src.config (backed by configs/default.yaml)
+_MEAN = IMAGENET_MEAN
+_STD  = IMAGENET_STD
 
 # Pixel-space transform for ART: [0,1]-valued tensors, clip_values correct
 _PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
@@ -101,9 +101,10 @@ def run_evaluation(
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()
 
-    layer_names = ['layer2', 'layer3', 'layer4']
-    layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
-    dim_weights = [0.5, 0.5]  # Equal H0/H1 weighting — best for mixed attack types
+    # Constants from configs/default.yaml via src.config
+    layer_names   = LAYER_NAMES
+    layer_weights = LAYER_WEIGHTS
+    dim_weights   = DIM_WEIGHTS
 
     # --- Load PRISM (requires pre-built profiles and calibrator) ---
     calibrator_path = 'models/calibrator.pkl'
@@ -129,31 +130,31 @@ def run_evaluation(
     # ART operates in pixel [0,1] space; _NormalizedResNet applies normalization
     # internally so the model receives correctly-normalized activations.
     # clip_values=(0.0, 1.0) is valid because inputs are pixel-space.
-    model_cpu = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval()
-    _wrapped_cpu = _NormalizedResNet(model_cpu)
-    _wrapped_cpu.eval()
+    model_art = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device).eval()
+    _wrapped_art = _NormalizedResNet(model_art).to(device).eval()
 
+    device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
-        model=_wrapped_cpu,
+        model=_wrapped_art,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, 224, 224),
         nb_classes=1000,  # ImageNet classes for ResNet-18
         clip_values=(0.0, 1.0),
+        device_type=device_type,
     )
 
     # --- Define attacks ---
     # CW excluded for n_test>=100: ~285s/sample on CPU → impractical.
     # Square is fast (score-based, no gradient) and complementary to white-box attacks.
     attacks = {
-        'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 0.03),  # ε=0.03 (~8/255) standard benchmark
+        'FGSM': FastGradientMethod(classifier, eps=_fgsm_eps_override or 8/255),  # ε≈8/255 standard benchmark
         'PGD': ProjectedGradientDescent(
-            classifier, eps=0.03, max_iter=40, eps_step=0.007
+            classifier, eps=8/255, max_iter=40, eps_step=2/255
         ),
         'CW': CarliniL2Method(
             classifier, max_iter=100, confidence=0.0
         ),
-        'Square': SquareAttack(classifier, eps=0.05, max_iter=1000),
-        'AutoAttack': AutoAttack(estimator=classifier, eps=8/255),
+        'Square': SquareAttack(classifier, eps=8/255, max_iter=1000),
     }
 
     # Filter attacks if a subset was requested
@@ -198,8 +199,10 @@ def run_evaluation(
         level_counts_clean = {}
         level_counts_adv = {}
 
-        n_samples = min(n_test, len(test_dataset))
-        sample_indices = rng.choice(len(test_dataset), n_samples, replace=False)
+        # Test split for evaluation is strictly 8000-9999 to prevent data leakage
+        n_samples = min(n_test, 2000)
+        eval_indices = list(range(8000, 10000))
+        sample_indices = rng.choice(eval_indices, n_samples, replace=False)
 
         for i in tqdm(sample_indices):
             img, label = test_dataset[int(i)]
@@ -330,8 +333,8 @@ if __name__ == '__main__':
     parser.add_argument('--data-root', default='./data')
     parser.add_argument('--output',   default='experiments/evaluation/results.json')
     parser.add_argument('--attacks',  nargs='+',
-                        default=['FGSM', 'PGD', 'CW', 'Square'],
-                        help='Attacks to run (default: FGSM PGD CW Square)')
+                        default=['FGSM', 'PGD', 'Square'],
+                        help='Attacks to run (default: FGSM PGD Square)')
     parser.add_argument('--sweep', action='store_true',
                         help='Run FGSM epsilon sweep instead of main eval')
     args = parser.parse_args()

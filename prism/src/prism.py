@@ -27,6 +27,7 @@ from .sacd.monitor import CampaignMonitor
 from .tamsh.experts import TopologyAwareMoE
 from .memory.immune_memory import ImmuneMemory
 from .federation import FederationManager
+from .config import N_SUBSAMPLE, MAX_DIM
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +48,8 @@ class PRISM:
         moe: Optional[TopologyAwareMoE] = None,
         memory: Optional[ImmuneMemory] = None,
         campaign_monitor: Optional[CampaignMonitor] = None,
-        tda_n_subsample: int = 200,
-        tda_max_dim: int = 1,
+        tda_n_subsample: int = N_SUBSAMPLE,
+        tda_max_dim: int = MAX_DIM,
         federation_manager: Optional[FederationManager] = None,
         layer_weights: Optional[Dict[str, float]] = None,
         dim_weights: Optional[List[float]] = None,
@@ -204,7 +205,11 @@ class PRISM:
             return self._execute_response(x, acts, diagrams, level, metadata)
 
         # --- Step 4: Compute anomaly score ---
-        score = self.scorer.score(diagrams)
+        if getattr(self.scorer, 'use_dct', False):
+            img_np = x.squeeze(0).cpu().numpy()
+            score = self.scorer.score(diagrams, image=img_np)
+        else:
+            score = self.scorer.score(diagrams)
         metadata['anomaly_score'] = score
         metadata['per_layer_scores'] = self.scorer.score_per_layer(diagrams)
 

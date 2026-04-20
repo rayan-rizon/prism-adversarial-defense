@@ -1,4 +1,4 @@
-"""
+﻿"""
 Build Topological Self-Profile (Phase 1, Week 3-5)
 
 Passes clean images through the model, collects per-layer persistence diagrams,
@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamm.scorer import TopologicalScorer
+from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, N_SUBSAMPLE, MAX_DIM, IMAGENET_MEAN, IMAGENET_STD
 
 
 def build_profile(
@@ -49,21 +50,19 @@ def build_profile(
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()
 
-    layer_names = ['layer2', 'layer3', 'layer4']
-    # layer2/3: mid-level features where FGSM perturbations create topological change
-    # layer4: high-level semantic distortion (PGD/iterative attacks)
-    # layer4 weighted highest — carries strongest adversarial signal for iterative attacks
-    layer_weights = {'layer2': 0.15, 'layer3': 0.30, 'layer4': 0.55}
-    dim_weights = [0.5, 0.5]  # Equal H0/H1 weighting — best empirical result for FGSM+PGD+Square
+    # Constants from configs/default.yaml via src.config
+    layer_names   = LAYER_NAMES
+    layer_weights = LAYER_WEIGHTS
+    dim_weights   = DIM_WEIGHTS
     extractor = ActivationExtractor(model, layer_names)
-    profiler = TopologicalProfiler(n_subsample=n_subsample, max_dim=1)
+    profiler = TopologicalProfiler(n_subsample=n_subsample, max_dim=MAX_DIM)
 
     # --- Setup data (CIFAR-10 resized to 224 for ResNet) ---
     # CRITICAL: these transforms must match exactly at inference time
     transform = T.Compose([
         T.Resize(224),
         T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
     dataset = torchvision.datasets.CIFAR10(
         root=data_root, train=True, download=True, transform=transform
@@ -92,8 +91,10 @@ def build_profile(
     ref_profiles = {}
     for layer_name in layer_names:
         print(f"  {layer_name}: computing medoid from {len(all_diagrams[layer_name])} diagrams...")
+        # Use same dims/weights as TopologicalScorer so medoid is optimal
+        # with respect to the actual scoring criterion (H0+H1, equal weight).
         medoid = profiler.compute_reference_medoid(
-            all_diagrams[layer_name], dim=1
+            all_diagrams[layer_name], dims=[0, 1], dim_weights=dim_weights
         )
         ref_profiles[layer_name] = medoid
         n_h0 = len(medoid[0]) if len(medoid) > 0 else 0
