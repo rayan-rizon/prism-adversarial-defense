@@ -39,6 +39,7 @@ from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     IMAGENET_MEAN, IMAGENET_STD,
     CAL_IDX, VAL_IDX, CONFORMAL_ALPHAS, CAL_ALPHA_FACTOR,
+    TIER_CAL_ALPHA_FACTORS,
     N_SUBSAMPLE, MAX_DIM,
 )
 
@@ -59,7 +60,11 @@ def calibrate_ensemble(
     print(f"Device: {device}")
     print(f"Cal split:  test idx {CAL_IDX[0]}-{CAL_IDX[1]-1}  (n={CAL_IDX[1]-CAL_IDX[0]})")
     print(f"Val split:  test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}  (n={VAL_IDX[1]-VAL_IDX[0]})")
-    print(f"Cal alpha factor: {CAL_ALPHA_FACTOR:.2f} x published targets")
+    print(f"Cal alpha factor (scalar fallback): {CAL_ALPHA_FACTOR:.2f} x published targets")
+    print(
+        "Per-tier cal alpha factors: "
+        + ", ".join(f"{k}={v:.2f}" for k, v in TIER_CAL_ALPHA_FACTORS.items())
+    )
 
     if not os.path.exists(ensemble_path):
         print(f"ERROR: {ensemble_path} not found. Run scripts/train_ensemble_scorer.py first.")
@@ -110,17 +115,25 @@ def calibrate_ensemble(
     cal_scores = get_ensemble_scores(CAL_IDX, 'calibration')
     val_scores = get_ensemble_scores(VAL_IDX, 'validation')
 
-    # --- Calibrate with conservative alphas (CAL_ALPHA_FACTOR of published) ---
-    # Published targets:    L1=10 %,  L2=3 %,    L3=0.5 %
-    # Calibration factor:   configs/default.yaml -> conformal.cal_alpha_factor
-    #                       (default 0.7 -> L1=7 %, L2=2.1 %, L3=0.35 %)
+    # --- Calibrate with per-tier conservative alphas ---
+    # Published targets:        L1=10 %,  L2=3 %,   L3=0.5 %
+    # Per-tier factors (YAML):  configs/default.yaml -> conformal.tier_cal_alpha_factors
+    #                           current: {L1: 0.70, L2: 0.70, L3: 0.50}
+    #                           -> cal alphas: L1=7.0 %, L2=2.1 %, L3=0.25 %
     #
-    # The previous 0.8 factor let L3 FPR=0.008 slip past the 0.005 target in
-    # results_n500_planA.json.  0.7 brings L3 into compliance at the cost of
-    # ~1-2 pp TPR.  Threshold is computed at 70% but verified against the
-    # published alpha, so the conformal guarantee holds.
+    # Why per-tier, not a single global factor:
+    # The n=1000 5-seed run showed L3 FPR=0.0072 vs 0.005 target (3/5 seeds
+    # breach), while L1/L2 passed with ~35 % headroom. The L3 tail is sparse
+    # (≈7 clean cal samples at the 99.65 pct), so an identical cal→eval rank
+    # shift costs L3 disproportionately more absolute FPR. Tightening only L3
+    # closes the gap without eroding L1/L2 TPR. Thresholds are still verified
+    # on the val split against the published alphas, so the conformal
+    # guarantee holds on the reported targets.
     pub_targets = dict(CONFORMAL_ALPHAS)
-    cal_targets = {k: v * CAL_ALPHA_FACTOR for k, v in pub_targets.items()}
+    cal_targets = {
+        k: pub_targets[k] * TIER_CAL_ALPHA_FACTORS.get(k, CAL_ALPHA_FACTOR)
+        for k in pub_targets
+    }
 
     calibrator = ConformalCalibrator(alphas=pub_targets)
     # Pass cal_targets explicitly -> stored in calibrator.calibration_alphas
@@ -153,10 +166,10 @@ def calibrate_ensemble(
     if all_passed:
         print("\n  [OK] All ensemble FPR guarantees verified on val split.")
     else:
-        factor_hint = round(CAL_ALPHA_FACTOR - 0.05, 2)
-        print(f"\n  [WARN] Some guarantees still violated. "
-              f"Lower conformal.cal_alpha_factor in configs/default.yaml "
-              f"from {CAL_ALPHA_FACTOR:.2f} to {factor_hint:.2f} and rerun.")
+        print("\n  [WARN] Some guarantees still violated. "
+              "Lower conformal.tier_cal_alpha_factors[<failing tier>] in "
+              "configs/default.yaml by ~0.05 and rerun. Current values: "
+              + ", ".join(f"{k}={v:.2f}" for k, v in TIER_CAL_ALPHA_FACTORS.items()))
 
     # --- Save ---
     with open(output_path, 'wb') as f:
