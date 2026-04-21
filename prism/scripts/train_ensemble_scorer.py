@@ -43,8 +43,8 @@ Skipping any step invalidates the FPR guarantee.
 
 USAGE
 -----
-  cd prism/
-  python scripts/train_ensemble_scorer.py [--n-train 2100] [--fast]
+    cd prism/
+    python scripts/train_ensemble_scorer.py --n-train 3000 --fgsm-oversample 1.5
 """
 import torch
 import torchvision
@@ -325,7 +325,7 @@ def train_ensemble_scorer(
         base_scorer=base_scorer,
         layer_names=LAYER_NAMES,
         dims=DIMS,
-        alpha=0.5,
+        alpha=0.4,
         use_dct=True,
         use_grad_norm=use_grad_norm,
     )

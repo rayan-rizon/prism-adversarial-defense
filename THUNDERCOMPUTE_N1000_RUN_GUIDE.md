@@ -5,13 +5,15 @@ instance, including CW, AutoAttack, strengthened adaptive attack, ablation, base
 cross-dataset generalization, and campaign detection.
 
 **Canonical local baseline:** `prism/experiments/evaluation/run_report_n500_local_20260420.md`
-(multi-seed pooled n=500; FGSM TPR 0.832, latency 103-145 ms — both need improvement).
+(retained single-seed n=500 CUDA run from 2026-04-21; FGSM TPR 0.844, PGD 1.000, Square 0.924, latency 73.68 ms).
 
 **Workflow lock (must match local validated run):**
-- scorer training: `python scripts/train_ensemble_scorer.py --n-train 2100 --fgsm-oversample 1.5`
+- scorer training: `python scripts/train_ensemble_scorer.py --n-train 3000 --fgsm-oversample 1.5`
+- ensemble blend: `alpha=0.4` in `scripts/train_ensemble_scorer.py`
 - scorer features: `n_features=37` (`use_grad_norm=False`)
+- TDA subsample: `n_subsample=150`
 - calibration: `cal_alpha_factor=0.7`
-- local reference artifact: `prism/experiments/evaluation/results_n500_fgsm_boosted_20260420.json`
+- local reference artifact: `prism/experiments/evaluation/results_n500_optimized_20260421.json`
 
 ---
 
@@ -63,7 +65,7 @@ mkdir -p logs
 
 These changes are already committed in the Phase A implementation:
 
-1. **`scripts/train_ensemble_scorer.py`** — `--fgsm-oversample 1.5` flag added.
+1. **`scripts/train_ensemble_scorer.py`** — run with `--n-train 3000 --fgsm-oversample 1.5`; retained local run also uses `alpha=0.4`.
 2. **`src/cadg/ensemble_scorer.py`** — logger hygiene and canonical 37-feature scorer path.
 3. **`experiments/evaluation/run_adaptive_pgd.py`** — `--through-scorer` flag with
   differentiable DCT energy matching term.
@@ -90,10 +92,10 @@ echo "B1 exit: $?"
 
 # B2. Retrain ensemble scorer with FGSM oversampling (canonical 37-feature path).
 #     Builds models/ensemble_scorer.pkl
-#     n_train=2100 -> FGSM:900, PGD:600, Square:600 (fgsm_oversample=1.5)
+#     n_train=3000 -> FGSM:1285, PGD:857, Square:858 (fgsm_oversample=1.5)
 #     Time: ~20-30 min on A100
 python scripts/train_ensemble_scorer.py \
-  --n-train 2100 \
+  --n-train 3000 \
   --fgsm-oversample 1.5 \
   2>&1 | tee logs/B2_train_ensemble.log
 echo "B2 exit: $?"
@@ -319,7 +321,7 @@ The run is accepted for paper reporting only if **all** of the following hold:
 | 11 | `sanity_checks.py` exits cleanly after run | B5 log |
 | 12 | All JSON artifacts reproducible from logged `logs/` commands; no manual editing | audit |
 
-**If criterion 2 (FGSM CI lower bound) still fails after --fgsm-oversample 1.5:**
+**If criterion 2 (FGSM CI lower bound) still fails after the retained local config (`n_train=3000`, `fgsm_oversample=1.5`, `alpha=0.4`, `n_subsample=150`):**
 - Option A: Increase `--fgsm-oversample` to 2.0 and re-run from Phase B.
 - Option B (last resort): Lower `L1 alpha` from 0.10 to 0.12 in `configs/default.yaml`
   (trades FPR for TPR — must be clearly disclosed in the paper).
@@ -338,7 +340,7 @@ model:
   layer_names: [layer2, layer3, layer4]
   layer_weights: {layer2: 0.30, layer3: 0.30, layer4: 0.40}
 tda:
-  n_subsample: 200     # or 128 if latency fix is chosen
+  n_subsample: 150
   max_dim: 1
   dim_weights: [0.70, 0.30]
 conformal:

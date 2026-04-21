@@ -14,7 +14,7 @@ model:
     layer4: 0.40            # deep features, strongest adversarial signal
 
 tda:
-  n_subsample: 200
+  n_subsample: 150
   max_dim: 1
   n_reference: 50          # Number of medoid reference diagrams per layer
   dim_weights: [0.70, 0.30]  # H0 emphasis for single-step attacks

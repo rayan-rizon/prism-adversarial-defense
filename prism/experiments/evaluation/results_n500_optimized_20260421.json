@@ -1,25 +1,25 @@
 {
   "FGSM": {
-    "TPR": 0.842,
+    "TPR": 0.844,
     "TPR_CI_95": [
-      0.8074,
-      0.8713
+      0.8096,
+      0.8732
     ],
-    "FPR": 0.054,
+    "FPR": 0.062,
     "FPR_CI_95": [
-      0.0374,
-      0.0774
+      0.044,
+      0.0867
     ],
-    "Precision": 0.9397,
-    "F1": 0.8882,
-    "TP": 421,
-    "FP": 27,
-    "FN": 79,
-    "TN": 473,
+    "Precision": 0.9316,
+    "F1": 0.8856,
+    "TP": 422,
+    "FP": 31,
+    "FN": 78,
+    "TN": 469,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.054,
+      "FPR_L1_plus": 0.062,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -30,16 +30,16 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 473,
-      "L1": 18,
+      "PASS": 469,
+      "L1": 22,
       "L2": 8,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 244,
-      "L2": 100,
-      "L1": 77,
-      "PASS": 79
+      "L3_REJECT": 281,
+      "L2": 83,
+      "L1": 58,
+      "PASS": 78
     }
   },
   "PGD": {
@@ -48,21 +48,21 @@
       0.9924,
       1.0
     ],
-    "FPR": 0.054,
+    "FPR": 0.062,
     "FPR_CI_95": [
-      0.0374,
-      0.0774
+      0.044,
+      0.0867
     ],
-    "Precision": 0.9488,
-    "F1": 0.9737,
+    "Precision": 0.9416,
+    "F1": 0.9699,
     "TP": 500,
-    "FP": 27,
+    "FP": 31,
     "FN": 0,
-    "TN": 473,
+    "TN": 469,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.054,
+      "FPR_L1_plus": 0.062,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -73,8 +73,8 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 473,
-      "L1": 18,
+      "PASS": 469,
+      "L1": 22,
       "L2": 8,
       "L3_REJECT": 1
     },
@@ -83,26 +83,26 @@
     }
   },
   "Square": {
-    "TPR": 0.916,
+    "TPR": 0.924,
     "TPR_CI_95": [
-      0.8884,
-      0.9373
+      0.8974,
+      0.9441
     ],
-    "FPR": 0.054,
+    "FPR": 0.062,
     "FPR_CI_95": [
-      0.0374,
-      0.0774
+      0.044,
+      0.0867
     ],
-    "Precision": 0.9443,
-    "F1": 0.9299,
-    "TP": 458,
-    "FP": 27,
-    "FN": 42,
-    "TN": 473,
+    "Precision": 0.9371,
+    "F1": 0.9305,
+    "TP": 462,
+    "FP": 31,
+    "FN": 38,
+    "TN": 469,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.054,
+      "FPR_L1_plus": 0.062,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -113,16 +113,16 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 473,
-      "L1": 18,
+      "PASS": 469,
+      "L1": 22,
       "L2": 8,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 349,
-      "L2": 48,
-      "L1": 61,
-      "PASS": 42
+      "L3_REJECT": 366,
+      "L1": 44,
+      "PASS": 38,
+      "L2": 52
     }
   },
   "_meta": {
@@ -138,15 +138,15 @@
       "Square"
     ],
     "latency": {
-      "mean_ms": 116.4,
-      "std_ms": 23.49,
-      "min_ms": 82.58,
-      "max_ms": 310.52,
-      "p50_ms": 112.0,
-      "p95_ms": 154.24,
+      "mean_ms": 73.68,
+      "std_ms": 20.65,
+      "min_ms": 55.15,
+      "max_ms": 294.62,
+      "p50_ms": 70.04,
+      "p95_ms": 101.13,
       "n": 200,
       "target_ms": 100,
-      "pass": false
+      "pass": true
     },
     "device": "cuda",
     "ensemble": {
@@ -156,7 +156,7 @@
         "PGD",
         "Square"
       ],
-      "training_n": 2100,
+      "training_n": 3000,
       "training_eps": 0.03137254901960784,
       "n_features": 37
     }

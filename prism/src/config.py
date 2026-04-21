@@ -59,7 +59,7 @@ def _get_defaults() -> dict:
                 'layer_weights': {'layer2': 0.30, 'layer3': 0.30, 'layer4': 0.40},
             },
             'tda': {
-                'n_subsample': 200,
+                'n_subsample': 150,
                 'max_dim':     1,
                 'dim_weights': [0.70, 0.30],
             },
