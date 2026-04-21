@@ -63,7 +63,7 @@ mkdir -p logs
 
 ## 2. Phase A — Code changes (apply before any run)
 
-These changes are already committed in the Phase A implementation:
+These Phase A changes must be present in your checkout before running:
 
 1. **`scripts/train_ensemble_scorer.py`** — run with `--n-train 3000 --fgsm-oversample 1.5`; retained local run also uses `alpha=0.4`.
 2. **`src/cadg/ensemble_scorer.py`** — logger hygiene and canonical 37-feature scorer path.
@@ -74,6 +74,24 @@ Canonical training/evaluation path for this guide uses **no grad-norm feature**
 (`n_features=37`, `use_grad_norm=False`).
 
 > If running on a fresh checkout without the Phase A commits, apply those changes first.
+
+### Phase A preflight verification (required)
+
+```bash
+# Record exact revision used for the run report
+git rev-parse HEAD
+
+# Verify locked scorer defaults and alpha=0.4 are present in source
+grep -n "default=3000" scripts/train_ensemble_scorer.py
+grep -n "default=1.5" scripts/train_ensemble_scorer.py
+grep -n "alpha=0.4" scripts/train_ensemble_scorer.py
+
+# Verify locked TDA/calibration config
+grep -n "n_subsample: 150" configs/default.yaml
+grep -n "cal_alpha_factor: 0.7" configs/default.yaml
+```
+
+If any preflight check does not match, stop and fix code/config before Phase B.
 
 ---
 

@@ -382,13 +382,12 @@ def train_ensemble_scorer(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--n-train',   type=int,   default=2100,
-                        help='Total adversarial samples. Default 2100.')
+    parser.add_argument('--n-train',   type=int,   default=3000,
+                        help='Total adversarial samples. Default 3000.')
     parser.add_argument('--fgsm-eps',  type=float, default=8/255,
                         help='L-inf epsilon. Must match EPS_LINF_STANDARD=8/255.')
-    parser.add_argument('--fgsm-oversample', type=float, default=1.0,
+    parser.add_argument('--fgsm-oversample', type=float, default=1.5,
                         help='Relative FGSM weight in the training mix. '
-                             'Default 1.0 = equal 1/3 split. '
                              '1.5 = FGSM gets 37.5%% (recommended for FGSM TPR gap).')
     parser.add_argument('--use-grad-norm', action='store_true',
                         help='Append input-gradient L2 norm as 38th feature. '
