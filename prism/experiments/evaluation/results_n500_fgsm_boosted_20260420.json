@@ -1,25 +1,25 @@
 {
-  "AdaptivePGD_lambda_0.0": {
-    "TPR": 1.0,
+  "FGSM": {
+    "TPR": 0.842,
     "TPR_CI_95": [
-      0.9924,
-      1.0
+      0.8074,
+      0.8713
     ],
-    "FPR": 0.06,
+    "FPR": 0.054,
     "FPR_CI_95": [
-      0.0423,
-      0.0844
+      0.0374,
+      0.0774
     ],
-    "Precision": 0.9434,
-    "F1": 0.9709,
-    "TP": 500,
-    "FP": 30,
-    "FN": 0,
-    "TN": 470,
+    "Precision": 0.9397,
+    "F1": 0.8882,
+    "TP": 421,
+    "FP": 27,
+    "FN": 79,
+    "TN": 473,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.06,
+      "FPR_L1_plus": 0.054,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -30,39 +30,39 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 470,
-      "L1": 21,
+      "PASS": 473,
+      "L1": 18,
       "L2": 8,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 500
-    },
-    "lambda": 0.0,
-    "pgd_steps": 40,
-    "eps": 0.031373
+      "L3_REJECT": 244,
+      "L2": 100,
+      "L1": 77,
+      "PASS": 79
+    }
   },
-  "AdaptivePGD_lambda_1.0": {
+  "PGD": {
     "TPR": 1.0,
     "TPR_CI_95": [
       0.9924,
       1.0
     ],
-    "FPR": 0.06,
+    "FPR": 0.054,
     "FPR_CI_95": [
-      0.0423,
-      0.0844
+      0.0374,
+      0.0774
     ],
-    "Precision": 0.9434,
-    "F1": 0.9709,
+    "Precision": 0.9488,
+    "F1": 0.9737,
     "TP": 500,
-    "FP": 30,
+    "FP": 27,
     "FN": 0,
-    "TN": 470,
+    "TN": 473,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.06,
+      "FPR_L1_plus": 0.054,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -73,39 +73,36 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 470,
-      "L1": 21,
+      "PASS": 473,
+      "L1": 18,
       "L2": 8,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
       "L3_REJECT": 500
-    },
-    "lambda": 1.0,
-    "pgd_steps": 40,
-    "eps": 0.031373
+    }
   },
-  "AdaptivePGD_lambda_5.0": {
-    "TPR": 1.0,
+  "Square": {
+    "TPR": 0.916,
     "TPR_CI_95": [
-      0.9924,
-      1.0
+      0.8884,
+      0.9373
     ],
-    "FPR": 0.06,
+    "FPR": 0.054,
     "FPR_CI_95": [
-      0.0423,
-      0.0844
+      0.0374,
+      0.0774
     ],
-    "Precision": 0.9434,
-    "F1": 0.9709,
-    "TP": 500,
-    "FP": 30,
-    "FN": 0,
-    "TN": 470,
+    "Precision": 0.9443,
+    "F1": 0.9299,
+    "TP": 458,
+    "FP": 27,
+    "FN": 42,
+    "TN": 473,
     "n_adv": 500,
     "n_clean": 500,
     "per_tier_fpr": {
-      "FPR_L1_plus": 0.06,
+      "FPR_L1_plus": 0.054,
       "FPR_L2_plus": 0.018,
       "FPR_L3_plus": 0.002,
       "target_L1": 0.1,
@@ -116,39 +113,52 @@
       "pass_L3": true
     },
     "clean_level_distribution": {
-      "PASS": 470,
-      "L1": 21,
+      "PASS": 473,
+      "L1": 18,
       "L2": 8,
       "L3_REJECT": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 500
-    },
-    "lambda": 5.0,
-    "pgd_steps": 40,
-    "eps": 0.031373
+      "L3_REJECT": 349,
+      "L2": 48,
+      "L1": 61,
+      "PASS": 42
+    }
   },
   "_meta": {
     "n_test": 500,
     "n_actual": 500,
     "eval_split": "CIFAR-10 test idx 8000-9999",
     "seed": 42,
-    "eps": 0.031373,
-    "eps_note": "8/255 standard",
-    "pgd_steps": 40,
-    "step_size": 0.007843,
-    "lambdas": [
-      0.0,
-      1.0,
-      5.0
+    "eps_linf": 0.03137254901960784,
+    "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square"
     ],
+    "latency": {
+      "mean_ms": 116.4,
+      "std_ms": 23.49,
+      "min_ms": 82.58,
+      "max_ms": 310.52,
+      "p50_ms": 112.0,
+      "p95_ms": 154.24,
+      "n": 200,
+      "target_ms": 100,
+      "pass": false
+    },
     "device": "cuda",
-    "elapsed_s": 1185.1,
-    "attack_design": "BPDA adaptive PGD: combined loss = -CE + \u03bb * \u03a3_layer ||a_layer(x_adv) - a_layer(x_clean)||\u2082 / D_layer. \u03bb=0 is standard PGD. Reference: Athalye et al. 2018 (Obfuscated Gradients Give a False Sense of Security, ICML).",
-    "layer_names": [
-      "layer2",
-      "layer3",
-      "layer4"
-    ]
+    "ensemble": {
+      "use_dct": true,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square"
+      ],
+      "training_n": 2100,
+      "training_eps": 0.03137254901960784,
+      "n_features": 37
+    }
   }
 }

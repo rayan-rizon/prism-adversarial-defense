@@ -102,14 +102,39 @@ class _NormalizedResNet(torch.nn.Module):
         return self._model((x - self._mean) / self._std)
 
 
+def compute_input_grad_norm(model: torch.nn.Module,
+                            x_norm: torch.Tensor,
+                            device: str) -> float:
+    """
+    Compute L2 norm of the gradient of the predicted-class logit w.r.t. the input.
+
+    Single-step attacks (FGSM) align the perturbation with this gradient, so its
+    magnitude is a cheap discriminator: FGSM adversarials tend to have a larger
+    gradient norm than clean inputs at the same manifold point.
+
+    Uses torch.autograd.grad to avoid accumulating model parameter gradients.
+    Requires one extra forward pass per sample (~5ms on GPU).
+    """
+    x_g = x_norm.detach().clone().to(device).requires_grad_(True)
+    with torch.enable_grad():
+        logits = model(x_g)
+        pred_idx = int(logits.argmax(1).item())
+        (grad_x,) = torch.autograd.grad(logits[0, pred_idx], x_g)
+    return float(grad_x.norm().item())
+
+
 def _extract_features(dataset_indices, dataset, model, extractor, profiler,
                       scorer, ref_profiles, device, art_attack=None,
-                      label='clean', n_max=None):
+                      label='clean', n_max=None, use_grad_norm=False):
     """
-    Extract 37-dim persistence+DCT feature vectors AND base Wasserstein scores.
+    Extract feature vectors AND base Wasserstein scores.
+
+    Feature dimension:
+      37 = 36 persistence + 1 DCT energy (use_grad_norm=False)
+      38 = 36 persistence + 1 DCT + 1 grad_norm (use_grad_norm=True)
 
     Returns:
-        features: (N, 37) float32 feature matrix (36 persistence + 1 DCT energy)
+        features: (N, d) float32 feature matrix
         w_scores:  (N,) float32 base Wasserstein composite scores
     """
     features = []
@@ -126,13 +151,13 @@ def _extract_features(dataset_indices, dataset, model, extractor, profiler,
             try:
                 x_adv_np = art_attack.generate(x_np)
                 img_tensor = _NORMALIZE(torch.tensor(x_adv_np[0]))
-                img_for_dct = torch.tensor(x_adv_np[0])  # (C, H, W) adversarial, [0,1]
+                img_for_dct = torch.tensor(x_adv_np[0])
             except Exception:
                 img_tensor = _NORMALIZE(img_pixel)
-                img_for_dct = img_pixel  # fallback to clean
+                img_for_dct = img_pixel
         else:
             img_tensor = _NORMALIZE(img_pixel)
-            img_for_dct = img_pixel  # (C, H, W) clean image, [0,1]
+            img_for_dct = img_pixel
 
         x = img_tensor.unsqueeze(0).to(device)
         acts = extractor.extract(x)
@@ -141,37 +166,55 @@ def _extract_features(dataset_indices, dataset, model, extractor, profiler,
             act_np = acts[layer].squeeze(0).cpu().numpy()
             dgms[layer] = profiler.compute_diagram(act_np)
 
-        feat    = extract_feature_vector(dgms, ref_profiles, LAYER_NAMES, list(DIMS),
-                                         image=img_for_dct.numpy() if hasattr(img_for_dct, 'numpy') else img_for_dct)
-        w_score = scorer.score(dgms)   # base Wasserstein composite score
+        gn = compute_input_grad_norm(model, x, device) if use_grad_norm else None
+
+        feat = extract_feature_vector(
+            dgms, ref_profiles, LAYER_NAMES, list(DIMS),
+            image=img_for_dct.numpy() if hasattr(img_for_dct, 'numpy') else img_for_dct,
+            grad_norm=gn,
+        )
+        w_score = scorer.score(dgms)
 
         features.append(feat)
         w_scores.append(w_score)
 
     if features:
         return np.stack(features, axis=0), np.array(w_scores, dtype=np.float32)
-    n_feat = 37  # 36 persistence stats + 1 DCT energy feature
+    n_feat = 38 if use_grad_norm else 37
     return np.zeros((0, n_feat), dtype=np.float32), np.zeros(0, dtype=np.float32)
 
 
 def train_ensemble_scorer(
     n_train: int = 2100,
-    fgsm_eps: float = EPS_LINF_STANDARD,   # 8/255 -- matches evaluation eps
+    fgsm_eps: float = EPS_LINF_STANDARD,
+    fgsm_oversample: float = 1.0,
+    use_grad_norm: bool = False,
     data_root: str = './data',
     output_path: str = 'models/ensemble_scorer.pkl',
     calibrator_path: str = 'models/calibrator.pkl',
     profile_path: str = 'models/reference_profiles.pkl',
     device: str = None,
 ):
+    """
+    Args:
+        fgsm_oversample: Relative weight of FGSM in the adversarial training mix.
+            Default 1.0 → equal tri-split (~1/3 each).
+            1.5 → FGSM gets 1.5/(1.5+1+1)=37.5% of budget; helps FGSM TPR.
+        use_grad_norm: If True, append input-gradient L2 norm as 38th feature.
+            Adds ~5ms latency per inference; requires retraining after change.
+    """
     if not ART_AVAILABLE:
         print("ERROR: adversarial-robustness-toolbox not installed.")
         print("  pip install adversarial-robustness-toolbox")
         sys.exit(1)
 
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+    total_weight = fgsm_oversample + 1.0 + 1.0
     print(f"Device: {device}")
     print(f"Training ensemble scorer: n_train={n_train}, eps={fgsm_eps:.6f} (= 8/255 = {8/255:.6f})")
-    print(f"Adversarial mix: ~1/3 FGSM + ~1/3 PGD + ~1/3 Square (all at eps=8/255)")
+    print(f"Adversarial mix: fgsm_oversample={fgsm_oversample} "
+          f"(FGSM:{fgsm_oversample/total_weight:.1%} PGD:{1/total_weight:.1%} "
+          f"Square:{1/total_weight:.1%})")
 
     # -- Load pre-built components ------------------------------------------------
     if not os.path.exists(profile_path):
@@ -232,34 +275,38 @@ def train_ensemble_scorer(
     print(f"\nExtracting {n_train} clean feature vectors...")
     X_clean, W_clean = _extract_features(
         clean_idx, pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=None, label='clean'
+        base_scorer, ref_profiles, device, art_attack=None, label='clean',
+        use_grad_norm=use_grad_norm,
     )
 
-    # Tri-split adversarial budget: ~1/3 FGSM + ~1/3 PGD + ~1/3 Square.
-    # Tail imbalance (n_train mod 3) goes to Square so FGSM/PGD stay equal.
-    n_fgsm   = n_train // 3
-    n_pgd    = n_train // 3
+    # Split adversarial budget according to fgsm_oversample ratio.
+    # total_weight = fgsm_oversample + 1 + 1; tail remainder goes to Square.
+    n_fgsm   = int(n_train * fgsm_oversample / total_weight)
+    n_pgd    = int(n_train * 1.0 / total_weight)
     n_square = n_train - n_fgsm - n_pgd
 
     off = 0
     print(f"\nExtracting {n_fgsm} FGSM (eps={fgsm_eps:.6f}) adversarial features...")
     X_fgsm, _ = _extract_features(
         adv_pool[off: off + n_fgsm], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=fgsm_attack, label='FGSM adv'
+        base_scorer, ref_profiles, device, art_attack=fgsm_attack, label='FGSM adv',
+        use_grad_norm=use_grad_norm,
     )
     off += n_fgsm
 
     print(f"\nExtracting {n_pgd} PGD (eps={fgsm_eps:.6f}, 20 steps) adversarial features...")
     X_pgd, _ = _extract_features(
         adv_pool[off: off + n_pgd], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=pgd_attack, label='PGD adv'
+        base_scorer, ref_profiles, device, art_attack=pgd_attack, label='PGD adv',
+        use_grad_norm=use_grad_norm,
     )
     off += n_pgd
 
     print(f"\nExtracting {n_square} Square (eps={fgsm_eps:.6f}, 1000 queries) adversarial features...")
     X_square, _ = _extract_features(
         adv_pool[off: off + n_square], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=square_attack, label='Square adv'
+        base_scorer, ref_profiles, device, art_attack=square_attack, label='Square adv',
+        use_grad_norm=use_grad_norm,
     )
 
     X_adv = np.vstack([X_fgsm, X_pgd, X_square])
@@ -272,13 +319,15 @@ def train_ensemble_scorer(
     print(f"  (FGSM: {X_fgsm.shape[0]}, PGD: {X_pgd.shape[0]}, Square: {X_square.shape[0]})")
 
     # -- Train ensemble scorer --------------------------------------------------
-    print("\nFitting logistic regression ensemble component...")
+    n_feat_desc = f"{37 + (1 if use_grad_norm else 0)}-dim"
+    print(f"\nFitting logistic regression ensemble component ({n_feat_desc})...")
     ensemble = PersistenceEnsembleScorer(
         base_scorer=base_scorer,
         layer_names=LAYER_NAMES,
         dims=DIMS,
-        alpha=0.5,   # equal blend; calibrated via conformal recalibration
-        use_dct=True,  # 37-dim: 36 persistence stats + 1 DCT energy feature
+        alpha=0.5,
+        use_dct=True,
+        use_grad_norm=use_grad_norm,
     )
 
     # 80/20 split for training vs internal validation
@@ -305,9 +354,13 @@ def train_ensemble_scorer(
         print(classification_report(y_val, preds, target_names=['clean', 'adv']))
 
     # -- Set provenance metadata ------------------------------------------------
-    ensemble.training_eps     = fgsm_eps
-    ensemble.training_attacks = ['FGSM', 'PGD', 'Square']
-    ensemble.training_n       = len(X_adv)
+    ensemble.training_eps          = fgsm_eps
+    ensemble.training_attacks      = ['FGSM', 'PGD', 'Square']
+    ensemble.training_n            = len(X_adv)
+    ensemble.fgsm_oversample       = fgsm_oversample
+    ensemble.training_fgsm_n       = n_fgsm
+    ensemble.training_pgd_n        = n_pgd
+    ensemble.training_square_n     = n_square
 
     # -- Save -------------------------------------------------------------------
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -318,6 +371,8 @@ def train_ensemble_scorer(
     print("\n[OK] Ensemble scorer trained and saved.")
     print(f"   Training eps = {fgsm_eps:.6f} (= 8/255, matches evaluation)")
     print(f"   Adversarial mix: FGSM({n_fgsm}) + PGD({n_pgd}) + Square({n_square})")
+    print(f"   fgsm_oversample={fgsm_oversample:.2f}, n_features={ensemble.n_features}")
+    print(f"   use_grad_norm={use_grad_norm}")
     print(f"   Trained on CIFAR-10 TRAINING set (no test-set leakage)")
     print(f"   logit_shift={ensemble.logit_shift:.4f}, w_score_mean={ensemble.w_score_mean:.4f}")
     print(f"\nNext step: python scripts/calibrate_ensemble.py")
@@ -328,24 +383,32 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--n-train',   type=int,   default=2100,
-                        help='Total adversarial samples (~1/3 each: FGSM, PGD, Square). '
-                             'Default 2100 -> 700 per attack.')
+                        help='Total adversarial samples. Default 2100.')
     parser.add_argument('--fgsm-eps',  type=float, default=8/255,
                         help='L-inf epsilon. Must match EPS_LINF_STANDARD=8/255.')
+    parser.add_argument('--fgsm-oversample', type=float, default=1.0,
+                        help='Relative FGSM weight in the training mix. '
+                             'Default 1.0 = equal 1/3 split. '
+                             '1.5 = FGSM gets 37.5%% (recommended for FGSM TPR gap).')
+    parser.add_argument('--use-grad-norm', action='store_true',
+                        help='Append input-gradient L2 norm as 38th feature. '
+                             'Improves FGSM discrimination; adds ~5ms latency.')
     parser.add_argument('--data-root', default='./data')
     parser.add_argument('--output',    default='models/ensemble_scorer.pkl')
     parser.add_argument('--profile',   default='models/reference_profiles.pkl')
     parser.add_argument('--fast',      action='store_true',
-                        help='Quick smoke-test: n_train=150 (50 per attack)')
+                        help='Quick smoke-test: n_train=150')
     args = parser.parse_args()
 
     if args.fast:
         args.n_train = 150
-        print("[FAST MODE] n_train=150 (50 FGSM + 50 PGD + 50 Square)")
+        print("[FAST MODE] n_train=150")
 
     train_ensemble_scorer(
         n_train=args.n_train,
         fgsm_eps=args.fgsm_eps,
+        fgsm_oversample=args.fgsm_oversample,
+        use_grad_norm=args.use_grad_norm,
         data_root=args.data_root,
         output_path=args.output,
         profile_path=args.profile,

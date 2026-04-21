@@ -1,0 +1,164 @@
+{
+  "FGSM": {
+    "TPR": 0.832,
+    "TPR_CI_95": [
+      0.7967,
+      0.8622
+    ],
+    "FPR": 0.076,
+    "FPR_CI_95": [
+      0.0559,
+      0.1026
+    ],
+    "Precision": 0.9163,
+    "F1": 0.8721,
+    "TP": 416,
+    "FP": 38,
+    "FN": 84,
+    "TN": 462,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.076,
+      "FPR_L2_plus": 0.016,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 462,
+      "L2": 7,
+      "L1": 30,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 235,
+      "L2": 101,
+      "L1": 80,
+      "PASS": 84
+    }
+  },
+  "PGD": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9924,
+      1.0
+    ],
+    "FPR": 0.076,
+    "FPR_CI_95": [
+      0.0559,
+      0.1026
+    ],
+    "Precision": 0.9294,
+    "F1": 0.9634,
+    "TP": 500,
+    "FP": 38,
+    "FN": 0,
+    "TN": 462,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.076,
+      "FPR_L2_plus": 0.016,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 462,
+      "L2": 7,
+      "L1": 30,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 500
+    }
+  },
+  "Square": {
+    "TPR": 0.878,
+    "TPR_CI_95": [
+      0.8464,
+      0.9038
+    ],
+    "FPR": 0.076,
+    "FPR_CI_95": [
+      0.0559,
+      0.1026
+    ],
+    "Precision": 0.9203,
+    "F1": 0.8987,
+    "TP": 439,
+    "FP": 38,
+    "FN": 61,
+    "TN": 462,
+    "n_adv": 500,
+    "n_clean": 500,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.076,
+      "FPR_L2_plus": 0.016,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 462,
+      "L2": 7,
+      "L1": 30,
+      "L3_REJECT": 1
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 340,
+      "L2": 59,
+      "PASS": 61,
+      "L1": 40
+    }
+  },
+  "_meta": {
+    "n_test": 500,
+    "n_actual": 500,
+    "eval_split": "CIFAR-10 test idx 8000-9999",
+    "seed": 123,
+    "eps_linf": 0.03137254901960784,
+    "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square"
+    ],
+    "latency": {
+      "mean_ms": 114.79,
+      "std_ms": 19.54,
+      "min_ms": 83.64,
+      "max_ms": 212.13,
+      "p50_ms": 111.01,
+      "p95_ms": 152.14,
+      "n": 200,
+      "target_ms": 100,
+      "pass": false
+    },
+    "device": "cuda",
+    "ensemble": {
+      "use_dct": true,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square"
+      ],
+      "training_n": 2100,
+      "training_eps": 0.03137254901960784,
+      "n_features": 37
+    }
+  }
+}

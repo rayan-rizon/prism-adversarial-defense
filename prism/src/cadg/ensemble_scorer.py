@@ -8,6 +8,8 @@ statistics feature vector (effective for single-step FGSM and Square attacks).
 Feature vector: 6 stats × 2 dims (H0, H1) × 3 layers = 36 features.
   Per (layer, dim): [wasserstein_dist, total_persistence, max_persistence,
                      n_features, entropy, mean_persistence]
+Optional 37th feature: log high-frequency DCT energy (use_dct=True).
+Optional 38th feature: input-gradient L2 norm (use_grad_norm=True).
 
 Architecture:
   score = α * wasserstein_score + (1-α) * logistic_score_scaled
@@ -23,6 +25,7 @@ Usage:
 The module is intentionally kept in the TDA/CADG domain (no deep NN training),
 so it remains fully within the 'architecture-agnostic, TDA-based' framing.
 """
+import logging
 import numpy as np
 import pickle
 from pathlib import Path
@@ -30,6 +33,8 @@ from typing import Dict, List, Optional, Tuple
 
 from ..tamm.persistence_stats import extract_feature_vector, PersistenceDiagram
 from ..tamm.scorer import TopologicalScorer
+
+logger = logging.getLogger(__name__)
 
 
 class PersistenceEnsembleScorer:
@@ -75,6 +80,7 @@ class PersistenceEnsembleScorer:
         training_attacks: Optional[List[str]] = None,
         training_n: Optional[int] = None,
         use_dct: bool = False,
+        use_grad_norm: bool = False,
     ):
         """
         Args:
@@ -82,15 +88,18 @@ class PersistenceEnsembleScorer:
             layer_names: Layers to include in feature extraction.
             dims: Homology dimensions to include.
             alpha: Weight of Wasserstein component (1-alpha for logistic).
-            logistic_weights: Fitted logistic regression weights (36,).
+            logistic_weights: Fitted logistic regression weights.
             logistic_bias: Fitted logistic regression bias scalar.
-            feature_mean: Feature normalisation mean from training data (36,).
-            feature_std: Feature normalisation std from training data (36,).
+            feature_mean: Feature normalisation mean from training data.
+            feature_std: Feature normalisation std from training data.
             logit_shift: Mean raw logit value on clean training data (data-derived).
             w_score_mean: Mean Wasserstein score on clean training data (data-derived).
             training_eps: L-inf epsilon used to generate adversarials during training.
             training_attacks: List of attack names used during training.
             training_n: Total number of adversarial samples used in training.
+            use_grad_norm: If True, input-gradient L2 norm is appended as the final
+                           feature. Adds 1 to n_features; grad_norm must be passed to
+                           score() and extract_features() at inference.
         """
         self.base_scorer = base_scorer
         self.layer_names = layer_names
@@ -112,22 +121,28 @@ class PersistenceEnsembleScorer:
         self.training_eps = training_eps
         self.training_attacks = training_attacks or []
         self.training_n = training_n
-        self.use_dct = use_dct  # True when 37-dim DCT feature was used in training
+        self.use_dct = use_dct
+        self.use_grad_norm = use_grad_norm
 
     @property
     def n_features(self) -> int:
-        """Feature vector dimension: 6 stats × len(dims) × len(layer_names) [+ 1 DCT]."""
-        return len(self.layer_names) * len(self.dims) * 6 + (1 if self.use_dct else 0)
+        """Feature vector dimension: 6 stats × len(dims) × len(layer_names) [+1 DCT] [+1 grad_norm]."""
+        base = len(self.layer_names) * len(self.dims) * 6
+        return base + (1 if self.use_dct else 0) + (1 if self.use_grad_norm else 0)
 
     def extract_features(
         self,
         diagrams: Dict[str, List[PersistenceDiagram]],
         image: Optional[np.ndarray] = None,
+        grad_norm: Optional[float] = None,
     ) -> np.ndarray:
-        """Extract 36- or 37-dim feature vector. 37-dim when image is provided (DCT)."""
+        """Extract feature vector. Length depends on use_dct and use_grad_norm flags."""
         ref = self.base_scorer.ref_profiles
-        return extract_feature_vector(diagrams, ref, self.layer_names, self.dims,
-                                      image=image)
+        return extract_feature_vector(
+            diagrams, ref, self.layer_names, self.dims,
+            image=image,
+            grad_norm=grad_norm if self.use_grad_norm else None,
+        )
 
     def _normalise(self, x: np.ndarray) -> np.ndarray:
         """Z-score normalisation using training statistics."""
@@ -147,6 +162,7 @@ class PersistenceEnsembleScorer:
         self,
         diagrams: Dict[str, List[PersistenceDiagram]],
         image: Optional[np.ndarray] = None,
+        grad_norm: Optional[float] = None,
     ) -> float:
         """
         Compute composite anomaly score.
@@ -159,6 +175,8 @@ class PersistenceEnsembleScorer:
             image: Optional (C, H, W) float32 image (normalised). Required when
                    use_dct=True; if omitted with use_dct=True, falls back to
                    base Wasserstein score to avoid feature dimension mismatch.
+            grad_norm: Optional pre-computed input-gradient L2 norm. Required when
+                       use_grad_norm=True; if omitted, falls back to base score.
         Returns:
             Scalar — higher means more likely adversarial.
             Falls back to base Wasserstein score if logistic is not fitted.
@@ -169,9 +187,12 @@ class PersistenceEnsembleScorer:
             return w_score
 
         if self.use_dct and image is None:
-            return w_score  # safe fallback: logistic expects 37-dim but image missing
+            return w_score
 
-        feat = self.extract_features(diagrams, image=image)
+        if self.use_grad_norm and grad_norm is None:
+            return w_score
+
+        feat = self.extract_features(diagrams, image=image, grad_norm=grad_norm)
         logit_prob = self._logistic_prob(feat)
 
         # Convert probability to raw logit (unbounded)
@@ -220,8 +241,8 @@ class PersistenceEnsembleScorer:
         Uses scikit-learn LogisticRegression with L2 regularisation (C=1.0).
 
         Args:
-            clean_features: (N_clean, 36) feature matrix from clean images.
-            adv_features:   (N_adv, 36) feature matrix from adversarial images.
+            clean_features: (N_clean, d) feature matrix from clean images.
+            adv_features:   (N_adv, d) feature matrix from adversarial images.
             C: Logistic regression regularisation (inverse). Default 1.0.
                Selected by held-out 20% AUC on training data.
             clean_w_scores: (N_clean,) base Wasserstein scores for clean images.
@@ -264,16 +285,15 @@ class PersistenceEnsembleScorer:
             w_indices = [i * 6 for i in range(n_blocks)]
             self.w_score_mean = float(np.mean(clean_features[:, w_indices]))
 
-        print(f"  Data-derived constants: logit_shift={self.logit_shift:.4f}, "
-              f"w_score_mean={self.w_score_mean:.4f}")
+        logger.info("Data-derived constants: logit_shift=%.4f, w_score_mean=%.4f",
+                    self.logit_shift, self.w_score_mean)
 
-        # Report training AUC
         from sklearn.metrics import roc_auc_score
         probs = clf.predict_proba(X_norm)[:, 1]
         auc = roc_auc_score(y, probs)
-        print(f"  Logistic ensemble — training AUC: {auc:.4f}")
-        print(f"  Features: {self.n_features}-dim, n_clean={len(clean_features)}, "
-              f"n_adv={len(adv_features)}")
+        logger.info("Logistic ensemble — training AUC: %.4f", auc)
+        logger.info("Features: %d-dim, n_clean=%d, n_adv=%d",
+                    self.n_features, len(clean_features), len(adv_features))
 
     def save(self, path: str) -> None:
         """Save ensemble scorer to disk (includes provenance metadata)."""
@@ -295,10 +315,11 @@ class PersistenceEnsembleScorer:
             'training_n': self.training_n,
             # Feature engineering flags
             'use_dct': self.use_dct,
+            'use_grad_norm': self.use_grad_norm,
         }
         with open(path, 'wb') as f:
             pickle.dump(data, f)
-        print(f"PersistenceEnsembleScorer saved -> {path}")
+        logger.info("PersistenceEnsembleScorer saved -> %s", path)
 
     @classmethod
     def load(cls, path: str, base_scorer: TopologicalScorer,
@@ -321,6 +342,7 @@ class PersistenceEnsembleScorer:
             training_attacks=data.get('training_attacks'),
             training_n=data.get('training_n'),
             use_dct=data.get('use_dct', False),
+            use_grad_norm=data.get('use_grad_norm', False),
         )
         scorer._logistic_fitted = data.get('_logistic_fitted', False)
         return scorer

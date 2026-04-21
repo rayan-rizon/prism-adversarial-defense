@@ -603,7 +603,8 @@ def run_evaluation_multiseed(
         pool_tp = pool_fp = pool_fn = pool_tn = 0
 
         for seed_str, seed_res in per_seed_results.items():
-            atk_res = seed_res.get('attacks', {}).get(atk)
+            # run_evaluation_full() returns attack results at top level keyed by attack name
+            atk_res = seed_res.get(atk)
             if atk_res is None:
                 continue
             tprs.append(atk_res['TPR'])
@@ -687,12 +688,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.multi_seed:
-        multi_out = args.output.replace('.json', '_multiseed.json')
         run_evaluation_multiseed(
             seeds=args.seeds,
             n_test=args.n_test,
             data_root=args.data_root,
-            output_path=multi_out,
+            output_path=args.output,
             attacks_to_run=args.attacks,
             checkpoint_interval=args.checkpoint_interval,
         )

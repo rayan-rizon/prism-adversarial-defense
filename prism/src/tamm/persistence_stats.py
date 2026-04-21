@@ -149,29 +149,32 @@ def extract_feature_vector(
     layer_names: List[str],
     dims: List[int] = (0, 1),
     image: Optional[np.ndarray] = None,
+    grad_norm: Optional[float] = None,
 ) -> np.ndarray:
     """
-    Build the 36- or 37-dimensional feature vector for one input.
-    Base: 6 stats \u00d7 2 dims \u00d7 3 layers = 36 features.
+    Build the 36-, 37-, or 38-dimensional feature vector for one input.
+    Base: 6 stats × 2 dims × 3 layers = 36 features.
     Optional 37th: log high-frequency DCT energy when *image* is provided.
-
-    The DCT feature captures pixel-space noise from gradient-free attacks
-    (Square) that leave weaker latent-topology signatures.
+    Optional 38th: input-gradient L2 norm when *grad_norm* is provided.
 
     Features ordered: for each layer, for each dim:
       [wasserstein_dist, total_persistence, max_persistence,
        n_features, entropy, mean_persistence]
     Then, if image is not None: [dct_energy].
+    Then, if grad_norm is not None: [grad_norm].
 
     Args:
         diagrams: {layer: [H0, H1, ...]} for the current input.
         ref_profiles: {layer: [H0, H1, ...]} medoid reference profiles.
         layer_names: Ordered list of layers to include.
         dims: Which homology dimensions to include (default [0, 1]).
-        image: Optional (C, H, W) float32 image (normalised). When provided,
-               appends the DCT high-frequency energy as the 37th feature.
+        image: Optional (C, H, W) float32 image. When provided, appends
+               the DCT high-frequency energy as the 37th feature.
+        grad_norm: Optional pre-computed input-gradient L2 norm. When
+                   provided, appended as the final feature (38th when DCT
+                   is also active, 37th otherwise).
     Returns:
-        1-D float32 array of length 36 (no image) or 37 (with image).
+        1-D float32 array of length 36, 37, or 38.
     """
     features = []
     for layer in layer_names:
@@ -182,10 +185,7 @@ def extract_feature_vector(
             inp = inp_dgms[dim] if dim < len(inp_dgms) else np.array([]).reshape(0, 2)
             ref = ref_dgms[dim] if dim < len(ref_dgms) else np.array([]).reshape(0, 2)
 
-            # Wasserstein distance to reference
             w_dist = TopologicalProfiler.wasserstein_dist(inp, ref)
-
-            # Persistence statistics of the INPUT diagram
             stats = _persistence_stats(inp)
 
             features.extend([
@@ -199,6 +199,9 @@ def extract_feature_vector(
 
     if image is not None:
         features.append(compute_dct_energy(image))
+
+    if grad_norm is not None:
+        features.append(float(grad_norm))
 
     return np.array(features, dtype=np.float32)
 

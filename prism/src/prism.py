@@ -205,11 +205,21 @@ class PRISM:
             return self._execute_response(x, acts, diagrams, level, metadata)
 
         # --- Step 4: Compute anomaly score ---
-        if getattr(self.scorer, 'use_dct', False):
-            img_np = x.squeeze(0).cpu().numpy()
-            score = self.scorer.score(diagrams, image=img_np)
-        else:
-            score = self.scorer.score(diagrams)
+        use_dct      = getattr(self.scorer, 'use_dct', False)
+        use_grad_norm = getattr(self.scorer, 'use_grad_norm', False)
+
+        img_np   = x.squeeze(0).cpu().numpy() if use_dct else None
+        grad_norm = None
+        if use_grad_norm:
+            x_g = x.detach().clone().requires_grad_(True)
+            with torch.enable_grad():
+                logits_g = self.model(x_g)
+                pred_idx = int(logits_g.argmax(1).item())
+                # autograd.grad avoids accumulating model parameter gradients
+                (grad_x,) = torch.autograd.grad(logits_g[0, pred_idx], x_g)
+            grad_norm = float(grad_x.norm().item())
+
+        score = self.scorer.score(diagrams, image=img_np, grad_norm=grad_norm)
         metadata['anomaly_score'] = score
         metadata['per_layer_scores'] = self.scorer.score_per_layer(diagrams)
 

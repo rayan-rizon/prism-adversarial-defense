@@ -87,16 +87,45 @@ def per_tier_fpr(clean_levels, n_clean):
     }
 
 
+def _hf_energy_torch(x: torch.Tensor) -> torch.Tensor:
+    """
+    Differentiable proxy for the DCT high-frequency energy feature.
+
+    Computes the log sum of squared high-frequency FFT magnitudes per channel,
+    masking the low-frequency quadrant (top-left H/4 × W/4 region).
+    This approximates compute_dct_energy() from persistence_stats.py but is
+    fully differentiable via torch.fft.rfft2.
+
+    Args:
+        x: (1, C, H, W) tensor in [0, 1].
+    Returns:
+        Scalar tensor (differentiable).
+    """
+    H, W = x.shape[-2], x.shape[-1]
+    fft = torch.fft.rfft2(x)          # (1, C, H, W//2+1) complex
+    mag = fft.abs() ** 2              # magnitude squared
+    # zero out low-frequency quadrant
+    mag = mag.clone()
+    mag[:, :, : H // 4, : W // 4] = 0.0
+    return torch.log(mag.sum() + 1e-8)
+
+
 def adaptive_pgd_attack(
     model, x_pixel, eps, steps, step_size, lam, layer_names, device,
+    through_scorer: bool = False,
 ):
     """
     Generate one adaptive PGD adversarial example.
 
-    Loss = -CE(f(x'), y_pred) + λ * Σ_layer ||a_layer(x') - a_layer(x)||₂ / D_layer
+    Loss = -CE(f(x'), y_pred)
+           + λ * Σ_layer ||a_layer(x') - a_layer(x)||₂ / D_layer   [activation match]
+           + 0.5 * |HF_energy(x') - HF_energy(x)|                  [DCT match, through_scorer only]
 
-    The activation-matching term directly targets PRISM's TAMM module by
-    minimising the perturbation in the activation space that TDA monitors.
+    The activation-matching term directly targets PRISM's TAMM module.
+    The DCT-energy matching term targets the 37th feature used by the ensemble
+    scorer and is active only when `through_scorer=True`.  Both terms force the
+    adversary to erase the signals PRISM monitors, providing a stronger adaptive
+    attack than activation-only evasion.
 
     Args:
         model: Backbone model (un-normalised input, ImageNet output).
@@ -107,6 +136,8 @@ def adaptive_pgd_attack(
         lam: Weight of activation-matching loss (0 = standard PGD).
         layer_names: Layers to match activations on.
         device: torch device.
+        through_scorer: If True, also minimise the DCT high-frequency energy
+                        difference (proxy for the ensemble scorer's 37th feature).
     Returns:
         x_adv: (1, 3, H, W) adversarial example in [0, 1].
     """
@@ -115,6 +146,10 @@ def adaptive_pgd_attack(
     ce_loss = torch.nn.CrossEntropyLoss()
 
     x = x_pixel.clone().to(device)
+
+    # Pre-compute clean DCT energy reference (constant, no grad needed)
+    with torch.no_grad():
+        clean_hf_energy = _hf_energy_torch(x).detach() if through_scorer else None
 
     # Get clean activations and predicted label (no grad needed)
     hooks = {}
@@ -169,7 +204,13 @@ def adaptive_pgd_attack(
                 D = float(a_adv.numel())
                 loss_act = loss_act + torch.norm(a_adv - a_clean, p=2) / max(D, 1.0)
 
-        loss_total = loss_ce + lam * loss_act
+        # DCT high-frequency energy matching (targets PRISM's 37th ensemble feature)
+        loss_dct = torch.tensor(0.0, device=device)
+        if through_scorer and clean_hf_energy is not None:
+            adv_hf_energy = _hf_energy_torch(x_adv)
+            loss_dct = (adv_hf_energy - clean_hf_energy).abs()
+
+        loss_total = loss_ce + lam * loss_act + 0.5 * loss_dct
 
         loss_total.backward()
 
@@ -190,6 +231,7 @@ def run_adaptive_pgd(
     n_test=500, lambdas=None, pgd_steps=40, seed=42,
     output_path='experiments/evaluation/results_adaptive_pgd.json',
     device_str=None, data_root='./data',
+    through_scorer=False,
 ):
     eps = EPS_LINF_STANDARD
     step_size = eps / 4  # 2/255
@@ -201,7 +243,7 @@ def run_adaptive_pgd(
              torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     print(f"Adaptive PGD: n={n_test}, steps={pgd_steps}, eps={eps:.4f}, "
-          f"lambdas={lambdas}")
+          f"lambdas={lambdas}, through_scorer={through_scorer}")
     print(f"Eval split: CIFAR-10 test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
 
     rng = np.random.RandomState(seed)
@@ -265,6 +307,7 @@ def run_adaptive_pgd(
             x_adv_pixel = adaptive_pgd_attack(
                 model, x_pixel, eps, pgd_steps, step_size, lam,
                 LAYER_NAMES, device,
+                through_scorer=through_scorer,
             )
             x_adv_norm = _NORMALIZE(x_adv_pixel.squeeze(0).cpu()).unsqueeze(0).to(device)
             _, lv_a, _ = prism.defend(x_adv_norm)
@@ -332,12 +375,15 @@ def run_adaptive_pgd(
         'pgd_steps': pgd_steps,
         'step_size': round(step_size, 6),
         'lambdas': lambdas,
+        'through_scorer': through_scorer,
         'device': str(device),
         'elapsed_s': round(elapsed, 1),
         'attack_design': (
             'BPDA adaptive PGD: combined loss = -CE + λ * '
-            'Σ_layer ||a_layer(x_adv) - a_layer(x_clean)||₂ / D_layer. '
-            'λ=0 is standard PGD. '
+            'Σ_layer ||a_layer(x_adv) - a_layer(x_clean)||₂ / D_layer'
+            + (' + 0.5 * |HF_energy(x_adv) - HF_energy(x_clean)| [through_scorer]'
+               if through_scorer else '')
+            + '. λ=0 is standard PGD. '
             'Reference: Athalye et al. 2018 (Obfuscated Gradients Give a '
             'False Sense of Security, ICML).'
         ),
@@ -360,6 +406,10 @@ if __name__ == '__main__':
                         default=[0.0, 0.5, 1.0, 2.0, 5.0])
     parser.add_argument('--output', default='experiments/evaluation/results_adaptive_pgd.json')
     parser.add_argument('--device', default=None)
+    parser.add_argument('--through-scorer', action='store_true',
+                        help='Add a DCT high-frequency energy matching term to the '
+                             'loss (coefficient 0.5), targeting the ensemble scorer\'s '
+                             '37th feature. Produces a stronger adaptive attack.')
     args = parser.parse_args()
 
     run_adaptive_pgd(
@@ -369,4 +419,5 @@ if __name__ == '__main__':
         seed=args.seed,
         output_path=args.output,
         device_str=args.device,
+        through_scorer=args.through_scorer,
     )
