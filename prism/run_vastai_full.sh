@@ -86,8 +86,8 @@ fi
 
 # ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=2.5] ==="
-# FGSM oversample 2.5 gives FGSM 2.5/(2.5+1+1+1+1) = 38.5% of the adversarial
+echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=1.8] ==="
+# FGSM oversample 1.8 gives FGSM 1.8/(1.8+1+1+1+1) = 31.0% of the adversarial
 # budget, close to the original 3-attack share (1.5/3.5 = 42.9%) that achieved
 # FGSM TPR 86.76%. This compensates for CW+AA dilution without oversampling so
 # aggressively that other attacks regress.
@@ -99,7 +99,7 @@ echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=2.5] ==="
 # See regression_analysis_20260422.md for the full forensic analysis.
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 2.5 \
+  --fgsm-oversample 1.8 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \

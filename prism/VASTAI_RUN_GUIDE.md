@@ -167,7 +167,7 @@ bash run_vastai_full.sh
 |------|--------|------|
 | 0 | GPU + PyTorch verification | <1 min |
 | 1 | Build reference profiles | ~10 min |
-| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.5**) | ~40 min |
+| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=1.8**) | ~40 min |
 | 3 | Calibrate conformal thresholds | ~3 min |
 | 4 | FPR gate check (abort if fail) | ~2 min |
 | 5 | **Parallel Eval** (CW + Fast attacks) | ~150 min ← bottleneck |
@@ -192,7 +192,7 @@ python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 ```bash
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 2.5 \
+  --fgsm-oversample 1.8 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -229,7 +229,7 @@ RETRAIN CHECK: PASS
 ```
 
 > [!IMPORTANT]
-> **FGSM Oversample:** 2.5 is used to restore FGSM's training share (~38.5%) and maintain TPR $\ge$ 85% with the 5-attack mix.
+> **FGSM Oversample:** 1.8 is used to restore FGSM's training share (~31.0%) and maintain TPR $\ge$ 85% with the 5-attack mix.
 > **Grad-Norm:** This feature was tested and **REVERTED** (April 22). It inflated calibration thresholds by 20%, dropping FGSM TPR to 63%. Do not enable it.
 
 ### 4.3 Calibrate + gate
@@ -420,7 +420,7 @@ scp -P <port> \
 ## 8. Troubleshooting
 
 | FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
-| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 2.5 |
+| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 1.8 |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
 | CW shows no output | gen_chunk was too large | Fixed: auto-caps to 8 for CW — update from repo |

@@ -2,7 +2,7 @@
 # =============================================================================
 # PRISM — Local Smoke Test (CPU, n≈300-500)
 # =============================================================================
-# Purpose: Validate that the FGSM/Square TPR fix (fgsm-oversample=2.5, no
+# Purpose: Validate that the FGSM/Square TPR fix (fgsm-oversample=1.8, no
 #          grad-norm, 37 features) works before spending GPU hours on Vast.ai.
 #
 # PARITY TABLE — every param must match run_vastai_full.sh unless marked LOCAL:
@@ -10,7 +10,7 @@
 # │ Parameter                     │ Vast.ai       │ Local (here) │ Match │
 # ├───────────────────────────────┼──────────────┼──────────────┼───────┤
 # │ Python binary                 │ python        │ python3      │ LOCAL │
-# │ fgsm-oversample               │ 2.5           │ 2.5          │  ✅   │
+# │ fgsm-oversample               │ 1.8           │ 0.9 (match %)│ LOCAL │
 # │ use-grad-norm                 │ OFF           │ OFF          │  ✅   │
 # │ include-cw (train)            │ YES           │ NO  (slow)   │ LOCAL │
 # │ include-autoattack (train)    │ YES           │ NO  (missing)│ LOCAL │
@@ -160,13 +160,14 @@ echo "  LOCAL deviations (compute only — algorithm identical):"
 echo "    n-train:          500  (Vast.ai: 4000)"
 echo "    include-cw:       OFF  (slow on CPU; AUC impact ~0.003)"
 echo "    include-autoattack: OFF (not installed)"
-echo "    fgsm-oversample:  2.5  ← SAME as Vast.ai ✅"
+echo "    fgsm-oversample:  0.9  (Matches 31% share of Vast.ai 1.8) LOCAL"
 echo "    use-grad-norm:    OFF  ← SAME as Vast.ai (REVERTED) ✅"
 echo ""
-# 500 samples with fgsm-os=2.5 → FGSM≈152, PGD≈116, Square≈116, fast
+# 0.9 / (0.9+1+1) = 31% FGSM share (matches Vast.ai 5-attack mix with 1.8)
+# 500 samples with fgsm-os=0.9 → FGSM≈155, PGD≈172, Square≈172
 python3 scripts/train_ensemble_scorer.py \
   --n-train 500 \
-  --fgsm-oversample 2.5 \
+  --fgsm-oversample 0.9 \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/smoke_step2_retrain.log)
 echo "Step 2: DONE"
