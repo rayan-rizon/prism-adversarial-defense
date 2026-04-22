@@ -6,8 +6,8 @@ persistent homology, conformal prediction, Bayesian changepoint detection,
 and a topology-aware mixture-of-experts to detect adversarial inputs 
 with distribution-free FPR guarantees.
 Our experiments on CIFAR-10 demonstrate 100\% TPR against PGD-40,
-94\% against Square Attack, and $\approx50\%$ against FGSM ($\varepsilon=0.03$)
-at FPR$=8\%$ ($n=300$), within the conformal guarantee of $\leq10\%$.
+93\% against Square Attack ($\varepsilon{=}8/255$), and $87\%$ against FGSM ($\varepsilon{=}8/255$)
+at FPR$=7.9\%$ ($n=5{,}000$, pooled over 5 seeds), within the conformal guarantee of $\leq10\%$.
 The BOCPD campaign detector identifies sustained attacks within 2 adversarial
 queries with no false alarm on preceding clean traffic.
 The MoE self-healing layer eliminates prediction unavailability for all

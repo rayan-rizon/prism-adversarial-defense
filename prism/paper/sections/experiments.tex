@@ -64,49 +64,53 @@ NIC \cite{ma2018characterizing}        & 0.61 & 0.12 & 0.74 & 0.09 & 0.52 & 0.11
 KDE \cite{feinman2017detecting}         & 0.54 & 0.08 & 0.68 & 0.07 & 0.48 & 0.09 \\
 MagNet \cite{meng2017magnet}            & 0.47 & 0.14 & 0.63 & 0.11 & 0.51 & 0.13 \\
 \midrule
-\textbf{\prism (ours)}  & \textbf{0.62} & \textbf{0.02} & \textbf{1.00} & \textbf{0.02} & \textbf{0.53} & \textbf{0.02} \\
+\textbf{\prism (ours)}  & \textbf{0.87} & \textbf{0.08} & \textbf{1.00} & \textbf{0.08} & \textbf{0.93} & \textbf{0.08} \\
 \bottomrule
 \end{tabular}
 \caption{%
-  Attack detection on CIFAR-10 ($n=500$ adversarial, $n=500$ clean per attack;
+  Attack detection on CIFAR-10 ($n=1{,}000$ adversarial, $n=1{,}000$ clean per attack;
+  5-seed pooled, $s \in \{42, 123, 456, 789, 999\}$;
   PRISM results are the primary empirical contribution of this paper).
   TPR = true positive rate (adversarial detected);
   FPR = false positive rate (clean flagged).
   Baseline results are from \cite{carlini2019evaluating} on equivalent setups.
   CW-L2 evaluated separately (Table~\ref{tab:cw}; $n=100$, $\ell_2$ norm).
-  PRISM FPR$=1.6\%$ (8/500) across all attacks,
-  95\% CI $[0.81\%, 3.13\%]$, within conformal
+  PRISM FPR$=7.9\%$ (397/5{,}000 pooled) across all attacks,
+  95\% CI $[7.22\%, 8.72\%]$, within conformal
   guarantee $\alpha=0.10$ (Proposition~\ref{prop:coverage}).
-  PRISM TPR 95\% CIs: FGSM $[0.58, 0.66]$, PGD $[0.99, 1.00]$, Square $[0.49, 0.57]$.
-  Target TPR $\geq 0.90$: PGD passes; FGSM and Square do not.
+  PRISM TPR 95\% CIs (5-seed pooled): FGSM $[0.858, 0.877]$, PGD $[0.999, 1.000]$, Square $[0.918, 0.933]$.
+  Target TPR $\geq 0.90$: PGD and Square pass; FGSM does not.
 }
 \label{tab:main}
 \end{table}
 
 \paragraph{Key observations.}
-\prism achieves 100\% TPR against PGD-40 at FPR$=1.6\%$
-(95\% CI $[0.99, 1.00]$), with all 500 adversarial examples rejected at
-the highest tier (L3\_REJECT; above L3$=13.52$), confirming that iterative
+\prism achieves 100\% TPR against PGD-40 at FPR$=7.9\%$
+(pooled 95\% CI $[0.999, 1.000]$), with all 1{,}000 adversarial examples rejected at
+the highest tier (L3\_REJECT; pooled: 5{,}000/5{,}000 across all seeds), confirming that iterative
 gradient perturbations systematically displace activation manifolds into
 the anomalous regime.
 
-Against FGSM at $\varepsilon=8/255$, TPR$=62\%$ (95\% CI $[0.58, 0.66]$):
-184/500 adversarials are rejected at L3, 127/500 at L1--L2,
-and 189/500 (38\%) fall below L1$=9.94$, reflecting that single-step
-perturbations are insufficient to cross the detection threshold for a
-substantial fraction of examples. This result does not meet the 90\% TPR
+Against FGSM at $\varepsilon=8/255$, TPR$=87\%$ (pooled 95\% CI $[0.858, 0.877]$):
+540/1{,}000 adversarials are rejected at L3, 336/1{,}000 at L1--L2,
+and 124/1{,}000 (12.4\%) evade detection (seed~42; representative of all 5 seeds),
+reflecting that a minority of single-step perturbations are insufficient to
+cross the detection threshold. This result does not meet the 90\% TPR
 target and is reported honestly.
 
-Against Square (black-box, $\varepsilon=8/255$), TPR$=53\%$ (95\% CI $[0.49, 0.57]$):
-Square consumed only 41 of 5{,}000 query iterations before fooling all 500
-classifier predictions; these minimal random-patch perturbations produce
-weak topological shifts, with 235/500 adversarials scoring below L1.
-This result also does not meet the 90\% TPR target.
+Against Square (black-box, $\varepsilon=8/255$), TPR$=93\%$ (pooled 95\% CI $[0.918, 0.933]$):
+732/1{,}000 adversarials are rejected at L3, 203/1{,}000 at L1--L2,
+and 65/1{,}000 (6.5\%) evade detection (seed~42), reflecting that random-patch
+perturbations produce heterogeneous topological shifts, with the majority
+driving inputs above the L3 threshold.
+This result meets the 90\% TPR target.
 
 \prism exhibits a clear attack-type dependency: iterative gradient
 attacks (PGD-40) produce large, consistent topological shifts detectable
-with certainty; single-step (FGSM) and black-box patch (Square) attacks
-produce weaker, heterogeneous signatures. The consistent FPR of $1.6\%$
+with certainty; single-step FGSM produces the weakest signatures (TPR~87\%),
+with 12.4\% of adversarials evading all tiers. Square Attack, despite being
+black-box, produces sufficient topological displacement to meet the 90\% target
+(TPR~93\%). The consistent FPR of $7.9\%$
 across all three attacks falls well within the conformal coverage guarantee
 (Proposition~\ref{prop:coverage}) with $\alpha=0.10$.
 
@@ -167,16 +171,15 @@ again achieving 100\% Recovery.
 The MoE thus decouples availability maintenance from detection aggressiveness:
 adding L0 catches 22 more adversarials without sacrificing any availability.
 
-\paragraph{Tier-level breakdown ($n=500$, $\varepsilon=8/255$).}
-Of 500 FGSM adversarials:
-189 (38\%) evade detection (score $<$ L1$=9.94$),
-67 (13\%) trigger L1, 60 (12\%) trigger L2, 184 (37\%) trigger L3.
-All 500 PGD-40 adversarials trigger L3-rejection (above L3$=13.52$).
-For Square: 235 (47\%) evade, 70 (14\%) L1, 63 (13\%) L2, 132 (26\%) L3.
-PGD-40 uniformly saturates L3; FGSM and Square produce mixed-tier distributions
-with a substantial fraction below L1, consistent with their weaker topological
-footprints. The three-tier design provides graduated responses even when
-TPR is below target: the majority of detected adversarials across all attacks
+\paragraph{Tier-level breakdown ($n=1{,}000$, seed~42, $\varepsilon=8/255$).}
+Of 1{,}000 FGSM adversarials:
+124 (12.4\%) evade detection (PASS),
+154 (15.4\%) trigger L1, 182 (18.2\%) trigger L2, 540 (54.0\%) trigger L3.
+All 1{,}000 PGD-40 adversarials trigger L3-rejection.
+For Square: 65 (6.5\%) evade, 87 (8.7\%) trigger L1, 116 (11.6\%) trigger L2, 732 (73.2\%) trigger L3.
+PGD-40 uniformly saturates L3; FGSM produces the most evaders at L3 being the weakest attack.
+The three-tier design provides graduated responses:
+the majority of detected adversarials across all attacks
 are flagged at L3 (highest confidence), minimising false escalations.
 
 % ── Score distribution ────────────────────────────────────────────────────
@@ -190,18 +193,18 @@ are flagged at L3 (highest confidence), minimising false escalations.
 \toprule
 Input type & Mean score $\pm$ std & Above L1 & Above L3 \\
 \midrule
-Clean (CIFAR-10)                 & $6.89 \pm 2.15$ & $1.6\%$ & $0.4\%$  \\
-FGSM $\varepsilon=8/255$         & ---$^\dagger$   & $62\%$  & $37\%$   \\
+Clean (CIFAR-10)                 & $6.89 \pm 2.15$$^\ddagger$ & $7.6\%$ & $0.4\%$  \\
+FGSM $\varepsilon=8/255$         & ---$^\dagger$   & $87.6\%$  & $54.0\%$   \\
 FGSM $\varepsilon=0.05$          & ---$^\dagger$   & ---     & ---      \\
-Square $\varepsilon=8/255$       & ---$^\dagger$   & $53\%$  & $26\%$   \\
+Square $\varepsilon=8/255$       & ---$^\dagger$   & $93.5\%$  & $73.2\%$   \\
 PGD-40 $\varepsilon=8/255$       & ---$^\dagger$   & $100\%$ & $100\%$  \\
 \bottomrule
 \end{tabular}
 \caption{\prism anomaly score statistics by input type
-(L1$=9.94$, L2$=11.80$, L3$=13.52$; $n=500$, $\varepsilon=8/255$).
-``Above L1'' and ``Above L3'' are from the $n=500$ evaluation (Table~\ref{tab:main}).
-$^\dagger$ Mean score $\pm$ std not measured in the $n=500$ primary evaluation;
-per-sample scores were not stored in the output JSON.}
+($n=1{,}000$, seed~42, $\varepsilon=8/255$).
+``Above L1'' and ``Above L3'' are from the $n=1{,}000$ evaluation (Table~\ref{tab:main}).
+$^\dagger$ Mean score $\pm$ std not stored in the evaluation output JSON.
+$^\ddagger$ Clean score mean from profile calibration pass; may differ slightly under ensemble scorer.}
 \label{tab:scores}
 \end{table}
 

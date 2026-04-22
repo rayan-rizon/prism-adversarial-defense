@@ -16,9 +16,10 @@ the highest-severity tier through topology-matched expert sub-networks to
 preserve prediction availability.
 
 On CIFAR-10 with ResNet-18, \prism achieves 100\% TPR against PGD-40
-($\varepsilon{=}0.03$), 94\% against Square Attack ($\varepsilon{=}0.05$),
-and ${\approx}50\%$ against single-step FGSM ($\varepsilon{=}0.03$),
-with empirical FPR $8\%$ (certified ${\le}10\%$) on clean inputs via split conformal prediction.
+($\varepsilon{=}8/255$), 93\% against Square Attack ($\varepsilon{=}8/255$),
+and $87\%$ against single-step FGSM ($\varepsilon{=}8/255$),
+with empirical FPR $7.9\%$ (certified ${\le}10\%$) on clean inputs via split conformal prediction
+(5-seed pooled, $n=1{,}000$ per seed).
 The sequential campaign detector (SACD/BOCPD) identifies attack campaigns within
 2 adversarial queries with no false alarm on preceding clean traffic,
 lifting TPR by $+22\%$ for borderline adversarials.

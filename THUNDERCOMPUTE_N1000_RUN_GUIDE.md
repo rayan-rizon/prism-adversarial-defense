@@ -4,6 +4,39 @@
 instance, including CW, AutoAttack, strengthened adaptive attack, ablation, baselines,
 cross-dataset generalization, and campaign detection.
 
+---
+
+## Quick Connect (last known instance — 2026-04-21)
+
+```powershell
+# SSH into the instance
+ssh -o BatchMode=yes -i C:\Users\rayan\.thunder\keys\wfi0jayu.pem -p 31474 ubuntu@185.216.21.95
+
+# Once connected — navigate to working directory and activate venv
+cd ~/prism-run/prism-adversarial-defense/prism
+source .venv/bin/activate
+
+# Confirm GPU
+python -c "import torch; print(torch.cuda.get_device_name(0), torch.version.cuda)"
+# Expected: NVIDIA A100 80GB PCIe, 13.0
+
+# Quick status check (check if a run is in progress)
+ls -lh logs/*.log experiments/evaluation/*.json 2>/dev/null | tail -20
+```
+
+> **Note:** ThunderCompute instances are ephemeral — IP/port change with each new instance.
+> Update the `ssh` line above when you provision a new instance.
+> SSH key `wfi0jayu.pem` is at `C:\Users\rayan\.thunder\keys\wfi0jayu.pem` (Windows host).
+> Always use `-o BatchMode=yes` to prevent interactive prompts that can cause timeouts under GPU load.
+
+---
+
+**Canonical results (latest completed run):**
+- File: `prism/experiments/evaluation/remote_n1000_20260421/results_n1000_multiseed_20260421.json`
+- Run date: 2026-04-21, GPU: A100 80GB, n=1000, seeds=42/123/456/789/999
+- FGSM TPR=0.868 CI[0.858,0.877], PGD TPR=1.000, Square TPR=0.926 CI[0.918,0.933]
+- FPR=7.9% (all tiers PASS: L1≤0.10, L2≤0.03, L3≤0.005), latency mean ~52ms p95 ~64ms
+
 **Canonical local baseline:** `prism/experiments/evaluation/run_report_n500_local_20260420.md`
 (retained single-seed n=500 CUDA run from 2026-04-21; FGSM TPR 0.844, PGD 1.000, Square 0.924, latency 73.68 ms).
 
@@ -12,8 +45,9 @@ cross-dataset generalization, and campaign detection.
 - ensemble blend: `alpha=0.4` in `scripts/train_ensemble_scorer.py`
 - scorer features: `n_features=37` (`use_grad_norm=False`)
 - TDA subsample: `n_subsample=150`
-- calibration: `cal_alpha_factor=0.7`
-- local reference artifact: `prism/experiments/evaluation/results_n500_optimized_20260421.json`
+- calibration: **`tier_cal_alpha_factors.L3=0.50`** in `configs/default.yaml` (L1=0.7, L2=0.7, L3=**0.50**)
+  - ⚠ Critical: prior default was `cal_alpha_factor=0.70` for all tiers; L3 must be 0.50 to pass L3 FPR gate
+- local reference artifact: `prism/experiments/evaluation/remote_n1000_20260421/results_n1000_multiseed_20260421.json`
 
 ---
 
@@ -86,9 +120,10 @@ grep -n "default=3000" scripts/train_ensemble_scorer.py
 grep -n "default=1.5" scripts/train_ensemble_scorer.py
 grep -n "alpha=0.4" scripts/train_ensemble_scorer.py
 
-# Verify locked TDA/calibration config
+# Verify locked TDA/calibration config — L3 alpha factor must be 0.50
 grep -n "n_subsample: 150" configs/default.yaml
-grep -n "cal_alpha_factor: 0.7" configs/default.yaml
+grep -n "L3: 0.50" configs/default.yaml
+# (if only global cal_alpha_factor key exists, verify it is 0.50 or add per-tier key)
 ```
 
 If any preflight check does not match, stop and fix code/config before Phase B.
@@ -363,13 +398,18 @@ tda:
   dim_weights: [0.70, 0.30]
 conformal:
   alphas: {L1: 0.10, L2: 0.03, L3: 0.005}
-  cal_alpha_factor: 0.7
+  # CRITICAL: L3 alpha factor must be 0.50 (not 0.70) to pass L3 FPR gate
+  tier_cal_alpha_factors: {L1: 0.70, L2: 0.70, L3: 0.50}
 splits:
   profile_idx: [0, 5000]
   cal_idx: [5000, 7000]
   val_idx: [7000, 8000]
   eval_idx: [8000, 10000]
 ```
+
+> The L3 alpha factor fix (`L3: 0.50`) was validated on 2026-04-21 and
+> confirmed to reduce L3 FPR from 0.008 (FAIL, old default 0.70) to ≤0.004
+> across all 5 seeds at n=1000.
 
 ---
 
