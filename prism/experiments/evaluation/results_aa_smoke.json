@@ -48,12 +48,12 @@
       "AutoAttack"
     ],
     "latency": {
-      "mean_ms": 88.72,
-      "std_ms": 35.98,
-      "min_ms": 54.36,
-      "max_ms": 269.1,
-      "p50_ms": 78.22,
-      "p95_ms": 157.57,
+      "mean_ms": 70.37,
+      "std_ms": 20.27,
+      "min_ms": 51.46,
+      "max_ms": 304.07,
+      "p50_ms": 67.76,
+      "p95_ms": 93.0,
       "n": 200,
       "target_ms": 100,
       "pass": true

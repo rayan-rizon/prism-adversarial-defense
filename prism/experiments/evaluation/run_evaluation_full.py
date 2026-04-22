@@ -192,6 +192,8 @@ def run_evaluation_full(
     gen_chunk: int = None,
     aa_chunk: int = 8,
     aa_version: str = 'standard',
+    cw_max_iter: int = 50,
+    cw_bss: int = 5,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
@@ -278,12 +280,14 @@ def run_evaluation_full(
             max_iter=40,
             num_random_init=1,
         ),
-        # CW-L2: batch_size=64 for GPU parallelism; max_iter=50 + binary_search_steps=5
-        # is the practical "fast CW" configuration used in many robustness papers.
-        # Full max_iter=100/bss=9 takes ~5h for n=1000; 50/5/bs=64 takes ~90 min.
+        # CW-L2: batch_size=64 for GPU parallelism.
+        # Default max_iter=50/bss=5 is the practical "fast CW" used in many
+        # robustness papers (~90 min for n=1000 on A100). Paper-canonical
+        # max_iter=100/bss=9 is selectable via --cw-max-iter 100 --cw-bss 9
+        # (tractable on RTX 5090, ~30 min per seed at n=1000).
         'CW': lambda: CarliniL2Method(
-            classifier, max_iter=50, confidence=0.0, learning_rate=0.01,
-            binary_search_steps=5, batch_size=64,
+            classifier, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
+            binary_search_steps=cw_bss, batch_size=64,
         ),
         'Square': lambda: SquareAttack(
             classifier, eps=EPS_LINF_STANDARD, max_iter=square_max_iter, nb_restarts=1,
@@ -599,6 +603,8 @@ def run_evaluation_multiseed(
     gen_chunk: int = None,
     aa_chunk: int = 8,
     aa_version: str = 'standard',
+    cw_max_iter: int = 50,
+    cw_bss: int = 5,
 ):
     """
     Run run_evaluation_full() over multiple seeds and aggregate statistics.
@@ -660,6 +666,8 @@ def run_evaluation_multiseed(
             gen_chunk=gen_chunk,
             aa_chunk=aa_chunk,
             aa_version=aa_version,
+            cw_max_iter=cw_max_iter,
+            cw_bss=cw_bss,
         )
         per_seed_results[str(seed)] = result
 
@@ -764,6 +772,12 @@ if __name__ == '__main__':
                         help='Run over 5 seeds and report mean±std (paper mode)')
     parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
                         help='Seeds to use with --multi-seed')
+    parser.add_argument('--cw-max-iter', type=int, default=50,
+                        help='CW-L2 max_iter (default 50 = fast CW; paper-canonical '
+                             '100 takes ~2x longer but matches RobustBench convention).')
+    parser.add_argument('--cw-bss', type=int, default=5,
+                        help='CW-L2 binary_search_steps (default 5 = fast CW; '
+                             'paper-canonical is 9).')
     args = parser.parse_args()
 
     if args.multi_seed:
@@ -779,6 +793,8 @@ if __name__ == '__main__':
             gen_chunk=args.gen_chunk,
             aa_chunk=args.aa_chunk,
             aa_version=args.aa_version,
+            cw_max_iter=args.cw_max_iter,
+            cw_bss=args.cw_bss,
         )
     else:
         run_evaluation_full(
@@ -793,4 +809,6 @@ if __name__ == '__main__':
             gen_chunk=args.gen_chunk,
             aa_chunk=args.aa_chunk,
             aa_version=args.aa_version,
+            cw_max_iter=args.cw_max_iter,
+            cw_bss=args.cw_bss,
         )

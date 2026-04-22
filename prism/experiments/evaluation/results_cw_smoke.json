@@ -1,20 +1,20 @@
 {
-  "FGSM": {
-    "TPR": 1.0,
+  "CW": {
+    "TPR": 0.25,
     "TPR_CI_95": [
-      0.5101,
-      1.0
+      0.0456,
+      0.6994
     ],
     "FPR": 0.25,
     "FPR_CI_95": [
       0.0456,
       0.6994
     ],
-    "Precision": 0.8,
-    "F1": 0.8889,
-    "TP": 4,
+    "Precision": 0.5,
+    "F1": 0.3333,
+    "TP": 1,
     "FP": 1,
-    "FN": 0,
+    "FN": 3,
     "TN": 3,
     "n_adv": 4,
     "n_clean": 4,
@@ -34,8 +34,8 @@
       "L1": 1
     },
     "adversarial_level_distribution": {
-      "L3_REJECT": 2,
-      "L2": 2
+      "PASS": 3,
+      "L1": 1
     }
   },
   "_meta": {
@@ -46,15 +46,15 @@
     "eps_linf": 0.03137254901960784,
     "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
     "attacks": [
-      "FGSM"
+      "CW"
     ],
     "latency": {
-      "mean_ms": 77.57,
-      "std_ms": 18.92,
-      "min_ms": 53.9,
-      "max_ms": 279.19,
-      "p50_ms": 75.06,
-      "p95_ms": 100.32,
+      "mean_ms": 73.08,
+      "std_ms": 19.75,
+      "min_ms": 53.47,
+      "max_ms": 294.48,
+      "p50_ms": 69.78,
+      "p95_ms": 96.91,
       "n": 200,
       "target_ms": 100,
       "pass": true
