@@ -285,9 +285,10 @@ def run_evaluation_full(
         # robustness papers (~90 min for n=1000 on A100). Paper-canonical
         # max_iter=100/bss=9 is selectable via --cw-max-iter 100 --cw-bss 9
         # (tractable on RTX 5090, ~30 min per seed at n=1000).
+        # verbose=True enables ART internal per-step loss logging.
         'CW': lambda: CarliniL2Method(
             classifier, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
-            binary_search_steps=cw_bss, batch_size=64,
+            binary_search_steps=cw_bss, batch_size=64, verbose=True,
         ),
         'Square': lambda: SquareAttack(
             classifier, eps=EPS_LINF_STANDARD, max_iter=square_max_iter, nb_restarts=1,
@@ -300,7 +301,10 @@ def run_evaluation_full(
         print("⚠  CW on CPU with n>50 will be very slow (~285s/sample). "
               "Use a GPU instance or pass --attacks FGSM PGD Square.")
     elif 'CW' in attacks_to_run and device.type == 'cuda':
-        print(f"✅ CW running on {device_type.upper()} (ART classifier on GPU) — ~3s/sample")
+        _cw_est = n_test * cw_max_iter * cw_bss * 0.003  # rough estimate: 3ms per iter per sample
+        print(f"✅ CW running on {device_type.upper()} (ART classifier on GPU)")
+        print(f"   CW params: max_iter={cw_max_iter}, bss={cw_bss}, "
+              f"estimated ~{_cw_est/60:.0f} min per seed")
 
     # ── Dataset (held-out eval split) ──────────────────────────────────────────
     pixel_dataset = torchvision.datasets.CIFAR10(
@@ -360,7 +364,22 @@ def run_evaluation_full(
         # no output for minutes (especially CW). We chunk by attack batch_size
         # so each finished chunk prints a timestamped line — this is what
         # surfaces progress in tee/nohup log files.
-        _bs = gen_chunk or getattr(attack, '_batch_size', None) or getattr(attack, 'batch_size', None) or 32
+        #
+        # CW FIX: CW with batch_size=64 runs max_iter*bss optimizer steps
+        # internally per generate() call. With gen_chunk=128 that's 128 images
+        # × 100 iter × 9 bss = ~15-30 min of silence. Force gen_chunk=8 for
+        # CW to get progress every ~8 samples (~30-60 sec per chunk).
+        if gen_chunk is not None:
+            _bs = gen_chunk
+        elif attack_name == 'CW':
+            _bs = 8  # CW-specific: small chunks for frequent progress
+        else:
+            _bs = getattr(attack, '_batch_size', None) or getattr(attack, 'batch_size', None) or 32
+        if attack_name == 'CW':
+            _est_per_img = cw_max_iter * cw_bss * 0.003  # ~3ms per iter per sample on GPU
+            _est_chunk = _est_per_img * _bs
+            print(f"  CW generation: chunk={_bs}, ~{_est_chunk:.0f}s per chunk, "
+                  f"~{_est_per_img * len(X_pixel_np) / 60:.0f} min total", flush=True)
         print(f"  Generating {len(sample_idx)} adversarial examples "
               f"(chunk={_bs})...", flush=True)
         X_adv_np = np.zeros_like(X_pixel_np)
@@ -735,6 +754,61 @@ def run_evaluation_multiseed(
         print(f"{atk:10} {ag['TPR_mean']:.4f}±{ag['TPR_std']:.4f}"
               f"  {ag['FPR_mean']:.4f}±{ag['FPR_std']:.4f}"
               f"  {ag['F1_mean']:.4f}±{ag['F1_std']:.4f}")
+    print(f"{'='*65}")
+
+    # ── Target metric gate ────────────────────────────────────────────────────
+    # Print explicit PASS/FAIL against publishable targets so the user can
+    # immediately see whether to continue or abort the Vast.ai run.
+    tpr_targets = {
+        'FGSM': 0.85, 'PGD': 0.90, 'Square': 0.85,
+        'CW': 0.85, 'AutoAttack': 0.90,
+    }
+    fpr_targets = {'L1': 0.10, 'L2': 0.03, 'L3': 0.005}
+    latency_target = 100.0
+
+    failures = []
+    print(f"\n{'='*65}")
+    print("TARGET METRIC GATE")
+    print(f"{'─'*65}")
+    for atk, ag in aggregate.items():
+        tgt = tpr_targets.get(atk, 0.85)
+        ok = ag['TPR_mean'] >= tgt
+        icon = '✅' if ok else '❌'
+        print(f"  {icon} {atk:12} TPR={ag['TPR_mean']:.4f}  target≥{tgt:.2f}"
+              f"  CI=[{ag['TPR_CI_95_pooled'][0]:.4f}, {ag['TPR_CI_95_pooled'][1]:.4f}]")
+        if not ok:
+            failures.append(f"{atk} TPR={ag['TPR_mean']:.4f} < {tgt}")
+    # Check FPR from first seed's per_tier_fpr (representative)
+    first_seed = str(seeds[0])
+    first_seed_data = per_seed_results.get(first_seed, {})
+    first_atk = next((a for a in attacks_to_run if a in first_seed_data), None)
+    if first_atk and 'per_tier_fpr' in first_seed_data.get(first_atk, {}):
+        ptf = first_seed_data[first_atk]['per_tier_fpr']
+        for tier, tgt in fpr_targets.items():
+            key = f"FPR_{tier}_plus"
+            fpr_val = ptf.get(key, 0)
+            ok = fpr_val <= tgt
+            icon = '✅' if ok else '❌'
+            print(f"  {icon} {tier:12} FPR={fpr_val:.4f}  target≤{tgt:.3f}")
+            if not ok:
+                failures.append(f"{tier} FPR={fpr_val:.4f} > {tgt}")
+    # Latency check from first seed's _meta
+    if '_meta' in first_seed_data:
+        lat = first_seed_data['_meta'].get('latency', {})
+        lat_mean = lat.get('mean_ms', 0)
+        ok = lat_mean < latency_target
+        icon = '✅' if ok else '❌'
+        print(f"  {icon} {'Latency':12} mean={lat_mean:.1f}ms  target<{latency_target:.0f}ms")
+        if not ok:
+            failures.append(f"Latency={lat_mean:.1f}ms > {latency_target}ms")
+    print(f"{'─'*65}")
+    if failures:
+        print(f"❌ GATE RESULT: FAIL — {len(failures)} target(s) missed:")
+        for f in failures:
+            print(f"     • {f}")
+        print("  ⚠  Consider aborting to save compute time.")
+    else:
+        print("✅ GATE RESULT: ALL TARGETS MET — results are publishable.")
     print(f"{'='*65}")
 
     return multi_seed_output

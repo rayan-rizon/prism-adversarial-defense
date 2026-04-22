@@ -489,7 +489,6 @@ def _write_markdown_multiseed(aggregate, statistical_tests, attacks, seeds, outp
 
 
 def main():
-def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--n',         type=int, default=500,
                         help='Images per config per attack (default 500)')
