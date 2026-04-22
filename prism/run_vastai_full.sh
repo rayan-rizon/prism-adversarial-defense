@@ -84,17 +84,22 @@ if [ "$STEP1_EXIT" -ne 0 ]; then
   echo "ERROR: Step 1 failed. Check logs/step1_build_profile.log"; exit 1
 fi
 
-# ── Step 2: Retrain ensemble (with CW + AutoAttack + grad-norm feature) ───────
+# ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, use-grad-norm] ==="
-# --use-grad-norm adds the input-gradient L2 norm as the 38th feature.
-# This is a physically motivated discriminator for FGSM (perturbation = ε·sign(∇L)),
-# directly addressing the 27.3% FGSM training-mix dilution from CW+AA inclusion.
-# Cost: +5ms latency per inference (34ms → ~39ms, well under 100ms target).
+echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=2.5] ==="
+# FGSM oversample 2.5 gives FGSM 2.5/(2.5+1+1+1+1) = 38.5% of the adversarial
+# budget, close to the original 3-attack share (1.5/3.5 = 42.9%) that achieved
+# FGSM TPR 86.76%. This compensates for CW+AA dilution without oversampling so
+# aggressively that other attacks regress.
+#
+# NOTE: --use-grad-norm was tested on the 2026-04-22 Vast.ai run and REVERTED.
+# It caused a catastrophic regression: FGSM TPR 80.6% → 63.0%, Square 89.1% → 79.8%.
+# Root cause: the gradient L2 norm is nearly non-discriminative (AUC +0.004) but
+# inflated calibration thresholds by 15-20%, destroying the TPR/FPR tradeoff.
+# See regression_analysis_20260422.md for the full forensic analysis.
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 1.5 \
-  --use-grad-norm \
+  --fgsm-oversample 2.5 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -107,10 +112,9 @@ if [ "$STEP2_EXIT" -ne 0 ]; then
   echo "ERROR: Step 2 failed. Check logs/step2_retrain.log"; exit 1
 fi
 
-# ── Step 2b: Post-retrain verification (VASTAI_RUN_GUIDE §4.2) ───────────────
-# Verifies that CW and AutoAttack are in the training mix, grad-norm is enabled,
-# and the feature dimension is 38. Catches silent training failures early,
-# before the expensive calibration + evaluation cycle.
+# ── Step 2b: Post-retrain verification ────────────────────────────────────────
+# Verifies CW and AutoAttack are in the training mix, grad-norm is OFF,
+# and feature dimension is 37 (36 persistence + 1 DCT, no grad-norm).
 echo ""
 echo "=== Step 2b: Retrain Verification ==="
 python -c "
@@ -124,10 +128,10 @@ if 'CW' not in ta:
     errors.append(f'CW missing from training_attacks: {ta}')
 if 'AutoAttack' not in ta:
     errors.append(f'AutoAttack missing from training_attacks: {ta}')
-if not ng:
-    errors.append('use_grad_norm=False — retrain did not enable grad-norm feature')
-if nf is not None and nf != 38:
-    errors.append(f'n_features={nf}, expected 38 (37 persistence + 1 grad-norm)')
+if ng:
+    errors.append('use_grad_norm=True — grad-norm must be OFF (reverted, see regression_analysis_20260422.md)')
+if nf is not None and nf != 37:
+    errors.append(f'n_features={nf}, expected 37 (36 persistence + 1 DCT)')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
     for err in errors: print(f'  • {err}')
