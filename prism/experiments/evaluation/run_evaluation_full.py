@@ -759,6 +759,8 @@ def run_evaluation_multiseed(
     # ── Target metric gate ────────────────────────────────────────────────────
     # Print explicit PASS/FAIL against publishable targets so the user can
     # immediately see whether to continue or abort the Vast.ai run.
+    # All metrics (TPR, FPR, latency) are pooled across all seeds so the gate
+    # uses a consistent multi-seed methodology throughout.
     tpr_targets = {
         'FGSM': 0.85, 'PGD': 0.90, 'Square': 0.85,
         'CW': 0.85, 'AutoAttack': 0.90,
@@ -778,29 +780,48 @@ def run_evaluation_multiseed(
               f"  CI=[{ag['TPR_CI_95_pooled'][0]:.4f}, {ag['TPR_CI_95_pooled'][1]:.4f}]")
         if not ok:
             failures.append(f"{atk} TPR={ag['TPR_mean']:.4f} < {tgt}")
-    # Check FPR from first seed's per_tier_fpr (representative)
-    first_seed = str(seeds[0])
-    first_seed_data = per_seed_results.get(first_seed, {})
-    first_atk = next((a for a in attacks_to_run if a in first_seed_data), None)
-    if first_atk and 'per_tier_fpr' in first_seed_data.get(first_atk, {}):
-        ptf = first_seed_data[first_atk]['per_tier_fpr']
+    # ── Pool per-tier FPR across all seeds ────────────────────────────────────
+    # Each seed uses a different eval subset → different clean images → different
+    # raw FP counts. Pool by summing FP and n_clean across seeds so the gate
+    # uses the same statistical methodology as the TPR pooled Wilson CI.
+    pooled_fp   = {'L1': 0, 'L2': 0, 'L3': 0}
+    pooled_n    = 0
+    lat_means   = []
+    ref_atk = next((a for a in attacks_to_run if a not in ('_meta',)), None)
+    for seed_str, seed_data in per_seed_results.items():
+        atk_data = seed_data.get(ref_atk, {}) if ref_atk else {}
+        ptf = atk_data.get('per_tier_fpr', {})
+        n_clean = atk_data.get('n_clean', 0)
+        if n_clean > 0:
+            pooled_fp['L1'] += int(round(ptf.get('FPR_L1_plus', 0) * n_clean))
+            pooled_fp['L2'] += int(round(ptf.get('FPR_L2_plus', 0) * n_clean))
+            pooled_fp['L3'] += int(round(ptf.get('FPR_L3_plus', 0) * n_clean))
+            pooled_n += n_clean
+        meta = seed_data.get('_meta', {})
+        lat_ms = meta.get('latency', {}).get('mean_ms')
+        if lat_ms is not None:
+            lat_means.append(lat_ms)
+    if pooled_n > 0:
         for tier, tgt in fpr_targets.items():
-            key = f"FPR_{tier}_plus"
-            fpr_val = ptf.get(key, 0)
+            fpr_val = pooled_fp[tier] / pooled_n
+            ci = wilson_ci(pooled_fp[tier], pooled_n)
             ok = fpr_val <= tgt
             icon = '✅' if ok else '❌'
-            print(f"  {icon} {tier:12} FPR={fpr_val:.4f}  target≤{tgt:.3f}")
+            print(f"  {icon} {tier:12} FPR={fpr_val:.4f}  target≤{tgt:.3f}"
+                  f"  CI=[{ci[0]:.4f}, {ci[1]:.4f}]  (pooled {len(per_seed_results)} seeds)")
             if not ok:
                 failures.append(f"{tier} FPR={fpr_val:.4f} > {tgt}")
-    # Latency check from first seed's _meta
-    if '_meta' in first_seed_data:
-        lat = first_seed_data['_meta'].get('latency', {})
-        lat_mean = lat.get('mean_ms', 0)
-        ok = lat_mean < latency_target
+    # ── Pool latency: mean-of-means; gate on worst seed ───────────────────────
+    if lat_means:
+        lat_mean_of_means = float(np.mean(lat_means))
+        lat_worst = float(np.max(lat_means))
+        ok = lat_worst < latency_target   # conservative: worst seed must pass
         icon = '✅' if ok else '❌'
-        print(f"  {icon} {'Latency':12} mean={lat_mean:.1f}ms  target<{latency_target:.0f}ms")
+        print(f"  {icon} {'Latency':12} mean={lat_mean_of_means:.1f}ms"
+              f"  worst={lat_worst:.1f}ms  target<{latency_target:.0f}ms"
+              f"  (across {len(lat_means)} seeds)")
         if not ok:
-            failures.append(f"Latency={lat_mean:.1f}ms > {latency_target}ms")
+            failures.append(f"Latency worst={lat_worst:.1f}ms > {latency_target}ms")
     print(f"{'─'*65}")
     if failures:
         print(f"❌ GATE RESULT: FAIL — {len(failures)} target(s) missed:")
