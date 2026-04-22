@@ -81,6 +81,16 @@ files — no contention. GPU utilization rises from ~25 % to ~60–70 %.
 
 ---
 
+## 0. Prerequisites
+
+Before starting your Vast.ai instance:
+
+1.  **Push Local Changes:** The instance will use `git clone`. Ensure all current local fixes (logging updates, master scripts, etc.) are **pushed to your GitHub repository**.
+2.  **Private Repo Access:** If your repository is private, ensure you have a [Personal Access Token (PAT)](https://github.com/settings/tokens) ready to use during the `git clone` step.
+3.  **No Data/Model Upload Needed:** Do not worry about `data/` or `models/` folders. The pipeline will automatically download CIFAR-10 and build all required model artifacts on the RTX 5090 to ensure hardware-specific optimization.
+
+---
+
 ## 1. Vast.ai Instance Configuration
 
 | Setting | Value |
