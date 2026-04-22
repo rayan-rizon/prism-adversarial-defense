@@ -167,14 +167,13 @@ bash run_vastai_full.sh
 |------|--------|------|
 | 0 | GPU + PyTorch verification | <1 min |
 | 1 | Build reference profiles | ~10 min |
-| 2 | Retrain ensemble (n=4000, CW+AA) | ~40 min |
+| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.5**) | ~40 min |
 | 3 | Calibrate conformal thresholds | ~3 min |
 | 4 | FPR gate check (abort if fail) | ~2 min |
-| 5A | **CW eval, 5-seed** (parallel) | ~150 min ← bottleneck |
-| 5B | **FGSM+PGD+Square+AA, 5-seed** (parallel) | ~40 min |
+| 5 | **Parallel Eval** (CW + Fast attacks) | ~150 min ← bottleneck |
 | 6 | Adaptive PGD, 5-seed | ~30 min |
 | 7 | Ablation, n=1000 × 5 seeds | ~15 min |
-| 8 | Reproducibility manifest | <1 min |
+| 8 | Reproducibility manifest (SHA256) | <1 min |
 | **Total** | | **~3.5 h** |
 
 ---
@@ -193,7 +192,7 @@ python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 ```bash
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 1.5 \
+  --fgsm-oversample 2.5 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -202,17 +201,21 @@ python scripts/train_ensemble_scorer.py \
   2>&1 | tee logs/retrain.log
 ```
 
-**Verify the retrain worked** — this is critical for CW TPR:
+**Verify the retrain worked** — this is critical for FGSM and CW TPR:
 ```bash
 python -c "
 import pickle
 e = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
 ta = getattr(e, 'training_attacks', [])
+ng = getattr(e, 'use_grad_norm', False)
+nf = getattr(e, 'n_features', '?')
 print('training_attacks:', ta)
-print('n_features:', getattr(e, 'n_features', '?'))
-print('use_dct:', getattr(e, 'use_dct', '?'))
+print('use_grad_norm:', ng)
+print('n_features:', nf)
 assert 'CW' in ta, 'ERROR: CW not in training mix!'
 assert 'AutoAttack' in ta, 'ERROR: AutoAttack not in training mix!'
+assert not ng, 'ERROR: grad-norm must be OFF (regression risk)'
+assert nf == 37, f'ERROR: expected 37 features, got {nf}'
 print('RETRAIN CHECK: PASS')
 "
 ```
@@ -220,14 +223,14 @@ print('RETRAIN CHECK: PASS')
 Expected output:
 ```
 training_attacks: ['FGSM', 'PGD', 'Square', 'CW', 'AutoAttack']
+use_grad_norm: False
 n_features: 37
-use_dct: True
 RETRAIN CHECK: PASS
 ```
 
-> **Why this matters:** Without `--include-cw`, CW TPR will be ~10 % (smoke-tested
-> and confirmed). After retrain with CW in the mix, it rises to ≥ 85 %. Do not
-> skip this verification before spending hours on evaluation.
+> [!IMPORTANT]
+> **FGSM Oversample:** 2.5 is used to restore FGSM's training share (~38.5%) and maintain TPR $\ge$ 85% with the 5-attack mix.
+> **Grad-Norm:** This feature was tested and **REVERTED** (April 22). It inflated calibration thresholds by 20%, dropping FGSM TPR to 63%. Do not enable it.
 
 ### 4.3 Calibrate + gate
 
@@ -416,8 +419,8 @@ scp -P <port> \
 
 ## 8. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
+| FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
+| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 2.5 |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
 | CW shows no output | gen_chunk was too large | Fixed: auto-caps to 8 for CW — update from repo |
