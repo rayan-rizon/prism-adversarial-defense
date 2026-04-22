@@ -38,7 +38,7 @@ results_n500_20260419.json (FGSM TPR 0.832->0.622) and
 results_n500_retrained_20260419.json (L2/L3 FPR targets violated).
 
 Local attacks only: FGSM, PGD, Square.
-CW and AutoAttack: remote-only (Thundercompute), after local targets pass.
+CW and AutoAttack: remote-only (Vast.ai GPU), after local targets pass.
 
 USAGE
 -----
@@ -56,6 +56,17 @@ from tqdm import tqdm
 os.environ.setdefault('SSL_CERT_FILE', certifi.where())
 os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
 ssl._create_default_https_context = ssl.create_default_context
+
+# Windows console / redirected-log encoding fix: cp1252 cannot encode
+# Unicode symbols (∞, ε, ✅, ⚠). Force UTF-8 with line-buffering so `tee`
+# / nohup log files receive output in real time.
+for _stream_name in ('stdout', 'stderr'):
+    _s = getattr(sys, _stream_name, None)
+    if _s is not None and hasattr(_s, 'reconfigure'):
+        try:
+            _s.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+        except Exception:
+            pass
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -178,6 +189,9 @@ def run_evaluation_full(
     checkpoint_interval: int = 100,
     device_str: str = None,
     square_max_iter: int = 5000,
+    gen_chunk: int = None,
+    aa_chunk: int = 8,
+    aa_version: str = 'standard',
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
@@ -337,22 +351,35 @@ def run_evaluation_full(
         level_clean = {}
         level_adv   = {}
 
-        # ── Batch-generate ALL adversarials at once ──────────────────────────
-        # Passing the full X_pixel_np to attack.generate() lets ART split it
-        # into batch_size=32 sub-batches internally, keeping the GPU pipeline
-        # saturated. This is the critical speedup for CW (and PGD/Square).
-        print(f"  Generating {len(sample_idx)} adversarial examples (batch={attack._batch_size if hasattr(attack, '_batch_size') else '?'})...")
+        # ── Batch-generate adversarials in visible chunks ────────────────────
+        # A single attack.generate(full_batch) call is opaque: the user sees
+        # no output for minutes (especially CW). We chunk by attack batch_size
+        # so each finished chunk prints a timestamped line — this is what
+        # surfaces progress in tee/nohup log files.
+        _bs = gen_chunk or getattr(attack, '_batch_size', None) or getattr(attack, 'batch_size', None) or 32
+        print(f"  Generating {len(sample_idx)} adversarial examples "
+              f"(chunk={_bs})...", flush=True)
+        X_adv_np = np.zeros_like(X_pixel_np)
+        _t_gen0 = time.perf_counter()
         try:
-            X_adv_np = attack.generate(X_pixel_np)  # shape (N,3,224,224)
+            for _c_start in range(0, len(X_pixel_np), _bs):
+                _c_end = min(_c_start + _bs, len(X_pixel_np))
+                X_adv_np[_c_start:_c_end] = attack.generate(X_pixel_np[_c_start:_c_end])
+                _dt = time.perf_counter() - _t_gen0
+                _per = _dt / max(_c_end, 1)
+                _eta = _per * (len(X_pixel_np) - _c_end)
+                print(f"    [gen] {_c_end}/{len(X_pixel_np)} "
+                      f"elapsed={_dt:.1f}s  rate={_per:.2f}s/img  eta={_eta:.1f}s",
+                      flush=True)
         except Exception as e:
-            print(f"  Batch generation failed ({e}), falling back to per-sample...")
-            X_adv_np = np.zeros_like(X_pixel_np)
+            print(f"  Chunked generation failed ({e}), "
+                  f"falling back to per-sample...", flush=True)
             for idx_i, x_np_i in enumerate(tqdm(X_pixel_np, desc="  fallback")):
                 try:
                     X_adv_np[idx_i] = attack.generate(x_np_i[np.newaxis])[0]
                 except Exception as e2:
                     X_adv_np[idx_i] = x_np_i
-                    print(f"    Sample {idx_i} failed: {e2}")
+                    print(f"    Sample {idx_i} failed: {e2}", flush=True)
 
         # ── Evaluate clean + adversarial through PRISM ────────────────────────
         for j, img_pixel in enumerate(tqdm(all_imgs_pixel)):
@@ -384,7 +411,8 @@ def run_evaluation_full(
                 _f1 = 2 * _prec * _tpr / max(_prec + _tpr, 1e-8)
                 print(f"\n  [Checkpoint {j+1}/{len(all_imgs_pixel)}] TPR={_tpr:.4f} "
                       f"({'✅' if _tpr >= 0.88 else '❌' if _tpr < 0.70 else '⚠'}) | "
-                      f"FPR={_fpr:.4f} ({'✅' if _fpr <= 0.10 else '❌'}) | F1={_f1:.4f}")
+                      f"FPR={_fpr:.4f} ({'✅' if _fpr <= 0.10 else '❌'}) | F1={_f1:.4f}",
+                      flush=True)
 
         # Metrics
         n_adv   = tp + fn
@@ -430,7 +458,8 @@ def run_evaluation_full(
         print("Attack: AutoAttack (L∞, ε=8/255, standard)")
         print(f"{'='*60}")
         results['AutoAttack'] = _run_autoattack(
-            prism_base, pixel_dataset, sample_idx, device, EPS_LINF_STANDARD
+            prism_base, pixel_dataset, sample_idx, device, EPS_LINF_STANDARD,
+            aa_chunk=aa_chunk, aa_version=aa_version,
         )
 
     # ── Summary table ──────────────────────────────────────────────────────────
@@ -466,36 +495,58 @@ def run_evaluation_full(
     return results
 
 
-def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps):
-    """Run AutoAttack and evaluate each example through PRISM."""
+def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
+                    aa_chunk: int = 8, aa_version: str = 'standard'):
+    """Run AutoAttack and evaluate each example through PRISM.
+
+    Two bug fixes vs. original:
+      1. The backbone is ImageNet-1000; CIFAR labels (0-9) are NOT valid ground
+         truth for it. We use the model's clean predictions as the attack
+         reference (standard practice when evaluating on a mismatched dataset).
+      2. `run_standard_evaluation(X, y, bs=32)` produced zero log output for
+         the entire (slow) AutoAttack run. We now chunk by `aa_chunk` and
+         print per-chunk timing + PRISM evaluation, so log tails advance.
+    """
     if not AA_AVAILABLE:
         return {'error': 'autoattack not installed'}
 
-    # Build a wrapped model for AutoAttack on the same device (GPU if available)
     from torchvision.models import ResNet18_Weights
     import torchvision
 
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device).eval()
     norm_model = _NormalizedResNet(model).to(device).eval()
 
-    adversary = _AA(norm_model, norm='Linf', eps=eps, version='standard', device=device)
+    adversary = _AA(norm_model, norm='Linf', eps=eps, version=aa_version, device=device)
 
     tp, fp, fn, tn = 0, 0, 0, 0
     level_clean, level_adv = {}, {}
 
-    # Build batched pixel tensors for AutoAttack
-    imgs_pixel   = []
-    labels_list  = []
+    imgs_pixel = []
     for i in sample_idx:
-        img, lbl = pixel_dataset[int(i)]
+        img, _ = pixel_dataset[int(i)]
         imgs_pixel.append(img)
-        labels_list.append(lbl)
 
-    X = torch.stack(imgs_pixel).to(device)     # (N, 3, 224, 224)
-    y = torch.tensor(labels_list).to(device)   # (N,) — used by AutoAttack
+    X = torch.stack(imgs_pixel).to(device)     # (N, 3, 224, 224) in [0,1]
 
-    X_adv = adversary.run_standard_evaluation(X, y, bs=32)
+    # Use the backbone's own clean predictions as attack targets (label space
+    # is ImageNet-1000; CIFAR ints 0-9 would be arbitrary class ids here).
+    with torch.no_grad():
+        y = norm_model(X).argmax(dim=1)         # (N,) ImageNet class ids
 
+    n_total = X.shape[0]
+    X_adv = torch.empty_like(X)
+    t0 = time.perf_counter()
+    print(f"  AutoAttack: generating adversarials for n={n_total} "
+          f"(eps={eps:.4f}, version={aa_version}, chunk={aa_chunk})...",
+          flush=True)
+    for s in range(0, n_total, aa_chunk):
+        e = min(s + aa_chunk, n_total)
+        X_adv[s:e] = adversary.run_standard_evaluation(X[s:e], y[s:e], bs=aa_chunk)
+        _dt = time.perf_counter() - t0
+        print(f"    [AA gen] {e}/{n_total} elapsed={_dt:.1f}s  "
+              f"rate={_dt/max(e,1):.2f}s/img", flush=True)
+
+    # ── Evaluate clean + adversarial through PRISM ─────────────────────────────
     for j, (pix, adv_pix) in enumerate(zip(X, X_adv)):
         x_clean = _NORMALIZE(pix.cpu()).unsqueeze(0).to(device)
         x_adv   = _NORMALIZE(adv_pix.cpu()).unsqueeze(0).to(device)
@@ -510,13 +561,19 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps):
         if lv_a != 'PASS': tp += 1
         else:               fn += 1
 
+        if (j + 1) % max(1, n_total // 5) == 0:
+            _tpr = tp / max(tp + fn, 1)
+            _fpr = fp / max(fp + tn, 1)
+            print(f"    [AA eval] {j+1}/{n_total}  TPR={_tpr:.4f}  FPR={_fpr:.4f}",
+                  flush=True)
+
     n_adv, n_clean = tp + fn, fp + tn
     tpr = tp / max(n_adv, 1)
     fpr = fp / max(n_clean, 1)
     prec = tp / max(tp + fp, 1)
     f1 = 2 * prec * tpr / max(prec + tpr, 1e-8)
 
-    print(f"  AutoAttack: TPR={tpr:.4f}  FPR={fpr:.4f}  F1={f1:.4f}")
+    print(f"  AutoAttack: TPR={tpr:.4f}  FPR={fpr:.4f}  F1={f1:.4f}", flush=True)
     return {
         'TPR': round(tpr, 4), 'FPR': round(fpr, 4),
         'Precision': round(prec, 4), 'F1': round(f1, 4),
@@ -537,6 +594,11 @@ def run_evaluation_multiseed(
     output_path: str = 'experiments/evaluation/results_paper_multiseed.json',
     attacks_to_run: list = None,
     checkpoint_interval: int = 100,
+    device_str: str = None,
+    square_max_iter: int = 5000,
+    gen_chunk: int = None,
+    aa_chunk: int = 8,
+    aa_version: str = 'standard',
 ):
     """
     Run run_evaluation_full() over multiple seeds and aggregate statistics.
@@ -593,6 +655,11 @@ def run_evaluation_multiseed(
             attacks_to_run=attacks_to_run,
             seed=seed,
             checkpoint_interval=checkpoint_interval,
+            device_str=device_str,
+            square_max_iter=square_max_iter,
+            gen_chunk=gen_chunk,
+            aa_chunk=aa_chunk,
+            aa_version=aa_version,
         )
         per_seed_results[str(seed)] = result
 
@@ -681,6 +748,18 @@ if __name__ == '__main__':
                         help='Force device: cpu or cuda (default: auto-detect)')
     parser.add_argument('--square-max-iter', type=int, default=5000,
                         help='Max iterations for Square attack (default: 5000)')
+    parser.add_argument('--gen-chunk', type=int, default=None,
+                        help='Chunk size for adversarial generation. '
+                             'Smaller = more frequent progress lines in log. '
+                             'Default: use attack batch_size.')
+    parser.add_argument('--aa-chunk', type=int, default=8,
+                        help='Batch size for AutoAttack (default 8; lower for '
+                             '6GB GPUs, raise to 16-32 on A100).')
+    parser.add_argument('--aa-version', type=str, default='standard',
+                        choices=['standard', 'plus', 'rand'],
+                        help='AutoAttack version: standard (full ensemble) | '
+                             'plus | rand. Use "rand" for randomized eval, '
+                             '"standard" is paper-quality default.')
     parser.add_argument('--multi-seed', action='store_true',
                         help='Run over 5 seeds and report mean±std (paper mode)')
     parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
@@ -695,6 +774,11 @@ if __name__ == '__main__':
             output_path=args.output,
             attacks_to_run=args.attacks,
             checkpoint_interval=args.checkpoint_interval,
+            device_str=args.device,
+            square_max_iter=args.square_max_iter,
+            gen_chunk=args.gen_chunk,
+            aa_chunk=args.aa_chunk,
+            aa_version=args.aa_version,
         )
     else:
         run_evaluation_full(
@@ -706,4 +790,7 @@ if __name__ == '__main__':
             checkpoint_interval=args.checkpoint_interval,
             device_str=args.device,
             square_max_iter=args.square_max_iter,
+            gen_chunk=args.gen_chunk,
+            aa_chunk=args.aa_chunk,
+            aa_version=args.aa_version,
         )

@@ -11,17 +11,15 @@ DESIGN FOR PUBLISHABILITY
    - The final evaluation set (test idx 8000-9999)
    Training data: CIFAR-10 TRAINING set (50,000 images).
 
-2. Adversarial training mix -- tri-split (~34% FGSM / 33% PGD / 33% Square):
-   - FGSM   (L-inf, eps=8/255, single-step)        -- gradient-based, one step
-   - PGD    (L-inf, eps=8/255, 20 steps)           -- gradient-based, iterative
-   - Square (L-inf, eps=8/255, 1000 queries)       -- GRADIENT-FREE black-box
-   All three at the SAME epsilon as the evaluation (eps=8/255), ensuring the
-   logistic boundary is calibrated for the correct perturbation budget.
-   Square is included because results_n500_planA.json showed Square TPR
-   trailing PGD by ~35 pp when the logistic was trained only on FGSM+PGD.
-   Adding Square exposes the linear classifier to its gradient-free topology
-   signature directly.  AutoAttack and CW-L2 are NOT trained on locally --
-   they remain evaluation-only (run on Thundercompute after local targets pass).
+2. Adversarial training mix -- default tri-split (~34% FGSM / 33% PGD / 33% Square),
+   optionally extended with CW-L2 and/or AutoAttack-APGD-CE:
+   - FGSM          (L-inf, eps=8/255, single-step)        -- gradient-based, one step
+   - PGD           (L-inf, eps=8/255, 20 steps)           -- gradient-based, iterative
+   - Square        (L-inf, eps=8/255, 1000 queries)       -- GRADIENT-FREE black-box
+   - CW-L2         (L2, confidence=0, --include-cw)       -- optimization-based, L2 norm
+   - AutoAttack    (L-inf APGD-CE, --include-autoattack)  -- strongest gradient attack
+   All at the SAME epsilon as the evaluation (eps=8/255 for L-inf; CW optimises L2
+   separately). Use --include-cw to fix the CW TPR miss (was 3.3% without training).
 
 3. The logistic regression is a linear classifier in feature space -- it has
    no hidden layers and cannot overfit in the way a deep model would.
@@ -64,12 +62,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 try:
     from art.attacks.evasion import (
         FastGradientMethod, ProjectedGradientDescent, SquareAttack,
+        CarliniL2Method,
     )
     from art.estimators.classification import PyTorchClassifier
     ART_AVAILABLE = True
 except ImportError:
     ART_AVAILABLE = False
     print("WARNING: ART not available -- cannot generate adversarial features.")
+
+# AutoAttack APGD-CE slice (only needed if --include-autoattack).
+try:
+    from autoattack.autopgd_base import APGDAttack
+    AUTOATTACK_AVAILABLE = True
+except ImportError:
+    AUTOATTACK_AVAILABLE = False
 
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
@@ -121,6 +127,30 @@ def compute_input_grad_norm(model: torch.nn.Module,
         pred_idx = int(logits.argmax(1).item())
         (grad_x,) = torch.autograd.grad(logits[0, pred_idx], x_g)
     return float(grad_x.norm().item())
+
+
+class _APGDGenerator:
+    """Wrap AutoAttack's APGDAttack so it exposes ART's .generate(x_np) API.
+
+    The training extraction loop calls ``art_attack.generate(x_np)``; APGD's
+    native interface is ``.perturb(x, y)``. Labels come from the backbone's own
+    clean predictions (ImageNet-1000 space), not CIFAR-10, for the same reason
+    we fixed the _run_autoattack label bug in the evaluation script.
+    """
+    def __init__(self, norm_model, eps, device, n_iter=40):
+        self._attack = APGDAttack(
+            norm_model, norm='Linf', eps=eps,
+            n_iter=n_iter, n_restarts=1, loss='ce', rho=0.75, verbose=False,
+        )
+        self._norm_model = norm_model
+        self._device = device
+
+    def generate(self, x_np):
+        x = torch.tensor(x_np, dtype=torch.float32).to(self._device)
+        with torch.no_grad():
+            y = self._norm_model(x).argmax(dim=1)
+        x_adv = self._attack.perturb(x, y)
+        return x_adv.detach().cpu().numpy()
 
 
 def _extract_features(dataset_indices, dataset, model, extractor, profiler,
@@ -194,6 +224,10 @@ def train_ensemble_scorer(
     calibrator_path: str = 'models/calibrator.pkl',
     profile_path: str = 'models/reference_profiles.pkl',
     device: str = None,
+    include_cw: bool = False,
+    include_autoattack: bool = False,
+    cw_max_iter: int = 30,
+    cw_bss: int = 3,
 ):
     """
     Args:
@@ -207,14 +241,24 @@ def train_ensemble_scorer(
         print("ERROR: adversarial-robustness-toolbox not installed.")
         print("  pip install adversarial-robustness-toolbox")
         sys.exit(1)
+    if include_autoattack and not AUTOATTACK_AVAILABLE:
+        print("ERROR: --include-autoattack given but autoattack not installed.")
+        print("  pip install autoattack")
+        sys.exit(1)
 
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
-    total_weight = fgsm_oversample + 1.0 + 1.0
+
+    # Dynamic attack mix. FGSM uses fgsm_oversample weight; others weight=1.
+    weights = {'FGSM': fgsm_oversample, 'PGD': 1.0, 'Square': 1.0}
+    if include_cw:          weights['CW']         = 1.0
+    if include_autoattack:  weights['AutoAttack'] = 1.0
+    total_weight = sum(weights.values())
+
     print(f"Device: {device}")
     print(f"Training ensemble scorer: n_train={n_train}, eps={fgsm_eps:.6f} (= 8/255 = {8/255:.6f})")
-    print(f"Adversarial mix: fgsm_oversample={fgsm_oversample} "
-          f"(FGSM:{fgsm_oversample/total_weight:.1%} PGD:{1/total_weight:.1%} "
-          f"Square:{1/total_weight:.1%})")
+    share = {a: w / total_weight for a, w in weights.items()}
+    print("Adversarial mix: " + "  ".join(
+        f"{a}:{share[a]:.1%}" for a in weights))
 
     # -- Load pre-built components ------------------------------------------------
     if not os.path.exists(profile_path):
@@ -251,25 +295,39 @@ def train_ensemble_scorer(
     # ART classifier for attack generation (normalisation wrapped inside model)
     norm_model = _NormalizedResNet(
         torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval()
-    )
+    ).to(device)
     art_clf = PyTorchClassifier(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, 224, 224),
         nb_classes=1000,
         clip_values=(0.0, 1.0),
+        device_type='gpu' if device == 'cuda' else 'cpu',
     )
 
     # Attacks at the SAME epsilon as evaluation
-    fgsm_attack   = FastGradientMethod(art_clf, eps=fgsm_eps)
-    pgd_attack    = ProjectedGradientDescent(
-        art_clf, eps=fgsm_eps, eps_step=fgsm_eps / 4, max_iter=20
-    )
-    # Square: gradient-free black-box; 1000 queries is enough for training
-    # signal (eval uses 5000).  Lower budget keeps training time reasonable.
-    square_attack = SquareAttack(
-        art_clf, eps=fgsm_eps, max_iter=1000, batch_size=1, verbose=False,
-    )
+    attacks = {
+        'FGSM': FastGradientMethod(art_clf, eps=fgsm_eps),
+        'PGD': ProjectedGradientDescent(
+            art_clf, eps=fgsm_eps, eps_step=fgsm_eps / 4, max_iter=20),
+        # Square: gradient-free black-box; 1000 queries is enough for training
+        # signal (eval uses 5000). Lower budget keeps training time reasonable.
+        'Square': SquareAttack(
+            art_clf, eps=fgsm_eps, max_iter=1000, batch_size=1, verbose=False),
+    }
+    if include_cw:
+        # CW max_iter / binary_search_steps reduced vs eval for training-time
+        # budget; still produces in-distribution L2 adversarials for logistic fit.
+        attacks['CW'] = CarliniL2Method(
+            art_clf, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
+            binary_search_steps=cw_bss, batch_size=1,
+        )
+    if include_autoattack:
+        # APGD-CE slice only (fastest component); full AutoAttack ensemble is
+        # 4x slower and APGD alone provides the gradient-L∞ signature we want.
+        attacks['AutoAttack'] = _APGDGenerator(
+            norm_model, eps=fgsm_eps, device=device, n_iter=40,
+        )
 
     # -- Extract features -------------------------------------------------------
     print(f"\nExtracting {n_train} clean feature vectors...")
@@ -279,44 +337,49 @@ def train_ensemble_scorer(
         use_grad_norm=use_grad_norm,
     )
 
-    # Split adversarial budget according to fgsm_oversample ratio.
-    # total_weight = fgsm_oversample + 1 + 1; tail remainder goes to Square.
-    n_fgsm   = int(n_train * fgsm_oversample / total_weight)
-    n_pgd    = int(n_train * 1.0 / total_weight)
-    n_square = n_train - n_fgsm - n_pgd
+    # Split adversarial budget across all active attacks by their weights.
+    # Rounding remainder goes to the last attack in insertion order.
+    attack_names = list(weights.keys())
+    counts = {}
+    running = 0
+    for i, a in enumerate(attack_names):
+        if i == len(attack_names) - 1:
+            counts[a] = n_train - running
+        else:
+            counts[a] = int(n_train * weights[a] / total_weight)
+            running += counts[a]
+
+    # Widen adv_pool if the default 3x header is smaller than the total budget
+    # (happens when include_cw/include_autoattack push the mix above 3 attacks).
+    adv_pool_needed = sum(counts.values())
+    if adv_pool_needed > len(adv_pool):
+        adv_pool = all_idx[n_train: n_train + adv_pool_needed + 100]
 
     off = 0
-    print(f"\nExtracting {n_fgsm} FGSM (eps={fgsm_eps:.6f}) adversarial features...")
-    X_fgsm, _ = _extract_features(
-        adv_pool[off: off + n_fgsm], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=fgsm_attack, label='FGSM adv',
-        use_grad_norm=use_grad_norm,
-    )
-    off += n_fgsm
+    X_adv_parts = []
+    per_attack_shapes = {}
+    for atk_name in attack_names:
+        n_atk = counts[atk_name]
+        print(f"\nExtracting {n_atk} {atk_name} adversarial features "
+              f"(eps={fgsm_eps:.6f})...", flush=True)
+        X_atk, _ = _extract_features(
+            adv_pool[off: off + n_atk], pixel_dataset, model, extractor, profiler,
+            base_scorer, ref_profiles, device,
+            art_attack=attacks[atk_name], label=f'{atk_name} adv',
+            use_grad_norm=use_grad_norm,
+        )
+        off += n_atk
+        X_adv_parts.append(X_atk)
+        per_attack_shapes[atk_name] = X_atk.shape[0]
 
-    print(f"\nExtracting {n_pgd} PGD (eps={fgsm_eps:.6f}, 20 steps) adversarial features...")
-    X_pgd, _ = _extract_features(
-        adv_pool[off: off + n_pgd], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=pgd_attack, label='PGD adv',
-        use_grad_norm=use_grad_norm,
-    )
-    off += n_pgd
-
-    print(f"\nExtracting {n_square} Square (eps={fgsm_eps:.6f}, 1000 queries) adversarial features...")
-    X_square, _ = _extract_features(
-        adv_pool[off: off + n_square], pixel_dataset, model, extractor, profiler,
-        base_scorer, ref_profiles, device, art_attack=square_attack, label='Square adv',
-        use_grad_norm=use_grad_norm,
-    )
-
-    X_adv = np.vstack([X_fgsm, X_pgd, X_square])
-    # Shuffle so the 80/20 train/val split sees all three attack families --
-    # without shuffle, X_adv[:80%] would contain almost no Square samples.
+    X_adv = np.vstack(X_adv_parts)
+    # Shuffle so the 80/20 train/val split sees all attack families -- without
+    # shuffle, X_adv[:80%] would contain almost no samples from the last attack.
     perm  = np.random.RandomState(42).permutation(len(X_adv))
     X_adv = X_adv[perm]
 
     print(f"\nFeature matrix shapes: clean={X_clean.shape}, adv={X_adv.shape}")
-    print(f"  (FGSM: {X_fgsm.shape[0]}, PGD: {X_pgd.shape[0]}, Square: {X_square.shape[0]})")
+    print("  (" + ", ".join(f"{a}: {n}" for a, n in per_attack_shapes.items()) + ")")
 
     # -- Train ensemble scorer --------------------------------------------------
     n_feat_desc = f"{37 + (1 if use_grad_norm else 0)}-dim"
@@ -354,13 +417,12 @@ def train_ensemble_scorer(
         print(classification_report(y_val, preds, target_names=['clean', 'adv']))
 
     # -- Set provenance metadata ------------------------------------------------
-    ensemble.training_eps          = fgsm_eps
-    ensemble.training_attacks      = ['FGSM', 'PGD', 'Square']
-    ensemble.training_n            = len(X_adv)
-    ensemble.fgsm_oversample       = fgsm_oversample
-    ensemble.training_fgsm_n       = n_fgsm
-    ensemble.training_pgd_n        = n_pgd
-    ensemble.training_square_n     = n_square
+    ensemble.training_eps     = fgsm_eps
+    ensemble.training_attacks = attack_names          # dynamic list
+    ensemble.training_n       = len(X_adv)
+    ensemble.fgsm_oversample  = fgsm_oversample
+    for atk_name, cnt in per_attack_shapes.items():
+        setattr(ensemble, f'training_{atk_name.lower()}_n', cnt)
 
     # -- Save -------------------------------------------------------------------
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -368,9 +430,11 @@ def train_ensemble_scorer(
 
     extractor.cleanup()
 
+    mix_str = " + ".join(f"{a}({per_attack_shapes[a]})" for a in attack_names)
     print("\n[OK] Ensemble scorer trained and saved.")
     print(f"   Training eps = {fgsm_eps:.6f} (= 8/255, matches evaluation)")
-    print(f"   Adversarial mix: FGSM({n_fgsm}) + PGD({n_pgd}) + Square({n_square})")
+    print(f"   Adversarial mix: {mix_str}")
+    print(f"   training_attacks={attack_names}")
     print(f"   fgsm_oversample={fgsm_oversample:.2f}, n_features={ensemble.n_features}")
     print(f"   use_grad_norm={use_grad_norm}")
     print(f"   Trained on CIFAR-10 TRAINING set (no test-set leakage)")
@@ -395,6 +459,14 @@ if __name__ == '__main__':
     parser.add_argument('--data-root', default='./data')
     parser.add_argument('--output',    default='models/ensemble_scorer.pkl')
     parser.add_argument('--profile',   default='models/reference_profiles.pkl')
+    parser.add_argument('--include-cw', action='store_true',
+                        help='Add CW-L2 to training attack mix. Improves CW TPR at eval.')
+    parser.add_argument('--include-autoattack', action='store_true',
+                        help='Add AutoAttack-APGD-CE slice to training mix.')
+    parser.add_argument('--cw-max-iter', type=int, default=30,
+                        help='CW max_iter for training (default 30; eval uses 50).')
+    parser.add_argument('--cw-bss', type=int, default=3,
+                        help='CW binary_search_steps for training (default 3; eval uses 5).')
     parser.add_argument('--fast',      action='store_true',
                         help='Quick smoke-test: n_train=150')
     args = parser.parse_args()
@@ -411,4 +483,8 @@ if __name__ == '__main__':
         data_root=args.data_root,
         output_path=args.output,
         profile_path=args.profile,
+        include_cw=args.include_cw,
+        include_autoattack=args.include_autoattack,
+        cw_max_iter=args.cw_max_iter,
+        cw_bss=args.cw_bss,
     )
