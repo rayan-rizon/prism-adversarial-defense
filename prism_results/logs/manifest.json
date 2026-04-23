@@ -1,0 +1,39 @@
+{
+  "ensemble_training_attacks": [
+    "FGSM",
+    "PGD",
+    "Square",
+    "CW",
+    "AutoAttack"
+  ],
+  "ensemble_training_n": 4000,
+  "ensemble_n_features": 37,
+  "ensemble_use_dct": true,
+  "ensemble_use_grad_norm": false,
+  "ensemble_sha256_16": "10455b5ff603e643",
+  "calibrator_sha256_16": "bed26e826274f2d7",
+  "reference_profiles_sha256_16": "f2fce8fe9b722495",
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "eval_split": "CIFAR-10 test idx 8000-9999",
+  "eps_linf": 0.03137254901960784,
+  "cw_eval_params": {
+    "max_iter": 100,
+    "bss": 9,
+    "batch_size": 64,
+    "confidence": 0.0
+  },
+  "aa_eval_params": {
+    "version": "standard",
+    "chunk": 64
+  },
+  "square_eval_params": {
+    "max_iter": 5000,
+    "nb_restarts": 1
+  }
+}

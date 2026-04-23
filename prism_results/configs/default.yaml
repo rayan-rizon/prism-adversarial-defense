@@ -1,0 +1,92 @@
+# PRISM: Predictive Runtime Immune System with Manifold Monitoring
+# Default configuration
+
+model:
+  name: resnet18
+  weights: IMAGENET1K_V1
+  layer_names:
+    - layer2
+    - layer3
+    - layer4
+  layer_weights:
+    layer2: 0.30            # mid-level features, FGSM perturbation signal
+    layer3: 0.30            # intermediate semantic features
+    layer4: 0.40            # deep features, strongest adversarial signal
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50          # Number of medoid reference diagrams per layer
+  dim_weights: [0.70, 0.30]  # H0 emphasis for single-step attacks
+
+conformal:
+  alphas:
+    L1: 0.10               # 10% FPR — log + normal inference
+    L2: 0.03               # 3% FPR — input purification
+    L3: 0.005              # 0.5% FPR — expert routing or rejection
+  calibration_size: 5000
+  validation_size: 5000
+  # Conservative per-level alpha multiplier applied at calibration time.
+  # Calibration thresholds are fitted with alpha * cal_alpha_factor, then
+  # verified on the val split against the published alpha (exchangeability
+  # slack buffer to absorb cal/val distribution shift).
+  cal_alpha_factor: 0.7    # legacy scalar; retained as fallback when per-tier map is absent
+  # Per-tier calibration alpha multipliers. L3 tightened because its tail is
+  # sparse (≈7 clean samples at the 99.65 pct on n=2000 cal split), so the same
+  # cal→eval rank shift produces ~44 % FPR overrun. L1/L2 kept at 0.70 — they
+  # already pass with >35 % headroom and tightening them would erode TPR without
+  # benefit. See n=1000 5-seed result (L3 FPR=0.0072 vs 0.005 target).
+  tier_cal_alpha_factors:
+    L1: 0.70
+    L2: 0.70
+    L3: 0.50
+
+# CIFAR-10 test-set split indices — single source of truth.
+# ANY script that references these must import from src.config, never hardcode.
+splits:
+  profile_idx: [0, 5000]       # 5000 images: reference-profile medoids
+  cal_idx:     [5000, 7000]    # 2000 images: conformal threshold calibration
+  val_idx:     [7000, 8000]    # 1000 images: FPR verification (strict)
+  eval_idx:    [8000, 10000]   # 2000 images: held out, sampled per seed in multi-seed eval
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033       # 1/30 — detects campaign within ~30 adversarial probes
+  mu0: 7.0                 # prior mean matched to clean score mean (layer2/3/4 equal dim_weights)
+  beta0: 15.0              # alpha0 * clean_var ≈ 3.0 * 2.25^2
+  alert_run_length: 10
+  alert_run_prob: 0.60   # raised: requires stronger evidence to avoid false alarms on clean data
+  warmup_steps: 35       # raised: allows BOCPD to stabilize before enabling detection
+  l0_factor: 0.8           # lowers detection thresholds when L0 active
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar10
+  image_size: 224
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 10000
+
+evaluation:
+  n_test_images: 1000
+  attacks:
+    - FGSM
+    - PGD
+    - CW
+    - Square
+    - HopSkipJump
+
+paths:
+  reference_profiles: models/reference_profiles.pkl
+  calibrator: models/calibrator.pkl
+  clean_scores: experiments/calibration/clean_scores.npy

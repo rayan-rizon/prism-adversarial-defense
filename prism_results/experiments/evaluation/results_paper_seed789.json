@@ -1,0 +1,208 @@
+{
+  "FGSM": {
+    "TPR": 0.796,
+    "TPR_CI_95": [
+      0.7699,
+      0.8198
+    ],
+    "FPR": 0.065,
+    "FPR_CI_95": [
+      0.0513,
+      0.082
+    ],
+    "Precision": 0.9245,
+    "F1": 0.8555,
+    "TP": 796,
+    "FP": 65,
+    "FN": 204,
+    "TN": 935,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.065,
+      "FPR_L2_plus": 0.02,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "L1": 45,
+      "PASS": 935,
+      "L2": 18,
+      "L3_REJECT": 2
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 467,
+      "L2": 154,
+      "PASS": 204,
+      "L1": 175
+    }
+  },
+  "PGD": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9962,
+      1.0
+    ],
+    "FPR": 0.065,
+    "FPR_CI_95": [
+      0.0513,
+      0.082
+    ],
+    "Precision": 0.939,
+    "F1": 0.9685,
+    "TP": 1000,
+    "FP": 65,
+    "FN": 0,
+    "TN": 935,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.065,
+      "FPR_L2_plus": 0.02,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "L1": 45,
+      "PASS": 935,
+      "L2": 18,
+      "L3_REJECT": 2
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 1000
+    }
+  },
+  "Square": {
+    "TPR": 0.888,
+    "TPR_CI_95": [
+      0.8669,
+      0.9061
+    ],
+    "FPR": 0.065,
+    "FPR_CI_95": [
+      0.0513,
+      0.082
+    ],
+    "Precision": 0.9318,
+    "F1": 0.9094,
+    "TP": 888,
+    "FP": 65,
+    "FN": 112,
+    "TN": 935,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.065,
+      "FPR_L2_plus": 0.02,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "L1": 45,
+      "PASS": 935,
+      "L2": 18,
+      "L3_REJECT": 2
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 685,
+      "PASS": 112,
+      "L2": 117,
+      "L1": 86
+    }
+  },
+  "AutoAttack": {
+    "TPR": 0.997,
+    "FPR": 0.065,
+    "Precision": 0.9388,
+    "F1": 0.967,
+    "TP": 997,
+    "FP": 65,
+    "FN": 3,
+    "TN": 935,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.065,
+      "FPR_L2_plus": 0.02,
+      "FPR_L3_plus": 0.002,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "L1": 45,
+      "PASS": 935,
+      "L2": 18,
+      "L3_REJECT": 2
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 997,
+      "PASS": 3
+    },
+    "TPR_CI_95": [
+      0.9912,
+      0.999
+    ],
+    "FPR_CI_95": [
+      0.0513,
+      0.082
+    ]
+  },
+  "_meta": {
+    "n_test": 1000,
+    "n_actual": 1000,
+    "eval_split": "CIFAR-10 test idx 8000-9999",
+    "seed": 789,
+    "eps_linf": 0.03137254901960784,
+    "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square",
+      "AutoAttack"
+    ],
+    "latency": {
+      "mean_ms": 53.79,
+      "std_ms": 6.39,
+      "min_ms": 41.21,
+      "max_ms": 70.77,
+      "p50_ms": 53.46,
+      "p95_ms": 65.5,
+      "n": 200,
+      "target_ms": 100,
+      "pass": true
+    },
+    "device": "cuda",
+    "ensemble": {
+      "use_dct": true,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square",
+        "CW",
+        "AutoAttack"
+      ],
+      "training_n": 4000,
+      "training_eps": 0.03137254901960784,
+      "n_features": 37
+    }
+  }
+}

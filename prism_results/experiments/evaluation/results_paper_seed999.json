@@ -1,0 +1,209 @@
+{
+  "FGSM": {
+    "TPR": 0.802,
+    "TPR_CI_95": [
+      0.7762,
+      0.8255
+    ],
+    "FPR": 0.069,
+    "FPR_CI_95": [
+      0.0549,
+      0.0864
+    ],
+    "Precision": 0.9208,
+    "F1": 0.8573,
+    "TP": 802,
+    "FP": 69,
+    "FN": 198,
+    "TN": 931,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.069,
+      "FPR_L2_plus": 0.019,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 931,
+      "L2": 16,
+      "L1": 50,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 487,
+      "L1": 169,
+      "PASS": 198,
+      "L2": 146
+    }
+  },
+  "PGD": {
+    "TPR": 1.0,
+    "TPR_CI_95": [
+      0.9962,
+      1.0
+    ],
+    "FPR": 0.069,
+    "FPR_CI_95": [
+      0.0549,
+      0.0864
+    ],
+    "Precision": 0.9355,
+    "F1": 0.9667,
+    "TP": 1000,
+    "FP": 69,
+    "FN": 0,
+    "TN": 931,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.069,
+      "FPR_L2_plus": 0.019,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 931,
+      "L2": 16,
+      "L1": 50,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 1000
+    }
+  },
+  "Square": {
+    "TPR": 0.887,
+    "TPR_CI_95": [
+      0.8659,
+      0.9052
+    ],
+    "FPR": 0.069,
+    "FPR_CI_95": [
+      0.0549,
+      0.0864
+    ],
+    "Precision": 0.9278,
+    "F1": 0.907,
+    "TP": 887,
+    "FP": 69,
+    "FN": 113,
+    "TN": 931,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.069,
+      "FPR_L2_plus": 0.019,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 931,
+      "L2": 16,
+      "L1": 50,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 673,
+      "L1": 100,
+      "L2": 114,
+      "PASS": 113
+    }
+  },
+  "AutoAttack": {
+    "TPR": 0.998,
+    "FPR": 0.069,
+    "Precision": 0.9353,
+    "F1": 0.9657,
+    "TP": 998,
+    "FP": 69,
+    "FN": 2,
+    "TN": 931,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.069,
+      "FPR_L2_plus": 0.019,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 931,
+      "L2": 16,
+      "L1": 50,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 997,
+      "PASS": 2,
+      "L1": 1
+    },
+    "TPR_CI_95": [
+      0.9927,
+      0.9995
+    ],
+    "FPR_CI_95": [
+      0.0549,
+      0.0864
+    ]
+  },
+  "_meta": {
+    "n_test": 1000,
+    "n_actual": 1000,
+    "eval_split": "CIFAR-10 test idx 8000-9999",
+    "seed": 999,
+    "eps_linf": 0.03137254901960784,
+    "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square",
+      "AutoAttack"
+    ],
+    "latency": {
+      "mean_ms": 52.43,
+      "std_ms": 8.44,
+      "min_ms": 40.66,
+      "max_ms": 90.23,
+      "p50_ms": 51.22,
+      "p95_ms": 65.26,
+      "n": 200,
+      "target_ms": 100,
+      "pass": true
+    },
+    "device": "cuda",
+    "ensemble": {
+      "use_dct": true,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square",
+        "CW",
+        "AutoAttack"
+      ],
+      "training_n": 4000,
+      "training_eps": 0.03137254901960784,
+      "n_features": 37
+    }
+  }
+}
