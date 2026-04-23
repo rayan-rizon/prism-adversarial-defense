@@ -316,6 +316,7 @@ class PersistenceEnsembleScorer:
             # Feature engineering flags
             'use_dct': self.use_dct,
             'use_grad_norm': self.use_grad_norm,
+            'n_features': self.n_features,   # @property value; serialised for verification
         }
         with open(path, 'wb') as f:
             pickle.dump(data, f)

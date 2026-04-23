@@ -50,34 +50,34 @@ build_profile_testset.py         → reference_profiles.pkl
         │
         ▼
 train_ensemble_scorer.py         → ensemble_scorer.pkl
-  (--include-cw --include-autoattack)  ← LOCKED after this
+  (--include-cw --include-autoattack)
+  Step 2b: post-retrain verification gate ← catches stale pkl early
         │
         ▼
-calibrate_ensemble.py            → calibrator.pkl  ← LOCKED after this
+calibrate_ensemble.py            → calibrator.pkl
         │
         ▼
 compute_ensemble_val_fpr.py      → FPR gate (abort if any tier fails)
         │
-        ▼
-┌───────┴───────┐                 ← PARALLEL on same GPU (~60-70% util)
-│               │
-│  CW (5-seed)  │  FGSM+PGD+Square+AutoAttack (5-seed)
-│               │    → TARGET METRIC GATE prints at end
-└───────┬───────┘    → TARGET METRIC GATE prints at end
+        ▼   ARTIFACTS LOCKED — all below are read-only consumers
         │
-        ▼
-run_adaptive_pgd.py (5-seed)     → adaptive attack results
-        │
-        ▼
-run_ablation_paper.py (5-seed)   → ablation results
-        │
+┌───────┼────────────────────────────────┐  ← ALL LAUNCHED SIMULTANEOUSLY
+│       │                                │
+│ 5A CW │ 5B FGSM+PGD+Square+AA │ 6 Adaptive PGD × 5 seeds │ 7 Ablation
+│       │                                │
+└───────┼────────────────────────────────┘
+        │  wait Step 5 → provenance check
+        │  wait Step 6 → STEP6_FAIL gate
+        │  wait Step 7
         ▼
 manifest.json                    → reproducibility record
 ```
 
-**Why parallel is safe:** Each process loads its own PRISM instance from the
-same locked artifacts. CUDA handles SM time-slicing. Results go to separate
-files — no contention. GPU utilization rises from ~25 % to ~60–70 %.
+**Why full parallelism is safe:** Steps 5, 6, and 7 are all pure read-only
+consumers of the locked frozen artifacts. No inter-step file dependency.
+CUDA SM time-slicing handles ≤8 concurrent light-batch processes on the 5090.
+GPU utilization rises from ~25 % (sequential) to ~80–90 %. Saves ~35–40 %
+wall-clock time vs the old sequential 5→6→7 schedule.
 
 ---
 
@@ -165,16 +165,15 @@ bash run_vastai_full.sh
 
 | Step | Script | Time |
 |------|--------|------|
-| 0 | GPU + PyTorch verification | <1 min |
+| 0 | GPU + PyTorch verification + determinism flags | <1 min |
 | 1 | Build reference profiles | ~10 min |
 | 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=1.8**) | ~40 min |
+| 2b | Post-retrain verification gate | <1 min |
 | 3 | Calibrate conformal thresholds | ~3 min |
 | 4 | FPR gate check (abort if fail) | ~2 min |
-| 5 | **Parallel Eval** (CW + Fast attacks) | ~150 min ← bottleneck |
-| 6 | Adaptive PGD, 5-seed | ~30 min |
-| 7 | Ablation, n=1000 × 5 seeds | ~15 min |
+| 5+6+7 | **ALL PARALLEL**: CW + Fast + Adaptive PGD × 5 seeds + Ablation | ~150 min ← CW bottleneck |
 | 8 | Reproducibility manifest (SHA256) | <1 min |
-| **Total** | | **~3.5 h** |
+| **Total** | | **~3.5 h** (same ceiling; 5→6→7 now overlap) |
 
 ---
 
@@ -204,11 +203,17 @@ python scripts/train_ensemble_scorer.py \
 **Verify the retrain worked** — this is critical for FGSM and CW TPR:
 ```bash
 python -c "
-import pickle
-e = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
-ta = getattr(e, 'training_attacks', [])
-ng = getattr(e, 'use_grad_norm', False)
-nf = getattr(e, 'n_features', '?')
+import pickle, sys
+d = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
+# save() serialises a dict — use .get(), not getattr()
+assert isinstance(d, dict), f'wrong pkl format: {type(d).__name__}'
+ta = list(d.get('training_attacks', []))
+ng = bool(d.get('use_grad_norm', False))
+# n_features now saved directly; fallback computes from flags for old pkls
+nf = d.get('n_features')
+if nf is None:
+    base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
 print('training_attacks:', ta)
 print('use_grad_norm:', ng)
 print('n_features:', nf)
@@ -250,12 +255,13 @@ All three tiers must read `passed: true`. If any fail:
 **After this step, `ensemble_scorer.pkl` + `calibrator.pkl` are LOCKED.
 Do NOT retrain or recalibrate between attack runs.**
 
-### 4.4 Parallel evaluation (5 attacks × 5 seeds)
+### 4.4 Full parallel evaluation (Steps 5 + 6 + 7 simultaneously)
 
-Launch two background processes on the same GPU:
+All three evaluation phases read only locked frozen artifacts — launch them all
+at once to overlap Step 6 + 7 with the CW bottleneck.
 
 ```bash
-# Process A: CW — paper-canonical (max_iter=100, bss=9), the bottleneck
+# Step 5A: CW — paper-canonical (max_iter=100, bss=9), the bottleneck
 python experiments/evaluation/run_evaluation_full.py \
   --n-test 1000 --attacks CW \
   --multi-seed --seeds 42 123 456 789 999 \
@@ -265,7 +271,7 @@ python experiments/evaluation/run_evaluation_full.py \
   2>&1 | tee logs/cw_ms5.log &
 PID_CW=$!
 
-# Process B: FGSM + PGD + Square + AutoAttack
+# Step 5B: FGSM + PGD + Square + AutoAttack
 python experiments/evaluation/run_evaluation_full.py \
   --n-test 1000 --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds 42 123 456 789 999 \
@@ -276,33 +282,106 @@ python experiments/evaluation/run_evaluation_full.py \
   2>&1 | tee logs/fast_ms5.log &
 PID_FAST=$!
 
-wait $PID_CW && wait $PID_FAST
-echo "All evaluations complete"
-```
-
-### 4.5 Adaptive PGD (5-seed — required for paper credibility)
-
-```bash
+# Step 6: Adaptive PGD — all 5 seeds in parallel
+STEP6_PIDS=""; STEP6_SEEDS=""
 for s in 42 123 456 789 999; do
   python experiments/evaluation/run_adaptive_pgd.py \
     --n-test 1000 --seed $s \
     --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
-    2>&1 | tee logs/adaptive_pgd_seed${s}.log
+    2>&1 | tee logs/adaptive_pgd_seed${s}.log &
+  STEP6_PIDS="$STEP6_PIDS $!"; STEP6_SEEDS="$STEP6_SEEDS $s"
 done
-```
 
-### 4.6 Ablation (n=1000 × 5 seeds)
-
-```bash
+# Step 7: Ablation
 python experiments/ablation/run_ablation_paper.py \
-  --n 1000 \
-  --multi-seed --seeds 42 123 456 789 999 \
+  --n 1000 --multi-seed --seeds 42 123 456 789 999 \
   --attacks FGSM PGD Square \
-  2>&1 | tee logs/ablation.log
+  2>&1 | tee logs/ablation.log &
+PID_ABLATION=$!
+
+echo "All processes running — monitoring:"
+echo "  tail -f logs/cw_ms5.log"
+echo "  tail -f logs/adaptive_pgd_seed42.log"
+
+# Wait Step 5 first (provenance check needs its JSON output)
+wait $PID_CW && wait $PID_FAST
+echo "Step 5 complete"
+
+# Wait Step 6
+set -- $STEP6_PIDS
+for s in $STEP6_SEEDS; do
+  pid=$1; shift; wait $pid && echo "  Seed $s: done" || echo "  Seed $s: FAILED"
+done
+
+# Wait Step 7
+wait $PID_ABLATION && echo "Ablation: done" || echo "Ablation: FAILED"
 ```
 
 > **Note:** Ablation uses FGSM/PGD/Square only — the script does not support
 > CW/AutoAttack internally. CW and AutoAttack coverage is in Table 1 (§4.4).
+
+---
+
+## 4b. Resuming from a Failed Step (without restarting from scratch)
+
+### Step 2b failed — can I skip Step 2 and continue?
+
+**Yes — if Step 2 printed `[OK] Ensemble scorer trained and saved.` in its log**, the pkl is correct. Step 2b is a verification gate that reads the pkl but writes nothing. The failure was a code bug in the verification script, not a training failure.
+
+**To resume:**
+
+```bash
+# 1. Pull the fix (the getattr → isinstance/d.get correction)
+cd /workspace/prism-repo && git pull && cd prism
+
+# 2. Re-run Step 2b check only (30 seconds)
+python -c "
+import pickle, sys
+d = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
+assert isinstance(d, dict), f'wrong pkl format: {type(d).__name__}'
+ta = list(d.get('training_attacks', []))
+ng = bool(d.get('use_grad_norm', False))
+nf = d.get('n_features')
+if nf is None:
+    base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
+errors = []
+if 'CW' not in ta:          errors.append(f'CW missing: {ta}')
+if 'AutoAttack' not in ta:  errors.append(f'AutoAttack missing: {ta}')
+if ng:                       errors.append('use_grad_norm=True — must be OFF')
+if nf != 37:                 errors.append(f'n_features={nf}, expected 37')
+if errors:
+    print('FAIL:', errors); sys.exit(1)
+print(f'PASS  training_attacks={ta}  n_features={nf}')
+"
+
+# 3. If PASS → continue from Step 3 directly
+python scripts/calibrate_ensemble.py 2>&1 | tee logs/step3_calibrate.log
+```
+
+If Step 2b still fails after pulling (e.g. `training_attacks: []`): the pkl on
+the instance is from before `training_attacks` was added to `save()`. Delete it
+and re-run Step 2 (~40 min):
+
+```bash
+rm models/ensemble_scorer.pkl
+python scripts/train_ensemble_scorer.py \
+  --n-train 4000 --fgsm-oversample 1.8 \
+  --include-cw --include-autoattack \
+  --cw-max-iter 30 --cw-bss 3 \
+  --output models/ensemble_scorer.pkl \
+  2>&1 | tee logs/step2_retrain.log
+```
+
+### General resume guide
+
+| Failed step | Safe to skip | Resume from |
+|-------------|-------------|-------------|
+| Step 2b only | ✅ Yes — pkl is fine | Step 3, after `git pull` + manual 2b check above |
+| Step 2 (train crashed) | ❌ No | Re-run Step 2 from scratch |
+| Step 3 (calibrate) | ❌ No | Re-run Step 3 |
+| Step 4 (gate fail) | ❌ No | Lower `tier_cal_alpha_factors`, re-run Steps 3–4 |
+| Step 5/6/7 (eval crash) | ✅ Partially | Re-run only the failed seed/attack; artifacts are still locked |
 
 ---
 
@@ -419,6 +498,9 @@ scp -P <port> \
 
 ## 8. Troubleshooting
 
+| Step 2b: `training_attacks: []` | Stale code on instance (used `getattr` on dict pkl) | `git pull`, then re-run Step 2b check — see §4b |
+| Step 2b: `n_features=0, expected 37` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
+| Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
 | FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
 | FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 1.8 |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |

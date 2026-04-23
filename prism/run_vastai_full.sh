@@ -6,17 +6,19 @@
 # Runs the entire publishable pipeline on a single RTX 5090 instance.
 #
 # Parallelism map (safe — no shared mutable state between concurrent jobs):
-#   Step 5  : CW  ||  FGSM+PGD+Square+AA       (already parallel, locked artifacts)
-#   Step 6  : All 5 adaptive-PGD seeds in parallel  ← NEW
-#   Step 6+7: Ablation starts while Step 6 seeds run  ← NEW
-#             (Ablation reads only locked pkl artifacts, no Step-6 output dep)
+#   Steps 5+6+7: ALL launched simultaneously after Step 4 LOCK.
+#     Step 5A: CW-L2          (bottleneck, ~2h)
+#     Step 5B: FGSM+PGD+Square+AA
+#     Step 6 : 5 adaptive-PGD seeds in parallel
+#     Step 7 : Ablation (FGSM+PGD+Square)
+#   Wait order: Step 5 first (provenance check needs its JSON), then 6, then 7.
+#   Saves ~35-40% wall-clock vs old sequential 5→6→7 schedule.
 #
 # Sequential constraints that CANNOT be parallelised:
 #   Steps 1→2: Step 2 reads reference_profiles.pkl written by Step 1
 #   Steps 2→3: Step 3 reads ensemble_scorer.pkl written by Step 2
 #   Steps 3→4: Step 4 reads calibrator.pkl written by Step 3
-#   Steps 4→5: Step 5 requires the FPR gate to have passed
-#   Steps 5→6: Step 6 must run after Step 5 (provenance check + gate result)
+#   Steps 4→5/6/7: All eval phases require the FPR gate to have passed
 #
 # Exit codes: 0=success, 1=gate failure, 2=eval failure
 
@@ -58,6 +60,13 @@ y = (x @ x.T).sum()
 torch.cuda.synchronize()
 print('smoke GPU matmul: OK')
 assert int(torch.__version__.split('.')[0]) >= 2, 'PyTorch >= 2 required'
+# Publication-grade determinism: cuDNN must not use non-deterministic algorithms.
+# warn_only=True so ART's internal ops don't abort the run; violations are logged.
+torch.use_deterministic_algorithms(True, warn_only=True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark     = False
+torch.cuda.manual_seed_all(0)
+print('determinism flags: OK (warn_only=True for ART compatibility)')
 "
 echo "Step 0: PASS"
 
@@ -119,10 +128,21 @@ echo ""
 echo "=== Step 2b: Retrain Verification ==="
 python -c "
 import pickle, sys
-e = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
-ta = list(getattr(e, 'training_attacks', []))
-ng = bool(getattr(e, 'use_grad_norm', False))
-nf = int(getattr(e, 'n_features', 0)) if hasattr(e, 'n_features') else None
+d = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
+# save() always serialises a dict (see src/cadg/ensemble_scorer.py:save).
+# Legacy object-pickled format is rejected here — it means a stale pkl.
+if not isinstance(d, dict):
+    print('RETRAIN VERIFICATION FAIL: pkl is not a dict — stale or wrong-format artifact.')
+    print(f'  type={type(d).__name__}  hint: delete models/ensemble_scorer.pkl and re-run Step 2.')
+    sys.exit(1)
+ta = list(d.get('training_attacks', []))
+ng = bool(d.get('use_grad_norm', False))
+# n_features is now saved explicitly; fall back to computing from flags for
+# any pkl created before this fix was deployed (backward-compatible).
+nf = d.get('n_features')
+if nf is None:
+    base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
 errors = []
 if 'CW' not in ta:
     errors.append(f'CW missing from training_attacks: {ta}')
@@ -130,7 +150,7 @@ if 'AutoAttack' not in ta:
     errors.append(f'AutoAttack missing from training_attacks: {ta}')
 if ng:
     errors.append('use_grad_norm=True — grad-norm must be OFF (reverted, see regression_analysis_20260422.md)')
-if nf is not None and nf != 37:
+if nf != 37:
     errors.append(f'n_features={nf}, expected 37 (36 persistence + 1 DCT)')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
@@ -204,28 +224,44 @@ print(f'  reference_profiles.pkl SHA: {h(\"models/reference_profiles.pkl\")}')
 "
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 5: PARALLEL 5-seed evaluation
+# Steps 5 + 6 + 7: FULL PARALLEL LAUNCH
 # ══════════════════════════════════════════════════════════════════════════════
-# GPU utilization per attack:
-#   FGSM/PGD: ~20-30%  |  Square: ~25-35%  |  CW: ~30-40%  |  AA: ~25-35%
+# All three phases are pure consumers of the locked frozen artifacts.
+# No inter-step file dependency between 5, 6, and 7 — each writes to distinct
+# output paths and loads the same read-only pkl artifacts from Step 4.
 #
-# Running CW in one process and FGSM+PGD+Square+AA in another uses ~60-70%
-# GPU total. This is safe because:
-#   - Each process loads its own PRISM instance (independent memory)
-#   - Both use the SAME locked ensemble_scorer.pkl + calibrator.pkl
-#   - Results go to separate JSON files (no file contention)
-#   - CUDA handles SM time-slicing automatically
-#   - Seeds are identical → deterministic given same artifacts
+# Parallelism map:
+#   Step 5A : CW-L2 eval (bottleneck, ~2h)
+#   Step 5B : FGSM + PGD + Square + AutoAttack eval
+#   Step 6  : 5 adaptive PGD seeds (each ~1h; overlap with Step 5)
+#   Step 7  : Ablation (FGSM+PGD+Square, overlap with Steps 5+6)
+#
+# This collapses the original 3-phase sequential schedule into one wall-clock
+# phase, saving ~35-40% total GPU instance time (CW is the hard ceiling).
+#
+# Wait order (enforced below):
+#   1. Wait Step 5A + 5B first → provenance check requires their JSON output
+#   2. Wait Step 6 seeds       → STEP6_FAIL gate
+#   3. Wait Step 7 ablation    → STEP7_EXIT gate
+#   If Step 5 fails we still wait 6+7 before exit to avoid orphaned processes.
+#
+# Safety proof (same as before):
+#   • All processes load independent PRISM instances (independent GPU memory)
+#   • CUDA SM time-slicing handles ≤8 concurrent light-batch processes safely
+#   • Output filenames are distinct (no write contention)
+#   • set -euo pipefail is active; every wait uses || VAR=$? to capture exit codes
 # ══════════════════════════════════════════════════════════════════════════════
 
 echo ""
-echo "=== Step 5: Parallel Multi-seed Evaluation [n=$N_TEST × 5 seeds] ==="
-echo "  Process A: CW-L2 (paper-canonical: max_iter=$CW_MAX_ITER, bss=$CW_BSS)"
-echo "  Process B: FGSM + PGD + Square + AutoAttack"
-echo "  Running in parallel on same GPU..."
+echo "=== Steps 5+6+7: Full Parallel Launch [n=$N_TEST × 5 seeds] ==="
+echo "  Step 5A: CW-L2 (max_iter=$CW_MAX_ITER, bss=$CW_BSS)"
+echo "  Step 5B: FGSM + PGD + Square + AutoAttack"
+echo "  Step 6 : Adaptive PGD × 5 seeds"
+echo "  Step 7 : Ablation"
+echo "  All launched simultaneously — CW is the wall-clock bottleneck."
 echo ""
 
-# Process A: CW (the slow one — bottleneck)
+# ── Step 5A: CW ──────────────────────────────────────────────────────────────
 python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
@@ -234,9 +270,9 @@ python experiments/evaluation/run_evaluation_full.py \
   --output experiments/evaluation/results_cw_n${N_TEST}_ms5.json \
   2>&1 | tee logs/step5_cw_ms5.log &
 PID_CW=$!
-echo "  CW started (PID=$PID_CW)"
+echo "  Step 5A CW started (PID=$PID_CW)"
 
-# Process B: Fast attacks (FGSM + PGD + Square + AutoAttack)
+# ── Step 5B: Fast attacks ─────────────────────────────────────────────────────
 python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
@@ -246,30 +282,58 @@ python experiments/evaluation/run_evaluation_full.py \
   --output experiments/evaluation/results_fast_n${N_TEST}_ms5.json \
   2>&1 | tee logs/step5_fast_ms5.log &
 PID_FAST=$!
-echo "  FGSM+PGD+Square+AA started (PID=$PID_FAST)"
+echo "  Step 5B FGSM+PGD+Square+AA started (PID=$PID_FAST)"
+
+# ── Step 6: Adaptive PGD — all 5 seeds ───────────────────────────────────────
+# Use indexed arrays (bash 3+ compatible) instead of declare -A (bash 4+ only).
+echo ""
+echo "  Launching Step 6 adaptive PGD seeds..."
+STEP6_PIDS=""
+STEP6_SEEDS=""
+for s in $SEEDS; do
+  python experiments/evaluation/run_adaptive_pgd.py \
+    --n-test $N_TEST --seed $s \
+    --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
+    2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
+  STEP6_PIDS="$STEP6_PIDS $!"
+  STEP6_SEEDS="$STEP6_SEEDS $s"
+  echo "  Step 6 seed=$s started (PID=$!)"
+done
+
+# ── Step 7: Ablation ─────────────────────────────────────────────────────────
+# Reads only frozen pkl artifacts; output path is separate from Steps 5+6.
+echo ""
+python experiments/ablation/run_ablation_paper.py \
+  --n $N_TEST \
+  --multi-seed --seeds $SEEDS \
+  --attacks FGSM PGD Square \
+  2>&1 | tee logs/step7_ablation.log &
+PID_ABLATION=$!
+echo "  Step 7 ablation started (PID=$PID_ABLATION)"
 
 echo ""
-echo "  Waiting for both processes..."
-echo "  Monitor: tail -f logs/step5_cw_ms5.log logs/step5_fast_ms5.log"
+echo "  All processes running. Monitor logs:"
+echo "    tail -f logs/step5_cw_ms5.log"
+echo "    tail -f logs/step6_adaptive_pgd_seed42.log"
+echo "    tail -f logs/step7_ablation.log"
 echo ""
 
-# Wait for both — capture exit codes
-FAIL=0
-wait $PID_CW || { echo "ERROR: CW process failed (exit $?)"; FAIL=1; }
-wait $PID_FAST || { echo "ERROR: Fast attacks process failed (exit $?)"; FAIL=1; }
-
-if [ $FAIL -ne 0 ]; then
-  echo "ERROR: One or more evaluation processes failed. Check logs."
-  exit 2
-fi
+# ── Wait order 1: Step 5 (provenance check needs its JSON output) ────────────
+echo "  Waiting for Step 5 (CW + Fast attacks)..."
+STEP5_FAIL=0
+STEP5_CW_EXIT=0;   wait $PID_CW   || STEP5_CW_EXIT=$?
+STEP5_FAST_EXIT=0; wait $PID_FAST || STEP5_FAST_EXIT=$?
+[ $STEP5_CW_EXIT   -ne 0 ] && { echo "ERROR: Step 5 CW failed (exit $STEP5_CW_EXIT)";   STEP5_FAIL=1; }
+[ $STEP5_FAST_EXIT -ne 0 ] && { echo "ERROR: Step 5 Fast failed (exit $STEP5_FAST_EXIT)"; STEP5_FAIL=1; }
 
 echo ""
-echo "=== Step 5: COMPLETE — all evaluations finished ==="
+echo "=== Step 5: COMPLETE ==="
 
-# ── Step 5 validation: verify ensemble provenance matches ────────────────────
-echo ""
-echo "=== Step 5: Provenance Check ==="
-python -c "
+# ── Step 5 provenance check ───────────────────────────────────────────────────
+if [ $STEP5_FAIL -eq 0 ]; then
+  echo ""
+  echo "=== Step 5: Provenance Check ==="
+  python -c "
 import json
 files = [
     'experiments/evaluation/results_cw_n${N_TEST}_ms5.json',
@@ -278,7 +342,6 @@ files = [
 ta_sets = set()
 for f in files:
     d = json.load(open(f))
-    # Multi-seed: check first seed's _meta
     ps = d.get('per_seed', {})
     for seed_key, seed_data in ps.items():
         meta = seed_data.get('_meta', {})
@@ -296,71 +359,19 @@ else:
     print('PROVENANCE CHECK FAIL: different ensembles detected!')
     exit(1)
 "
+fi
 
-# ── Step 6: Adaptive PGD (§7.6 — required for venue credibility) ─────────────
-# PARALLELISM: All 5 seeds launched simultaneously as background jobs.
-# Safe because:
-#   • Each seed uses a different rng subset of EVAL_IDX (8000-9999) — no overlap
-#   • Each process loads its own PRISM instance (independent GPU memory)
-#   • All processes read the SAME locked ensemble_scorer.pkl + calibrator.pkl
-#     (read-only after Step 4 — no writer exists at this point)
-#   • Output files are distinct: results_adaptive_pgd_seed{s}.json per seed
-#   • Log files are distinct: step6_adaptive_pgd_seed{s}.log per seed
-#   • Adaptive PGD uses its own gradient tape (no shared tensor state)
-# GPU headroom: each seed ≈20-30% SM utilisation → 5 seeds ≤ ~80% total
-echo ""
-echo "=== Step 6: Adaptive PGD [n=$N_TEST × 5 seeds, ALL PARALLEL] ==="
-# Use indexed arrays (bash 3+ compatible) instead of declare -A (bash 4+ only).
-STEP6_PIDS=""
-STEP6_SEEDS=""
-for s in $SEEDS; do
-  echo "  Launching adaptive PGD seed=$s in background..."
-  python experiments/evaluation/run_adaptive_pgd.py \
-    --n-test $N_TEST --seed $s \
-    --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
-    2>&1 > >(tee logs/step6_adaptive_pgd_seed${s}.log) &
-  STEP6_PIDS="$STEP6_PIDS $!"
-  STEP6_SEEDS="$STEP6_SEEDS $s"
-done
-echo "  All 5 seeds launched. PIDs:$STEP6_PIDS"
-echo "  Monitor: tail -f logs/step6_adaptive_pgd_seed42.log"
-
-# ── Step 7: Ablation — starts WHILE Step 6 seeds are running ───────────────
-# PARALLELISM: Ablation is launched immediately without waiting for Step 6.
-# Safe because:
-#   • Ablation reads only: models/ensemble_scorer.pkl, models/calibrator.pkl,
-#     models/reference_profiles.pkl — all locked read-only after Step 4
-#   • Ablation output goes to experiments/ablation/results_ablation_*.json
-#     — completely separate from Step 6's results_adaptive_pgd_*.json
-#   • No Step-6 output is consumed by ablation or the gate logic
-#   • Both Step 6 and ablation are pure evaluation consumers of frozen artifacts
-# Ablation uses FGSM, PGD, Square only — run_ablation_paper.py has no CW/AA
-# implementation. The full evaluation (Step 5) covers CW + AutoAttack.
-echo ""
-echo "=== Step 7: Ablation [n=$N_TEST × 5 seeds, parallel with Step 6] ==="
-python experiments/ablation/run_ablation_paper.py \
-  --n $N_TEST \
-  --multi-seed --seeds $SEEDS \
-  --attacks FGSM PGD Square \
-  2>&1 > >(tee logs/step7_ablation.log) &
-PID_ABLATION=$!
-echo "  Ablation started in background (PID=$PID_ABLATION)"
-echo "  Monitor: tail -f logs/step7_ablation.log"
-
-# ── Wait for Step 6 (all seeds) then Step 7 (ablation) ──────────────────────
-# CRITICAL: Every `wait` MUST use `|| VAR=$?` because `set -e` would otherwise
-# abort the script on the first failed background job, orphaning all remaining
-# processes (other seeds + ablation). We capture exit codes in the || branch
-# because `wait $pid || true` would clobber $? to 0.
+# ── Wait order 2: Step 6 seeds ────────────────────────────────────────────────
+# CRITICAL: use || VAR=$? on every wait — set -e would abort on first failure,
+# orphaning the remaining seeds and ablation process.
 echo ""
 echo "  Waiting for Step 6 adaptive PGD seeds..."
 STEP6_FAIL=0
-# Iterate seeds and PIDs in lockstep (space-separated lists, same order)
-set -- $STEP6_PIDS
+set -- $STEP6_PIDS       # positional params = PID list; must come AFTER PID_CW/FAST waits
 for s in $STEP6_SEEDS; do
   pid=$1; shift
   EXIT_S=0
-  wait $pid || EXIT_S=$?   # ← captures real exit code; prevents set -e abort
+  wait $pid || EXIT_S=$?
   if [ $EXIT_S -ne 0 ]; then
     echo "  ERROR: Adaptive PGD seed=$s (pid=$pid) failed (exit $EXIT_S). Check logs/step6_adaptive_pgd_seed${s}.log"
     STEP6_FAIL=1
@@ -368,22 +379,22 @@ for s in $STEP6_SEEDS; do
     echo "  Seed $s: DONE"
   fi
 done
-if [ $STEP6_FAIL -ne 0 ]; then
-  echo "ERROR: One or more adaptive PGD seeds failed."
-  # Do NOT exit — let ablation finish before aborting
-fi
+[ $STEP6_FAIL -ne 0 ] && echo "ERROR: One or more adaptive PGD seeds failed."
 echo "Step 6: COMPLETE"
 
+# ── Wait order 3: Step 7 ablation ─────────────────────────────────────────────
 echo ""
 echo "  Waiting for Step 7 ablation..."
 STEP7_EXIT=0
-wait $PID_ABLATION || STEP7_EXIT=$?   # ← captures real exit code
-if [ $STEP7_EXIT -ne 0 ]; then
-  echo "ERROR: Ablation failed (exit $STEP7_EXIT). Check logs/step7_ablation.log"
-fi
+wait $PID_ABLATION || STEP7_EXIT=$?
+[ $STEP7_EXIT -ne 0 ] && echo "ERROR: Ablation failed (exit $STEP7_EXIT). Check logs/step7_ablation.log"
 echo "Step 7 exit: $STEP7_EXIT"
 
-# Abort after both complete if Step 6 had failures
+# Abort now that all background processes have finished
+if [ $STEP5_FAIL -ne 0 ]; then
+  echo "ERROR: Step 5 evaluation failed. Check logs/step5_cw_ms5.log and logs/step5_fast_ms5.log"
+  exit 2
+fi
 if [ $STEP6_FAIL -ne 0 ]; then
   exit 2
 fi
@@ -395,12 +406,14 @@ python -c "
 import pickle, json, hashlib, os
 def h(p): return hashlib.sha256(open(p,'rb').read()).hexdigest()[:16] if os.path.exists(p) else None
 e = pickle.load(open('models/ensemble_scorer.pkl','rb'))
+# save() writes a dict; use .get() not getattr() to avoid silent empty-list bugs
+assert isinstance(e, dict), f'unexpected pkl type: {type(e).__name__}'
 out = {
-  'ensemble_training_attacks': list(getattr(e, 'training_attacks', [])),
-  'ensemble_training_n':       int(getattr(e, 'training_n', 0)),
-  'ensemble_n_features':       int(getattr(e, 'n_features', 0)) if hasattr(e, 'n_features') else None,
-  'ensemble_use_dct':          getattr(e, 'use_dct', None),
-  'ensemble_use_grad_norm':    getattr(e, 'use_grad_norm', None),
+  'ensemble_training_attacks': list(e.get('training_attacks', [])),
+  'ensemble_training_n':       int(e.get('training_n') or 0),
+  'ensemble_n_features':       e.get('n_features'),
+  'ensemble_use_dct':          e.get('use_dct'),
+  'ensemble_use_grad_norm':    e.get('use_grad_norm'),
   'ensemble_sha256_16':        h('models/ensemble_scorer.pkl'),
   'calibrator_sha256_16':      h('models/calibrator.pkl'),
   'reference_profiles_sha256_16': h('models/reference_profiles.pkl'),

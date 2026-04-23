@@ -10,7 +10,7 @@
 # │ Parameter                     │ Vast.ai       │ Local (here) │ Match │
 # ├───────────────────────────────┼──────────────┼──────────────┼───────┤
 # │ Python binary                 │ python        │ python3      │ LOCAL │
-# │ fgsm-oversample               │ 1.8           │ 0.9 (match %)│ LOCAL │
+# │ fgsm-oversample               │ 1.8           │ 1.8          │  ✅   │
 # │ use-grad-norm                 │ OFF           │ OFF          │  ✅   │
 # │ include-cw (train)            │ YES           │ NO  (slow)   │ LOCAL │
 # │ include-autoattack (train)    │ YES           │ NO  (missing)│ LOCAL │
@@ -160,14 +160,13 @@ echo "  LOCAL deviations (compute only — algorithm identical):"
 echo "    n-train:          500  (Vast.ai: 4000)"
 echo "    include-cw:       OFF  (slow on CPU; AUC impact ~0.003)"
 echo "    include-autoattack: OFF (not installed)"
-echo "    fgsm-oversample:  0.9  (Matches 31% share of Vast.ai 1.8) LOCAL"
+echo "    fgsm-oversample:  1.8  ← SAME as Vast.ai ✅"
 echo "    use-grad-norm:    OFF  ← SAME as Vast.ai (REVERTED) ✅"
 echo ""
-# 0.9 / (0.9+1+1) = 31% FGSM share (matches Vast.ai 5-attack mix with 1.8)
-# 500 samples with fgsm-os=0.9 → FGSM≈155, PGD≈172, Square≈172
+# 500 samples with fgsm-os=1.8 → FGSM≈236, PGD≈131, Square≈131
 python3 scripts/train_ensemble_scorer.py \
   --n-train 500 \
-  --fgsm-oversample 0.9 \
+  --fgsm-oversample 1.8 \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/smoke_step2_retrain.log)
 echo "Step 2: DONE"
