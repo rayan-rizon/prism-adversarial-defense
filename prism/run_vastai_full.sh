@@ -29,6 +29,7 @@ SEEDS="42 123 456 789 999"
 N_TEST=1000
 CW_MAX_ITER=100
 CW_BSS=9
+CW_CHUNK=64   # gen_chunk for CW: 64 imgs/call fills ART batch_size=128 for ~full GPU occupancy
 
 echo "============================================================"
 echo "PRISM Vast.ai Full Pipeline — $(date)"
@@ -108,7 +109,7 @@ echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=1.8] ==="
 # See regression_analysis_20260422.md for the full forensic analysis.
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 1.8 \
+  --fgsm-oversample 2.0 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -265,7 +266,7 @@ echo ""
 python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
-  --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS \
+  --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_cw_n${N_TEST}_ms5.json \
   2>&1 | tee logs/step5_cw_ms5.log &

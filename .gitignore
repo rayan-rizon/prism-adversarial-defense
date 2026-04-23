@@ -21,6 +21,7 @@ cifar-*-python/
 # Logs
 tmp_logs/
 *.log
+vastai_results/
 
 # IDE
 .DS_Store

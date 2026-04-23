@@ -167,7 +167,7 @@ bash run_vastai_full.sh
 |------|--------|------|
 | 0 | GPU + PyTorch verification + determinism flags | <1 min |
 | 1 | Build reference profiles | ~10 min |
-| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=1.8**) | ~40 min |
+| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.0**) | ~40 min |
 | 2b | Post-retrain verification gate | <1 min |
 | 3 | Calibrate conformal thresholds | ~3 min |
 | 4 | FPR gate check (abort if fail) | ~2 min |
@@ -191,7 +191,7 @@ python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 ```bash
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 1.8 \
+  --fgsm-oversample 2.0 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -234,7 +234,7 @@ RETRAIN CHECK: PASS
 ```
 
 > [!IMPORTANT]
-> **FGSM Oversample:** 1.8 is used to restore FGSM's training share (~31.0%) and maintain TPR $\ge$ 85% with the 5-attack mix.
+> **FGSM Oversample:** 2.0 is used to restore FGSM's training share (~28.6%) and maintain TPR $\ge$ 85% with the 5-attack mix.
 > **Grad-Norm:** This feature was tested and **REVERTED** (April 22). It inflated calibration thresholds by 20%, dropping FGSM TPR to 63%. Do not enable it.
 
 ### 4.3 Calibrate + gate
@@ -265,7 +265,7 @@ at once to overlap Step 6 + 7 with the CW bottleneck.
 python experiments/evaluation/run_evaluation_full.py \
   --n-test 1000 --attacks CW \
   --multi-seed --seeds 42 123 456 789 999 \
-  --cw-max-iter 100 --cw-bss 9 \
+  --cw-max-iter 100 --cw-bss 9 --cw-chunk 64 \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_cw_n1000_ms5.json \
   2>&1 | tee logs/cw_ms5.log &
@@ -366,7 +366,7 @@ and re-run Step 2 (~40 min):
 ```bash
 rm models/ensemble_scorer.pkl
 python scripts/train_ensemble_scorer.py \
-  --n-train 4000 --fgsm-oversample 1.8 \
+  --n-train 4000 --fgsm-oversample 2.0 \
   --include-cw --include-autoattack \
   --cw-max-iter 30 --cw-bss 3 \
   --output models/ensemble_scorer.pkl \
@@ -408,10 +408,10 @@ Attack: CW
 ============================================================
   CW running on CUDA (ART classifier on GPU)
   CW params: max_iter=100, bss=9, estimated ~45 min per seed
-  CW generation: chunk=8, ~22s per chunk, ~45 min total
-  Generating 1000 adversarial examples (chunk=8)...
-    [gen] 8/1000 elapsed=21.3s  rate=2.66s/img  eta=2639.3s
-    [gen] 16/1000 elapsed=43.1s  rate=2.69s/img  eta=2648.5s
+  CW generation: chunk=64, ~150s per chunk, ~45 min total
+  Generating 1000 adversarial examples (chunk=64)...
+    [gen] 64/1000 elapsed=150.3s  rate=2.35s/img  eta=2199.3s
+    [gen] 128/1000 elapsed=300.1s  rate=2.34s/img  eta=2048.5s
   ...
   [Checkpoint 100/1000] TPR=0.8700 (✅) | FPR=0.0790 (✅) | F1=0.9231
 ```
@@ -502,10 +502,10 @@ scp -P <port> \
 | Step 2b: `n_features=0, expected 37` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
 | Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
 | FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
-| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 1.8 |
+| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 2.0 |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
-| CW shows no output | gen_chunk was too large | Fixed: auto-caps to 8 for CW — update from repo |
+| CW shows no output | gen_chunk was too large | Fixed: defaults to 64 for CW for full GPU occupancy (batch_size=128). Use `--cw-chunk` to configure. |
 | Latency ❌ in log | CPU-only run (expected ~140 ms on CPU) | On GPU, latency is ~50 ms ✅ — this is a non-issue on Vast.ai |
 | FPR gate fails | Cal thresholds too tight | Lower `tier_cal_alpha_factors` by 0.05 in `configs/default.yaml`, re-run §4.3 |
 | GATE: FAIL after fast attacks | TPR below target | Check if retrain was done; check FPR gate passed first |

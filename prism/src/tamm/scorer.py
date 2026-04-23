@@ -58,6 +58,7 @@ class TopologicalScorer:
     def score(
         self,
         diagrams: Dict[str, List[PersistenceDiagram]],
+        **kwargs,   # Accept image=/grad_norm= from PRISM.defend() dispatch; not used here
     ) -> float:
         """
         Compute aggregated anomaly score across layers and dimensions.
@@ -99,6 +100,7 @@ class TopologicalScorer:
     def score_per_layer(
         self,
         diagrams: Dict[str, List[PersistenceDiagram]],
+        **kwargs,   # API compatibility with PersistenceEnsembleScorer
     ) -> Dict[str, float]:
         """Return per-layer anomaly scores for diagnostics."""
         scores = {}
