@@ -48,6 +48,8 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamm.scorer import TopologicalScorer
@@ -55,7 +57,9 @@ from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, N_SUBSAMPLE, MAX_DIM,
     IMAGENET_MEAN, IMAGENET_STD,
     PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX,
+    DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 # All shared constants imported from src.config (backed by configs/default.yaml).
 # Split indices are the single source of truth -- do not hardcode here.
 
@@ -74,7 +78,7 @@ def build_profile_testset(
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")
-    print("Building topological profile from CIFAR-10 TEST set...")
+    print(f"Building topological profile from {DATASET.upper()} TEST set...")
     print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
 
     # ── Model ─────────────────────────────────────────────────────────────────
@@ -84,11 +88,9 @@ def build_profile_testset(
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
-    # ── Dataset (test) ────────────────────────────────────────────────────────
-    dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_TRANSFORM
-    )
-    print(f"  Test set size: {len(dataset)}")
+    # ── Dataset (test) — dispatches on DATASET (cifar10 / cifar100) ───────────
+    dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
+    print(f"  {DATASET.upper()} test set size: {len(dataset)}")
 
     # ── Phase 1: collect persistence diagrams for profile images ───────────────
     n_profile = PROFILE_IDX[1] - PROFILE_IDX[0]
@@ -118,8 +120,10 @@ def build_profile_testset(
         n_h1 = len(ref_profiles[layer][1]) if len(ref_profiles[layer]) > 1 else 0
         print(f"    Medoid: {n_h0} H0 features, {n_h1} H1 features")
 
-    os.makedirs(output_dir, exist_ok=True)
-    profile_path = os.path.join(output_dir, 'reference_profiles.pkl')
+    # Route artifact output through PATHS[reference_profiles] so CIFAR-100 lands
+    # in models/cifar100/ rather than clobbering the CIFAR-10 pkl.
+    profile_path = os.path.join('.', PATHS['reference_profiles'])
+    os.makedirs(os.path.dirname(profile_path) or '.', exist_ok=True)
     with open(profile_path, 'wb') as f:
         pickle.dump(ref_profiles, f)
     print(f"\nReference profiles saved -> {profile_path} (built from TEST set)")
@@ -159,24 +163,30 @@ def build_profile_testset(
 
     print(f"\nPhase 3: Computing anomaly scores for all splits...")
 
-    cal_dir = os.path.join(output_dir, '..', 'experiments', 'calibration')
+    # Route clean-score output through config paths so CIFAR-100 gets its own
+    # file (e.g. cifar100_clean_scores.npy) rather than overwriting the
+    # CIFAR-10 clean_scores.npy.
+    clean_scores_path = PATHS['clean_scores']
+    cal_dir = os.path.dirname(clean_scores_path) or 'experiments/calibration'
     os.makedirs(cal_dir, exist_ok=True)
+    _base = os.path.basename(clean_scores_path)
+    _prefix = _base.replace('clean_scores.npy', '')  # '' or 'cifar100_'
 
     # Profile scores (used to verify profiler is sane)
     profile_scores = compute_scores(PROFILE_IDX, 'profile')
-    np.save(os.path.join(cal_dir, 'profile_scores.npy'), profile_scores)
+    np.save(os.path.join(cal_dir, f'{_prefix}profile_scores.npy'), profile_scores)
     print(f"  Profile : n={len(profile_scores)}, "
           f"mean={profile_scores.mean():.4f}, std={profile_scores.std():.4f}")
 
     # Calibration scores (for conformal threshold fitting)
     cal_scores = compute_scores(CAL_IDX, 'calibration')
-    np.save(os.path.join(cal_dir, 'clean_scores.npy'), cal_scores)
+    np.save(clean_scores_path, cal_scores)
     print(f"  Calibration: n={len(cal_scores)}, "
           f"mean={cal_scores.mean():.4f}, std={cal_scores.std():.4f}")
 
     # Validation scores (for FPR guarantee verification)
     val_scores = compute_scores(VAL_IDX, 'validation')
-    np.save(os.path.join(cal_dir, 'val_scores.npy'), val_scores)
+    np.save(os.path.join(cal_dir, f'{_prefix}val_scores.npy'), val_scores)
     print(f"  Validation:  n={len(val_scores)}, "
           f"mean={val_scores.mean():.4f}, std={val_scores.std():.4f}")
 
@@ -202,7 +212,13 @@ def build_profile_testset(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var). '
+                             'Default: configs/default.yaml')
     parser.add_argument('--data-root', default='./data')
-    parser.add_argument('--output-dir', default='./models')
+    # --output-dir kept for backward compat; the primary artifact path comes
+    # from PATHS[reference_profiles] in the loaded config.
+    parser.add_argument('--output-dir', default=None)
     args = parser.parse_args()
-    build_profile_testset(data_root=args.data_root, output_dir=args.output_dir)
+    out_dir = args.output_dir or os.path.dirname(PATHS['reference_profiles']) or './models'
+    build_profile_testset(data_root=args.data_root, output_dir=out_dir)

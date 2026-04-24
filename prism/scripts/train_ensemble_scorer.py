@@ -59,6 +59,9 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+
 try:
     from art.attacks.evasion import (
         FastGradientMethod, ProjectedGradientDescent, SquareAttack,
@@ -85,7 +88,9 @@ from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD,
     EPS_LINF_STANDARD, N_SUBSAMPLE, MAX_DIM,
+    DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 
 # All shared constants are imported from src.config (backed by default.yaml).
 
@@ -228,6 +233,7 @@ def train_ensemble_scorer(
     include_autoattack: bool = False,
     cw_max_iter: int = 30,
     cw_bss: int = 3,
+    no_tda_features: bool = False,
 ):
     """
     Args:
@@ -282,9 +288,11 @@ def train_ensemble_scorer(
     )
 
     # -- ART adversarial generation ---------------------------------------------
-    # Training data uses CIFAR-10 TRAINING set to avoid any test-set leakage
-    pixel_dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=True, download=True, transform=_PIXEL_TRANSFORM
+    # Training data uses the active dataset's TRAINING set (cifar10 / cifar100).
+    # Using train split avoids any test-set leakage for the eval phase.
+    from src.data_loader import load_train_dataset
+    pixel_dataset = load_train_dataset(
+        root=data_root, download=True, transform=_PIXEL_TRANSFORM
     )
     rng = np.random.RandomState(42)
     all_idx = rng.permutation(len(pixel_dataset))
@@ -357,12 +365,13 @@ def train_ensemble_scorer(
 
     off = 0
     X_adv_parts = []
+    W_adv_parts = []
     per_attack_shapes = {}
     for atk_name in attack_names:
         n_atk = counts[atk_name]
         print(f"\nExtracting {n_atk} {atk_name} adversarial features "
               f"(eps={fgsm_eps:.6f})...", flush=True)
-        X_atk, _ = _extract_features(
+        X_atk, W_atk = _extract_features(
             adv_pool[off: off + n_atk], pixel_dataset, model, extractor, profiler,
             base_scorer, ref_profiles, device,
             art_attack=attacks[atk_name], label=f'{atk_name} adv',
@@ -370,27 +379,49 @@ def train_ensemble_scorer(
         )
         off += n_atk
         X_adv_parts.append(X_atk)
+        W_adv_parts.append(W_atk)
         per_attack_shapes[atk_name] = X_atk.shape[0]
 
     X_adv = np.vstack(X_adv_parts)
+    W_adv = np.concatenate(W_adv_parts)
     # Shuffle so the 80/20 train/val split sees all attack families -- without
     # shuffle, X_adv[:80%] would contain almost no samples from the last attack.
     perm  = np.random.RandomState(42).permutation(len(X_adv))
     X_adv = X_adv[perm]
+    W_adv = W_adv[perm]
 
     print(f"\nFeature matrix shapes: clean={X_clean.shape}, adv={X_adv.shape}")
     print("  (" + ", ".join(f"{a}: {n}" for a, n in per_attack_shapes.items()) + ")")
 
+    # P0.6 ablation: drop the 36-dim persistence-statistics block. The 36 TDA
+    # columns sit at indices 0..35; DCT (optional) and grad-norm (optional)
+    # follow. We keep only the trailing non-TDA columns and set alpha=0 on the
+    # scorer so Wasserstein contributes nothing at inference. The ensemble
+    # scorer records use_tda=False in its provenance pkl for downstream
+    # identification during evaluation.
+    ensemble_alpha = 0.4
+    if no_tda_features:
+        if X_clean.shape[1] <= 36:
+            print("ERROR: --no-tda-features requires at least one non-TDA feature "
+                  "(enable --use-grad-norm and/or keep use_dct=True).")
+            sys.exit(1)
+        print(f"[P0.6] Stripping 36 TDA columns from features. "
+              f"Before: {X_clean.shape[1]}-dim; after: {X_clean.shape[1] - 36}-dim.")
+        X_clean = X_clean[:, 36:]
+        X_adv   = X_adv[:, 36:]
+        ensemble_alpha = 0.0  # pure logistic; Wasserstein disabled
+
     # -- Train ensemble scorer --------------------------------------------------
-    n_feat_desc = f"{37 + (1 if use_grad_norm else 0)}-dim"
+    n_feat_desc = f"{X_clean.shape[1]}-dim (no_tda={no_tda_features})"
     print(f"\nFitting logistic regression ensemble component ({n_feat_desc})...")
     ensemble = PersistenceEnsembleScorer(
         base_scorer=base_scorer,
         layer_names=LAYER_NAMES,
         dims=DIMS,
-        alpha=0.4,
+        alpha=ensemble_alpha,
         use_dct=True,
         use_grad_norm=use_grad_norm,
+        use_tda=not no_tda_features,
     )
 
     # 80/20 split for training vs internal validation
@@ -416,11 +447,28 @@ def train_ensemble_scorer(
         print(f"\nHeld-out validation AUC (logistic component): {auc:.4f}")
         print(classification_report(y_val, preds, target_names=['clean', 'adv']))
 
+    # -- Tune α on the held-out 20% (P0.6 lever) -------------------------------
+    # The α=0.4/0.5 default is a guess; grid-search on the same held-out slice
+    # used above. For the P0.6 ablation (use_tda=False) the call short-circuits
+    # and keeps alpha=0 since the Wasserstein head is disabled.
+    if len(X_clean) > n_clean_train and len(X_adv) > n_adv_train:
+        tune_summary = ensemble.tune_alpha(
+            clean_features=X_clean[n_clean_train:],
+            adv_features=X_adv[n_adv_train:],
+            clean_w_scores=W_clean[n_clean_train:],
+            adv_w_scores=W_adv[n_adv_train:],
+        )
+        ensemble.alpha_tune_summary = tune_summary
+        print(f"Selected α = {ensemble.alpha:.3f} (held-out AUC grid search)")
+    else:
+        print("Skipping α tuning — validation slice is empty.")
+
     # -- Set provenance metadata ------------------------------------------------
     ensemble.training_eps     = fgsm_eps
     ensemble.training_attacks = attack_names          # dynamic list
     ensemble.training_n       = len(X_adv)
     ensemble.fgsm_oversample  = fgsm_oversample
+    ensemble.no_tda_features  = no_tda_features
     for atk_name, cnt in per_attack_shapes.items():
         setattr(ensemble, f'training_{atk_name.lower()}_n', cnt)
 
@@ -446,19 +494,32 @@ def train_ensemble_scorer(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var). '
+                             'Default: configs/default.yaml (CIFAR-10).')
     parser.add_argument('--n-train',   type=int,   default=3000,
                         help='Total adversarial samples. Default 3000.')
     parser.add_argument('--fgsm-eps',  type=float, default=8/255,
                         help='L-inf epsilon. Must match EPS_LINF_STANDARD=8/255.')
-    parser.add_argument('--fgsm-oversample', type=float, default=1.5,
+    parser.add_argument('--fgsm-oversample', type=float, default=2.5,
                         help='Relative FGSM weight in the training mix. '
-                             '1.5 = FGSM gets 37.5%% (recommended for FGSM TPR gap).')
+                             'Default 2.5 per P0.3 of the publishability plan: '
+                             'closes the 5-seed pooled FGSM TPR gap '
+                             '(0.806 -> target >=0.85). Lower values (1.5-2.0) '
+                             'regressed FGSM below gate in commits cf854f0/eabcba8.')
+    parser.add_argument('--no-tda-features', action='store_true',
+                        help='Ablation arm (P0.6): strip the 36-dim persistence-'
+                             'statistics feature block and set alpha=0 so the '
+                             'Wasserstein component is not used. Only DCT + '
+                             'grad-norm features remain. Used to quantify the '
+                             'marginal contribution of TAMM (C1). Saves to a '
+                             'separate output pkl so the main ensemble is unaffected.')
     parser.add_argument('--use-grad-norm', action='store_true',
                         help='Append input-gradient L2 norm as 38th feature. '
                              'Improves FGSM discrimination; adds ~5ms latency.')
     parser.add_argument('--data-root', default='./data')
-    parser.add_argument('--output',    default='models/ensemble_scorer.pkl')
-    parser.add_argument('--profile',   default='models/reference_profiles.pkl')
+    parser.add_argument('--output',    default=PATHS['ensemble_scorer'])
+    parser.add_argument('--profile',   default=PATHS['reference_profiles'])
     parser.add_argument('--include-cw', action='store_true',
                         help='Add CW-L2 to training attack mix. Improves CW TPR at eval.')
     parser.add_argument('--include-autoattack', action='store_true',
@@ -475,6 +536,13 @@ if __name__ == '__main__':
         args.n_train = 150
         print("[FAST MODE] n_train=150")
 
+    # P0.6: route no-tda-features to a separate default output file so the
+    # main ensemble pkl is never accidentally overwritten by an ablation run.
+    if args.no_tda_features and args.output == PATHS['ensemble_scorer']:
+        _out_dir = os.path.dirname(PATHS['ensemble_scorer']) or 'models'
+        args.output = os.path.join(_out_dir, 'ensemble_scorer_no_tda.pkl')
+        print(f"[P0.6 ablation] --no-tda-features active: output -> {args.output}")
+
     train_ensemble_scorer(
         n_train=args.n_train,
         fgsm_eps=args.fgsm_eps,
@@ -487,4 +555,5 @@ if __name__ == '__main__':
         include_autoattack=args.include_autoattack,
         cw_max_iter=args.cw_max_iter,
         cw_bss=args.cw_bss,
+        no_tda_features=args.no_tda_features,
     )

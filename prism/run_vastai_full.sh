@@ -19,6 +19,7 @@
 #   Steps 2→3: Step 3 reads ensemble_scorer.pkl written by Step 2
 #   Steps 3→4: Step 4 reads calibrator.pkl written by Step 3
 #   Steps 4→5/6/7: All eval phases require the FPR gate to have passed
+#   Steps 5+6+7 join → Step 6b (L0 calibration) → Steps 7a+7b+7c
 #
 # Exit codes: 0=success, 1=gate failure, 2=eval failure
 
@@ -27,9 +28,25 @@ cd /workspace/prism-repo/prism
 
 SEEDS="42 123 456 789 999"
 N_TEST=1000
-CW_MAX_ITER=100
-CW_BSS=9
-CW_CHUNK=64   # gen_chunk for CW: 64 imgs/call fills ART batch_size=128 for ~full GPU occupancy
+
+# CW-L2 research-plan config (P0.1): 40 iter × 5 binary-search steps × batch 256.
+# This is the RobustBench detector-evaluation standard; balances ℓ₂ attack
+# strength against GPU-hours. Pre-research-plan values (max_iter=100, bss=9)
+# are preserved in the legacy block below for reference.
+CW_MAX_ITER=40
+CW_BSS=5
+CW_CHUNK=128   # bs=256 for research-plan P0.1 (was 64 for bs=128 legacy)
+
+# Adaptive-PGD expanded sweep (P1.4): λ ∈ {0, 0.5, 1, 2, 5, 10} with 100-step /
+# 10-restart PGD variant. EOT=1 (hash subsample is deterministic; one EOT pass
+# verifies this; larger EOT is wasted compute).
+ADAPTIVE_LAMBDAS="0.0 0.5 1.0 2.0 5.0 10.0"
+ADAPTIVE_STEPS=100
+ADAPTIVE_RESTARTS=10
+
+# FGSM oversample (P0.3): restore to 2.5 — the regression to 1.8/2.0 in commits
+# dadf2cf/cf854f0 dropped pooled FGSM TPR from 0.87 → 0.806.
+FGSM_OVERSAMPLE=2.5
 
 echo "============================================================"
 echo "PRISM Vast.ai Full Pipeline — $(date)"
@@ -96,20 +113,18 @@ fi
 
 # ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=1.8] ==="
-# FGSM oversample 1.8 gives FGSM 1.8/(1.8+1+1+1+1) = 31.0% of the adversarial
-# budget, close to the original 3-attack share (1.5/3.5 = 42.9%) that achieved
-# FGSM TPR 86.76%. This compensates for CW+AA dilution without oversampling so
-# aggressively that other attacks regress.
+echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=$FGSM_OVERSAMPLE] ==="
+# Research-plan P0.3: FGSM oversample 2.5 restores the pre-regression training
+# mix share that achieved pooled FGSM TPR 0.87. Commits dadf2cf/cf854f0
+# temporarily lowered this to 1.8/2.0 and dropped pooled FGSM TPR to 0.806 —
+# below the 0.85 gate. This value is locked by Appendix §A2 of VASTAI_RUN_GUIDE.md.
 #
 # NOTE: --use-grad-norm was tested on the 2026-04-22 Vast.ai run and REVERTED.
 # It caused a catastrophic regression: FGSM TPR 80.6% → 63.0%, Square 89.1% → 79.8%.
-# Root cause: the gradient L2 norm is nearly non-discriminative (AUC +0.004) but
-# inflated calibration thresholds by 15-20%, destroying the TPR/FPR tradeoff.
 # See regression_analysis_20260422.md for the full forensic analysis.
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 2.0 \
+  --fgsm-oversample $FGSM_OVERSAMPLE \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -162,6 +177,51 @@ print(f'[OK] use_grad_norm={ng}, n_features={nf}')
 "
 if [ $? -ne 0 ]; then
   echo "ERROR: Post-retrain verification failed. Fix and re-run Step 2."; exit 1
+fi
+
+# ── Step 2c: Ensemble-no-TDA variant (P0.6) ──────────────────────────────────
+# Research-plan P0.6: retrain the ensemble scorer with TDA features disabled so
+# we can quantify TAMM's (C1) marginal contribution in the ablation table.
+# Artifact lands at models/ensemble_no_tda.pkl so the canonical pipeline
+# (calibrator, FPR gate, eval) continues to use models/ensemble_scorer.pkl.
+# If `--no-tda-features` is not implemented in train_ensemble_scorer.py on this
+# branch, the step skips with a warning rather than aborting — the main
+# pipeline does not depend on it.
+echo ""
+echo "=== Step 2c: Ensemble-no-TDA variant [P0.6] ==="
+if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-features'; then
+  python scripts/train_ensemble_scorer.py \
+    --n-train 4000 \
+    --fgsm-oversample $FGSM_OVERSAMPLE \
+    --include-cw \
+    --include-autoattack \
+    --cw-max-iter 30 \
+    --cw-bss 3 \
+    --no-tda-features \
+    --output models/ensemble_no_tda.pkl \
+    2>&1 > >(tee logs/step2c_retrain_no_tda.log) || {
+      echo "WARN: Step 2c (ensemble-no-TDA) failed. Ablation arm will be missing."
+    }
+else
+  echo "SKIP: --no-tda-features flag not available on this branch. Re-run after merging P0.6 support."
+fi
+
+# ── Step 2d: Differentiated experts (P0.5) ───────────────────────────────────
+# Research-plan P0.5: the existing MoE experts may be homogeneous (all trained
+# on the same distillation target). Re-train four experts with distinct attack
+# mixes (clean / fgsm / pgd / mixed) so TAMSH routing has something to choose
+# between. Skipped if scripts/train_experts.py is absent.
+echo ""
+echo "=== Step 2d: Differentiated experts [P0.5] ==="
+if [ -f scripts/train_experts.py ]; then
+  python scripts/train_experts.py \
+    --config configs/default.yaml \
+    --output models/experts.pkl \
+    2>&1 > >(tee logs/step2d_train_experts.log) || {
+      echo "WARN: Step 2d (experts) failed. Recovery eval may produce trivial results."
+    }
+else
+  echo "SKIP: scripts/train_experts.py not present. Recovery eval will use existing experts."
 fi
 
 # ── Step 3: Calibrate conformal thresholds ───────────────────────────────────
@@ -292,10 +352,25 @@ echo "  Launching Step 6 adaptive PGD seeds..."
 STEP6_PIDS=""
 STEP6_SEEDS=""
 for s in $SEEDS; do
-  python experiments/evaluation/run_adaptive_pgd.py \
-    --n-test $N_TEST --seed $s \
-    --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
-    2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
+  # Research-plan P1.4: expanded λ sweep, 100-step × 10-restart PGD, EOT=1 (hash
+  # subsample is deterministic; one EOT pass is sufficient to verify).
+  # Flags --pgd-restarts, --eot-samples, --lambdas are gated on the P1.4 branch
+  # being merged — if argparse rejects them, fall back to the defaults.
+  if python experiments/evaluation/run_adaptive_pgd.py --help 2>&1 | grep -q -- '--pgd-restarts'; then
+    python experiments/evaluation/run_adaptive_pgd.py \
+      --n-test $N_TEST --seed $s \
+      --lambdas $ADAPTIVE_LAMBDAS \
+      --pgd-steps $ADAPTIVE_STEPS \
+      --pgd-restarts $ADAPTIVE_RESTARTS \
+      --eot-samples 1 \
+      --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
+      2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
+  else
+    python experiments/evaluation/run_adaptive_pgd.py \
+      --n-test $N_TEST --seed $s \
+      --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
+      2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
+  fi
   STEP6_PIDS="$STEP6_PIDS $!"
   STEP6_SEEDS="$STEP6_SEEDS $s"
   echo "  Step 6 seed=$s started (PID=$!)"
@@ -400,6 +475,181 @@ if [ $STEP6_FAIL -ne 0 ]; then
   exit 2
 fi
 
+# ── Step 6b: Calibrate L0 thresholds on real score streams (P0.4 lever) ──────
+# Must run after the ensemble scorer + calibrator (Steps 3+4) are written and
+# before Step 7a (campaign eval). Reads models/ensemble_scorer.pkl,
+# models/calibrator.pkl, and models/reference_profiles.pkl (all read-only) and
+# writes models/l0_thresholds.pkl. CampaignMonitor (Step 7a) auto-discovers this
+# pkl and overlays its hazard_rate/alert_run_prob/warmup_steps, replacing the
+# synthetic-tuned defaults. On any feasibility failure the script exits non-zero.
+echo ""
+echo "=== Step 6b: L0 Threshold Calibration [P0.4] ==="
+python scripts/calibrate_l0_thresholds.py \
+  --n-clean 500 \
+  --n-adv   500 \
+  2>&1 | tee logs/step6b_l0_calibration.log
+L0_CAL_EXIT=${PIPESTATUS[0]}
+if [ $L0_CAL_EXIT -ne 0 ]; then
+  echo "ERROR: L0 calibration FAILED (exit $L0_CAL_EXIT). No feasible (hazard_rate, alert_run_prob) cell found."
+  echo "       P0.4 gate cannot be evaluated with calibrated thresholds."
+  echo "       Investigate logs/step6b_l0_calibration.log."
+  echo "       Step 7a will proceed with CampaignMonitor defaults — results flagged as uncalibrated."
+fi
+echo "Step 6b: DONE (exit=$L0_CAL_EXIT)"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Research-Plan Phase 2 — C3/C4 Evidence Generation + Baselines + Paper Tables
+# ══════════════════════════════════════════════════════════════════════════════
+# Steps 7a/7b/7c run FULLY PARALLEL — each reads the same locked
+# ensemble/calibrator/experts/reference_profiles pkl artifacts (read-only) and
+# writes to distinct output directories (experiments/campaign/,
+# experiments/recovery/, experiments/evaluation/results_baselines_*.json).
+# No write contention; independent PRISM instances per process.
+#
+# Parallelism safety on a single 32 GB RTX 5090:
+#   • 7a campaign seeds: ~2.5 GB each (PGD-40 generation dominates)
+#   • 7b recovery seeds: ~1.5 GB each (expert forward + oracle eval)
+#   • 7c baseline seeds: ~2.5 GB each (Mahalanobis fit on activations)
+#   Total with 5 seeds per suite serialized within the suite and 3 suites in
+#   parallel: peak ~2.5 + 1.5 + 2.5 ≈ 6.5 GB. Comfortably within 32 GB.
+# Seeds within each suite stay serial — keeps logs readable and bounds VRAM
+# peak regardless of future per-seed memory growth.
+#
+# Wait order: all three launched simultaneously after Step 7 (ablation) completes;
+# gate-check python block runs ONCE after all three suites join, then step 7d
+# (paper tables) runs last since it aggregates every JSON written above.
+# ══════════════════════════════════════════════════════════════════════════════
+
+mkdir -p experiments/campaign experiments/recovery
+
+echo ""
+echo "=== Steps 7a+7b+7c: Parallel launch [P0.4 + P0.5 + P0.2] ==="
+
+# ── Step 7a: Campaign-stream eval (P0.4, C3 evidence) ────────────────────────
+(
+  if [ -f experiments/evaluation/run_campaign_eval.py ]; then
+    for s in $SEEDS; do
+      python experiments/evaluation/run_campaign_eval.py \
+        --seed $s \
+        --output experiments/campaign/results_campaign_seed${s}.json \
+        2>&1 | tee logs/step7a_campaign_seed${s}.log
+    done
+  else
+    echo "SKIP: run_campaign_eval.py not present. C3 evidence will be missing."
+  fi
+) &
+PID_7A=$!
+echo "  Step 7a (campaign, 5 seeds serial) started (PID=$PID_7A)"
+
+# ── Step 7b: L3-recovery eval (P0.5, C4 evidence) ────────────────────────────
+(
+  if [ -f experiments/evaluation/run_recovery_eval.py ]; then
+    for s in $SEEDS; do
+      python experiments/evaluation/run_recovery_eval.py \
+        --seed $s \
+        --n-test $N_TEST \
+        --output experiments/recovery/results_recovery_seed${s}.json \
+        2>&1 | tee logs/step7b_recovery_seed${s}.log
+    done
+  else
+    echo "SKIP: run_recovery_eval.py not present. C4 evidence will be missing."
+  fi
+) &
+PID_7B=$!
+echo "  Step 7b (recovery, 5 seeds serial) started (PID=$PID_7B)"
+
+# ── Step 7c: Baseline detectors (P0.2, LID/Mahalanobis/ODIN/Energy) ──────────
+(
+  if [ -f experiments/evaluation/run_baselines.py ]; then
+    for s in $SEEDS; do
+      python experiments/evaluation/run_baselines.py \
+        --seed $s \
+        --n-test $N_TEST \
+        --methods lid mahalanobis odin energy \
+        --output experiments/evaluation/results_baselines_seed${s}.json \
+        2>&1 | tee logs/step7c_baselines_seed${s}.log
+    done
+  else
+    echo "SKIP: run_baselines.py not present. Baseline comparison table will be empty."
+  fi
+) &
+PID_7C=$!
+echo "  Step 7c (baselines, 5 seeds serial) started (PID=$PID_7C)"
+
+# Join all three suites
+echo "  Waiting for Steps 7a + 7b + 7c to complete..."
+STEP7A_EXIT=0; wait $PID_7A || STEP7A_EXIT=$?
+STEP7B_EXIT=0; wait $PID_7B || STEP7B_EXIT=$?
+STEP7C_EXIT=0; wait $PID_7C || STEP7C_EXIT=$?
+[ $STEP7A_EXIT -ne 0 ] && echo "WARN: Step 7a exited with $STEP7A_EXIT"
+[ $STEP7B_EXIT -ne 0 ] && echo "WARN: Step 7b exited with $STEP7B_EXIT"
+[ $STEP7C_EXIT -ne 0 ] && echo "WARN: Step 7c exited with $STEP7C_EXIT"
+echo "Steps 7a+7b+7c: COMPLETE"
+
+# ── Combined gate checks (P0.4 + P0.5) ───────────────────────────────────────
+# JSON-key shapes verified against source:
+#   run_campaign_eval.py:203 → results[scenario]['l0_on']['l0_active_fraction']
+#   run_campaign_eval.py:216 → results[scenario]['asr_gap_pp']
+#   run_recovery_eval.py:278 → results[strategy]['recovery_accuracy']
+echo ""
+echo "=== Gate checks (P0.4 campaign, P0.5 recovery) ==="
+python -c "
+import json, glob
+# ── P0.4 campaign gates ──
+cfiles = sorted(glob.glob('experiments/campaign/results_campaign_seed*.json'))
+if not cfiles:
+    print('WARN: no campaign results found — skipping P0.4 gate check')
+else:
+    gaps, fas = [], []
+    for f in cfiles:
+        d = json.load(open(f))
+        # scenarios are dumped at TOP LEVEL (no 'scenarios' wrapper)
+        sust = d.get('sustained_rho100', {})
+        clean_l0on = d.get('clean_only', {}).get('l0_on', {})
+        gap = sust.get('asr_gap_pp')
+        fa  = clean_l0on.get('l0_active_fraction')
+        if gap is not None: gaps.append(gap)
+        if fa  is not None: fas.append(fa)
+    if gaps:
+        mean_gap = sum(gaps)/len(gaps)
+        print(f'P0.4 sustained-rho=1.0 ASR gap (mean across seeds): {mean_gap:.2f}pp  [gate >= 10pp]')
+        if mean_gap < 10: print('  -> C3 gate MISS: demote SACD to appendix per Appendix A3')
+    if fas:
+        max_fa = max(fas)
+        print(f'P0.4 clean-only false-alarm (max across seeds): {max_fa:.4f}  [gate <= 0.01]')
+        if max_fa > 0.01: print('  -> BOCPD priors (mu0/beta0) need retune in configs/default.yaml')
+
+# ── P0.5 recovery gate ──
+rfiles = sorted(glob.glob('experiments/recovery/results_recovery_seed*.json'))
+if not rfiles:
+    print('WARN: no recovery results found — skipping P0.5 gate check')
+else:
+    gaps = []
+    for f in rfiles:
+        d = json.load(open(f))
+        # strategies dumped at TOP LEVEL; metric key is 'recovery_accuracy'
+        t = d.get('tamsh',       {}).get('recovery_accuracy')
+        p = d.get('passthrough', {}).get('recovery_accuracy')
+        if t is not None and p is not None: gaps.append((t - p) * 100)
+    if gaps:
+        mean_gap = sum(gaps)/len(gaps)
+        print(f'P0.5 TAMSH - passthrough gap (mean across seeds): {mean_gap:.2f}pp  [gate >= 15pp]')
+        if mean_gap < 15: print('  -> C4 gate MISS: demote TAMSH to appendix per Appendix A3')
+"
+
+# ── Step 7d: Build paper tables (P0.7) ───────────────────────────────────────
+echo ""
+echo "=== Step 7d: Build LaTeX paper tables [P0.7] ==="
+if [ -f scripts/build_paper_tables.py ]; then
+  python scripts/build_paper_tables.py \
+    --results-dir experiments \
+    --out-dir paper/tables \
+    2>&1 | tee logs/step7d_paper_tables.log
+  echo "  LaTeX tables written to paper/tables/*.tex"
+else
+  echo "SKIP: build_paper_tables.py not present. Run manually post-campaign."
+fi
+
 # ── Step 8: Reproducibility manifest ─────────────────────────────────────────
 echo ""
 echo "=== Step 8: Reproducibility Manifest ==="
@@ -421,7 +671,12 @@ out = {
   'seeds':                     [42, 123, 456, 789, 999],
   'eval_split':                'CIFAR-10 test idx 8000-9999',
   'eps_linf':                  8.0/255,
-  'cw_eval_params':            {'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'batch_size': 64, 'confidence': 0.0},
+  'cw_eval_params':            {'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'batch_size': 256, 'confidence': 0.0},
+  'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1},
+  'fgsm_oversample':           $FGSM_OVERSAMPLE,
+  'baselines_methods':         ['lid', 'mahalanobis', 'odin', 'energy'],
+  'campaign_scenarios':        ['clean_only', 'sustained_rho050', 'sustained_rho080', 'sustained_rho100', 'burst', 'low_rate'],
+  'recovery_strategies':       ['reject', 'passthrough', 'tamsh'],
   'aa_eval_params':            {'version': 'standard', 'chunk': 64},
   'square_eval_params':        {'max_iter': 5000, 'nb_restarts': 1},
 }

@@ -30,9 +30,15 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
-from src.config import IMAGENET_MEAN, IMAGENET_STD, VAL_IDX, LAYER_WEIGHTS, DIM_WEIGHTS
+from src.config import (
+    IMAGENET_MEAN, IMAGENET_STD, VAL_IDX,
+    LAYER_WEIGHTS, DIM_WEIGHTS, DATASET, PATHS,
+)
+from src.data_loader import load_test_dataset
 
 _MEAN = IMAGENET_MEAN
 _STD  = IMAGENET_STD
@@ -69,7 +75,10 @@ def compute_ensemble_val_fpr(
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()
 
-    for p in ['models/calibrator.pkl', 'models/reference_profiles.pkl']:
+    cal_p  = PATHS['calibrator']
+    prof_p = PATHS['reference_profiles']
+    ens_p  = PATHS['ensemble_scorer']
+    for p in [cal_p, prof_p]:
         if not os.path.exists(p):
             print(f"ERROR: {p} not found. Run pipeline phases 2+3.5 first.")
             sys.exit(1)
@@ -77,18 +86,16 @@ def compute_ensemble_val_fpr(
     prism = PRISM.from_saved(
         model=model,
         layer_names=layer_names,
-        calibrator_path='models/calibrator.pkl',
-        profile_path='models/reference_profiles.pkl',
-        ensemble_path='models/ensemble_scorer.pkl' if os.path.exists('models/ensemble_scorer.pkl') else None,
+        calibrator_path=cal_p,
+        profile_path=prof_p,
+        ensemble_path=ens_p if os.path.exists(ens_p) else None,
         layer_weights=layer_weights,
         dim_weights=dim_weights,
         campaign_monitor=NoOpCampaignMonitor(),
     )
 
-    # ── Dataset ───────────────────────────────────────────────────────────────
-    pixel_dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
-    )
+    # ── Dataset — dispatch on DATASET (cifar10 / cifar100) ────────────────────
+    pixel_dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
     val_indices = list(range(*VAL_IDX))
 
     # ── Score all validation images ───────────────────────────────────────────
@@ -119,7 +126,8 @@ def compute_ensemble_val_fpr(
 
     results = {
         'n_val': n,
-        'val_split': f'CIFAR-10 test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}',
+        'dataset': DATASET,
+        'val_split': f'{DATASET.upper()} test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}',
         'level_distribution': level_counts,
         'tiers': {},
     }
@@ -165,7 +173,16 @@ def compute_ensemble_val_fpr(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--data-root', default='./data')
-    parser.add_argument('--output',    default='experiments/calibration/ensemble_fpr_report.json')
+    # Config-aware default: e.g. cifar100_ensemble_fpr_report.json when the
+    # config routes clean_scores to cifar100_clean_scores.npy.
+    _default_out = os.path.join(
+        os.path.dirname(PATHS['clean_scores']) or 'experiments/calibration',
+        (os.path.basename(PATHS['clean_scores']).replace('clean_scores.npy', '')
+         + 'ensemble_fpr_report.json')
+    )
+    parser.add_argument('--output', default=_default_out)
     args = parser.parse_args()
     compute_ensemble_val_fpr(data_root=args.data_root, output_path=args.output)

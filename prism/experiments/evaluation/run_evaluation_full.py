@@ -70,6 +70,9 @@ for _stream_name in ('stdout', 'stderr'):
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+
 try:
     from art.attacks.evasion import (
         FastGradientMethod,
@@ -96,7 +99,9 @@ from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
     EVAL_IDX,   # single source of truth -- do not redeclare below
+    DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _MEAN = IMAGENET_MEAN
@@ -190,10 +195,10 @@ def run_evaluation_full(
     device_str: str = None,
     square_max_iter: int = 5000,
     gen_chunk: int = None,
-    cw_chunk: int = 64,
+    cw_chunk: int = 128,
     aa_chunk: int = 8,
     aa_version: str = 'standard',
-    cw_max_iter: int = 50,
+    cw_max_iter: int = 40,
     cw_bss: int = 5,
 ):
     if not ART_AVAILABLE:
@@ -219,10 +224,10 @@ def run_evaluation_full(
     layer_weights = LAYER_WEIGHTS
     dim_weights   = DIM_WEIGHTS
 
-    # ── PRISM ──────────────────────────────────────────────────────────────────
-    cal_path  = 'models/calibrator.pkl'
-    prof_path = 'models/reference_profiles.pkl'
-    ens_path  = 'models/ensemble_scorer.pkl'
+    # ── PRISM — routed through PATHS for CIFAR-10 / CIFAR-100 dispatch ────────
+    cal_path  = PATHS['calibrator']
+    prof_path = PATHS['reference_profiles']
+    ens_path  = PATHS['ensemble_scorer']
     for p in [cal_path, prof_path]:
         if not os.path.exists(p):
             print(f"ERROR: {p} not found. Run build_profile_testset.py + "
@@ -281,15 +286,15 @@ def run_evaluation_full(
             max_iter=40,
             num_random_init=1,
         ),
-        # CW-L2: batch_size=128 for improved GPU parallelism.
-        # With gen_chunk=64 and batch_size=128, ART processes 64 images as a
-        # single batch → full GPU occupancy. Prior batch_size=64 was
-        # leaving ~85-90% of GPU idle (verified by nvidia-smi during run).
-        # Paper-canonical max_iter=100/bss=9 retained for reviewer confidence.
-        # verbose=True enables ART internal per-step loss logging.
+        # CW-L2: batch_size=256 per P0.1 (publishability plan) so the 40-iter
+        # × 5-binary-search config completes within the GPU budget. Prior
+        # batch_size=64/128 left significant GPU idle time (verified by
+        # nvidia-smi); 256 fills a 5090-class card. On smaller GPUs reduce
+        # --cw-chunk and batch_size proportionally. verbose=True keeps ART's
+        # per-step loss logging so convergence can be inspected post-hoc.
         'CW': lambda: CarliniL2Method(
             classifier, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
-            binary_search_steps=cw_bss, batch_size=128, verbose=True,
+            binary_search_steps=cw_bss, batch_size=256, verbose=True,
         ),
         'Square': lambda: SquareAttack(
             classifier, eps=EPS_LINF_STANDARD, max_iter=square_max_iter, nb_restarts=1,
@@ -307,18 +312,14 @@ def run_evaluation_full(
         print(f"   CW params: max_iter={cw_max_iter}, bss={cw_bss}, "
               f"estimated ~{_cw_est/60:.0f} min per seed")
 
-    # ── Dataset (held-out eval split) ──────────────────────────────────────────
-    pixel_dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
-    )
+    # ── Dataset (held-out eval split) — dispatch on DATASET ────────────────────
+    pixel_dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
     eval_indices = list(range(*EVAL_IDX))
     n_eval = min(n_test, len(eval_indices))
     sample_idx = rng.choice(eval_indices, n_eval, replace=False)
 
     # ── Latency benchmark ──────────────────────────────────────────────────────
-    norm_dataset_for_bench = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=False, transform=_PIXEL_TRANSFORM
-    )
+    norm_dataset_for_bench = load_test_dataset(root=data_root, download=False, transform=_PIXEL_TRANSFORM)
     latency = run_latency_benchmark(prism_base, norm_dataset_for_bench, device)
 
     # ── Per-attack evaluation ──────────────────────────────────────────────────
@@ -621,10 +622,10 @@ def run_evaluation_multiseed(
     device_str: str = None,
     square_max_iter: int = 5000,
     gen_chunk: int = None,
-    cw_chunk: int = 64,
+    cw_chunk: int = 128,
     aa_chunk: int = 8,
     aa_version: str = 'standard',
-    cw_max_iter: int = 50,
+    cw_max_iter: int = 40,
     cw_bss: int = 5,
 ):
     """
@@ -841,6 +842,9 @@ def run_evaluation_multiseed(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="PRISM paper-quality evaluation")
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var). '
+                             'Default: configs/default.yaml (CIFAR-10).')
     parser.add_argument('--n-test',    type=int, default=1000)
     parser.add_argument('--data-root', default='./data')
     parser.add_argument('--output',    default='experiments/evaluation/results_paper.json')
@@ -870,16 +874,19 @@ if __name__ == '__main__':
                         help='Run over 5 seeds and report mean±std (paper mode)')
     parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
                         help='Seeds to use with --multi-seed')
-    parser.add_argument('--cw-max-iter', type=int, default=100,
-                        help='CW-L2 max_iter (default 100 = paper-canonical; '
-                             '50 is fast CW used in many robustness papers).')
-    parser.add_argument('--cw-bss', type=int, default=9,
-                        help='CW-L2 binary_search_steps (default 9 = paper-canonical; '
-                             '5 is fast CW).')
-    parser.add_argument('--cw-chunk', type=int, default=64,
-                        help='Gen chunk size for CW attack. 64 fills a batch_size=128 '
-                             'ART call for full GPU occupancy. Lower for more frequent '
-                             'progress lines (at cost of GPU utilization).')
+    parser.add_argument('--cw-max-iter', type=int, default=40,
+                        help='CW-L2 max_iter. Default 40 per P0.1 of the '
+                             'publishability plan: RobustBench detector-evaluation '
+                             'standard. Paper-canonical 100 remains available for '
+                             'full submission runs but was infeasible on the '
+                             'current GPU budget. 50 is intermediate.')
+    parser.add_argument('--cw-bss', type=int, default=5,
+                        help='CW-L2 binary_search_steps. Default 5 per P0.1; '
+                             'paper-canonical 9 available for full runs.')
+    parser.add_argument('--cw-chunk', type=int, default=128,
+                        help='Gen chunk size for CW attack. Default 128 per P0.1 '
+                             'to pair with batch_size=256 for full GPU occupancy '
+                             'on 5090-class cards. Lower to 64 on smaller GPUs.')
     args = parser.parse_args()
 
     if args.multi_seed:

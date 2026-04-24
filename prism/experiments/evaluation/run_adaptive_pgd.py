@@ -10,16 +10,29 @@ where:
   - a(x') are intermediate activations at PRISM-monitored layers
   - a_ref are activations from the clean input x
   - D normalises by activation dimension so λ is scale-invariant
-  - λ ∈ {0.0, 0.5, 1.0, 2.0, 5.0} sweeps from standard PGD to full evasion
+  - λ ∈ {0.0, 0.5, 1.0, 2.0, 5.0, 10.0} sweeps from standard PGD to full evasion
 
 The activation-matching term forces adversarial activations to stay close to
 clean activations, directly attacking the topological profiling in TAMM.
+
+P1.4 additions:
+  - λ sweep extended to {0, 0.5, 1, 2, 5, 10} (was 0,0.5,1,2,5)
+  - --pgd-restarts: random restarts per image, keep worst adversarial
+  - --eot-samples: EOT (Athalye 2018) gradient averaging. PRISM's detector
+      uses a deterministic hash-based subsample so EOT *should* be a no-op;
+      --eot-samples>1 VERIFIES this rather than assumes it.
+  - --through-scorer: add DCT-energy term targeting the scorer's 37th feature
+      (a lightweight stand-in for a full APGD-CE-through-scorer attack).
 
 USAGE
 -----
   cd prism/
   python experiments/evaluation/run_adaptive_pgd.py --n-test 500 --pgd-steps 40
   python experiments/evaluation/run_adaptive_pgd.py --n-test 500 --lambdas 0.0 1.0 5.0
+  # Strong variant: 100 steps × 10 restarts, λ sweep incl. 10, through-scorer loss
+  python experiments/evaluation/run_adaptive_pgd.py --n-test 1000 --pgd-steps 100 \
+      --pgd-restarts 10 --through-scorer \
+      --lambdas 0 0.5 1 2 5 10
 
 EVAL SPLIT: CIFAR-10 test indices 8000-9999 (same as run_evaluation_full.py)
 """
@@ -37,13 +50,16 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
-    EVAL_IDX,
+    EVAL_IDX, DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 
 _MEAN = IMAGENET_MEAN
 _STD  = IMAGENET_STD
@@ -113,6 +129,7 @@ def _hf_energy_torch(x: torch.Tensor) -> torch.Tensor:
 def adaptive_pgd_attack(
     model, x_pixel, eps, steps, step_size, lam, layer_names, device,
     through_scorer: bool = False,
+    eot_samples: int = 1,
 ):
     """
     Generate one adaptive PGD adversarial example.
@@ -182,49 +199,97 @@ def adaptive_pgd_attack(
     delta.data = torch.clamp(x + delta.data, 0.0, 1.0) - x
 
     for step_i in range(steps):
-        adv_acts = {}
-        handles2 = []
-        for name in layer_names:
-            h = module_dict[name].register_forward_hook(make_hook(name, adv_acts))
-            handles2.append(h)
-
-        x_adv = x + delta
-        x_adv_norm = (x_adv - mean_t) / std_t
-        logits = model(x_adv_norm)
-
-        # Misclassification loss (maximise = negate CE)
-        loss_ce = -ce_loss(logits, y_pred)
-
-        # Activation matching loss
-        loss_act = torch.tensor(0.0, device=device)
-        if lam > 0:
+        # EOT (Athalye 2018): average gradient over eot_samples stochastic
+        # forward passes. Our detector is deterministic so eot_samples>1 is
+        # a verification that EOT is a no-op; still implement it correctly.
+        grad_accum = torch.zeros_like(delta)
+        for _ in range(max(eot_samples, 1)):
+            adv_acts = {}
+            handles2 = []
             for name in layer_names:
-                a_adv = adv_acts[name]
-                a_clean = clean_acts_detached[name]
-                D = float(a_adv.numel())
-                loss_act = loss_act + torch.norm(a_adv - a_clean, p=2) / max(D, 1.0)
+                h = module_dict[name].register_forward_hook(make_hook(name, adv_acts))
+                handles2.append(h)
 
-        # DCT high-frequency energy matching (targets PRISM's 37th ensemble feature)
-        loss_dct = torch.tensor(0.0, device=device)
-        if through_scorer and clean_hf_energy is not None:
-            adv_hf_energy = _hf_energy_torch(x_adv)
-            loss_dct = (adv_hf_energy - clean_hf_energy).abs()
+            x_adv = x + delta
+            x_adv_norm = (x_adv - mean_t) / std_t
+            logits = model(x_adv_norm)
 
-        loss_total = loss_ce + lam * loss_act + 0.5 * loss_dct
+            # Misclassification loss (maximise = negate CE)
+            loss_ce = -ce_loss(logits, y_pred)
 
-        loss_total.backward()
+            # Activation matching loss
+            loss_act = torch.tensor(0.0, device=device)
+            if lam > 0:
+                for name in layer_names:
+                    a_adv = adv_acts[name]
+                    a_clean = clean_acts_detached[name]
+                    D = float(a_adv.numel())
+                    loss_act = loss_act + torch.norm(a_adv - a_clean, p=2) / max(D, 1.0)
 
-        for h in handles2:
-            h.remove()
+            # DCT high-frequency energy matching (targets scorer's 37th feature)
+            loss_dct = torch.tensor(0.0, device=device)
+            if through_scorer and clean_hf_energy is not None:
+                adv_hf_energy = _hf_energy_torch(x_adv)
+                loss_dct = (adv_hf_energy - clean_hf_energy).abs()
+
+            loss_total = loss_ce + lam * loss_act + 0.5 * loss_dct
+            loss_total.backward()
+
+            for h in handles2:
+                h.remove()
+
+            grad_accum = grad_accum + delta.grad.detach()
+            delta.grad = None
+
+        grad = grad_accum / max(eot_samples, 1)
 
         # PGD step (L∞)
-        grad = delta.grad.detach()
         delta.data = delta.data - step_size * grad.sign()
         delta.data = torch.clamp(delta.data, -eps, eps)
         delta.data = torch.clamp(x + delta.data, 0.0, 1.0) - x
-        delta.grad = None
 
     return (x + delta.detach()).clamp(0.0, 1.0)
+
+
+def adaptive_pgd_attack_with_restarts(
+    model, x_pixel, eps, steps, step_size, lam, layer_names, device,
+    prism, mean_t, std_t,
+    through_scorer: bool = False,
+    eot_samples: int = 1,
+    num_restarts: int = 1,
+):
+    """
+    Run adaptive PGD with `num_restarts` random initialisations and keep the
+    most-evasive adversarial — i.e. the one that (a) evades PRISM if any does,
+    or (b) has the lowest PRISM score if all are detected.
+
+    This matches Athalye/Carlini's best-practice for detector evaluation: an
+    adversary gets multiple attempts per image, and the defender must survive
+    the worst of them.
+    """
+    best_x_adv = None
+    best_evaded = False
+    best_score = float('inf')  # lower PRISM score = more evasive
+
+    for _restart in range(max(num_restarts, 1)):
+        x_adv_pixel = adaptive_pgd_attack(
+            model, x_pixel, eps, steps, step_size, lam, layer_names, device,
+            through_scorer=through_scorer,
+            eot_samples=eot_samples,
+        )
+        x_adv_norm = ((x_adv_pixel - mean_t) / std_t)
+        _, lv, info = prism.defend(x_adv_norm)
+        evaded = (lv == 'PASS')
+        score = float(info.get('score', info.get('prism_score', 0.0))) if isinstance(info, dict) else 0.0
+
+        if evaded and not best_evaded:
+            best_x_adv, best_evaded, best_score = x_adv_pixel, True, score
+        elif evaded and best_evaded and score < best_score:
+            best_x_adv, best_score = x_adv_pixel, score
+        elif not evaded and not best_evaded and score < best_score:
+            best_x_adv, best_score = x_adv_pixel, score
+
+    return best_x_adv if best_x_adv is not None else x_adv_pixel
 
 
 def run_adaptive_pgd(
@@ -232,17 +297,21 @@ def run_adaptive_pgd(
     output_path='experiments/evaluation/results_adaptive_pgd.json',
     device_str=None, data_root='./data',
     through_scorer=False,
+    pgd_restarts=1,
+    eot_samples=1,
 ):
     eps = EPS_LINF_STANDARD
     step_size = eps / 4  # 2/255
 
     if lambdas is None:
-        lambdas = [0.0, 0.5, 1.0, 2.0, 5.0]
+        # P1.4: include λ=10 to probe saturation of the activation-matching loss
+        lambdas = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0]
 
     device = torch.device(device_str) if device_str else \
              torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
-    print(f"Adaptive PGD: n={n_test}, steps={pgd_steps}, eps={eps:.4f}, "
+    print(f"Adaptive PGD: n={n_test}, steps={pgd_steps}, restarts={pgd_restarts}, "
+          f"eot_samples={eot_samples}, eps={eps:.4f}, "
           f"lambdas={lambdas}, through_scorer={through_scorer}")
     print(f"Eval split: CIFAR-10 test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
 
@@ -253,10 +322,8 @@ def run_adaptive_pgd(
     model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model = model.to(device).eval()
 
-    # ── Dataset ──
-    ds = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
-    )
+    # ── Dataset — dispatch on DATASET (cifar10 / cifar100) ──
+    ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
     eval_indices = list(range(*EVAL_IDX))
     sample_idx = rng.choice(eval_indices, min(n_test, len(eval_indices)), replace=False)
 
@@ -276,13 +343,13 @@ def run_adaptive_pgd(
         print(f"Adaptive PGD  λ={lam}")
         print(f"{'='*60}")
 
-        # Fresh PRISM per lambda
+        # Fresh PRISM per lambda — routed through PATHS for per-dataset artifacts
         prism = PRISM.from_saved(
             model=model,
             layer_names=LAYER_NAMES,
-            calibrator_path='models/calibrator.pkl',
-            profile_path='models/reference_profiles.pkl',
-            ensemble_path='models/ensemble_scorer.pkl',
+            calibrator_path=PATHS['calibrator'],
+            profile_path=PATHS['reference_profiles'],
+            ensemble_path=PATHS['ensemble_scorer'],
             layer_weights=LAYER_WEIGHTS,
             dim_weights=DIM_WEIGHTS,
             campaign_monitor=NoOpCampaignMonitor(),
@@ -290,6 +357,9 @@ def run_adaptive_pgd(
 
         tp, fp, fn, tn = 0, 0, 0, 0
         level_clean, level_adv = {}, {}
+
+        mean_t = torch.tensor(_MEAN, device=device).view(1, 3, 1, 1)
+        std_t  = torch.tensor(_STD,  device=device).view(1, 3, 1, 1)
 
         for j, img_pixel in enumerate(tqdm(imgs_pixel, desc=f"  λ={lam}")):
             x_pixel = img_pixel.unsqueeze(0).to(device)
@@ -303,12 +373,22 @@ def run_adaptive_pgd(
             else:
                 fp += 1
 
-            # Adaptive adversarial
-            x_adv_pixel = adaptive_pgd_attack(
-                model, x_pixel, eps, pgd_steps, step_size, lam,
-                LAYER_NAMES, device,
-                through_scorer=through_scorer,
-            )
+            # Adaptive adversarial (with optional restarts + EOT)
+            if pgd_restarts > 1:
+                x_adv_pixel = adaptive_pgd_attack_with_restarts(
+                    model, x_pixel, eps, pgd_steps, step_size, lam,
+                    LAYER_NAMES, device, prism, mean_t, std_t,
+                    through_scorer=through_scorer,
+                    eot_samples=eot_samples,
+                    num_restarts=pgd_restarts,
+                )
+            else:
+                x_adv_pixel = adaptive_pgd_attack(
+                    model, x_pixel, eps, pgd_steps, step_size, lam,
+                    LAYER_NAMES, device,
+                    through_scorer=through_scorer,
+                    eot_samples=eot_samples,
+                )
             x_adv_norm = _NORMALIZE(x_adv_pixel.squeeze(0).cpu()).unsqueeze(0).to(device)
             _, lv_a, _ = prism.defend(x_adv_norm)
             level_adv[lv_a] = level_adv.get(lv_a, 0) + 1
@@ -346,6 +426,8 @@ def run_adaptive_pgd(
             'adversarial_level_distribution': level_adv,
             'lambda': lam,
             'pgd_steps': pgd_steps,
+            'pgd_restarts': pgd_restarts,
+            'eot_samples': eot_samples,
             'eps': round(eps, 6),
         }
 
@@ -373,6 +455,8 @@ def run_adaptive_pgd(
         'eps': round(eps, 6),
         'eps_note': '8/255 standard',
         'pgd_steps': pgd_steps,
+        'pgd_restarts': pgd_restarts,
+        'eot_samples': eot_samples,
         'step_size': round(step_size, 6),
         'lambdas': lambdas,
         'through_scorer': through_scorer,
@@ -399,11 +483,20 @@ def run_adaptive_pgd(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Adaptive PGD evaluation for PRISM")
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--n-test', type=int, default=500)
     parser.add_argument('--pgd-steps', type=int, default=40)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--lambdas', nargs='+', type=float,
-                        default=[0.0, 0.5, 1.0, 2.0, 5.0])
+                        default=[0.0, 0.5, 1.0, 2.0, 5.0, 10.0],
+                        help='λ sweep (default: 0 0.5 1 2 5 10 — P1.4)')
+    parser.add_argument('--pgd-restarts', type=int, default=1,
+                        help='Random restarts per image; keep most-evasive adversarial '
+                             '(P1.4: 10 for strong evaluation)')
+    parser.add_argument('--eot-samples', type=int, default=1,
+                        help='EOT gradient-averaging samples (Athalye 2018). '
+                             'PRISM is deterministic so >1 is a verification, not a defeat.')
     parser.add_argument('--output', default='experiments/evaluation/results_adaptive_pgd.json')
     parser.add_argument('--device', default=None)
     parser.add_argument('--through-scorer', action='store_true',
@@ -420,4 +513,6 @@ if __name__ == '__main__':
         output_path=args.output,
         device_str=args.device,
         through_scorer=args.through_scorer,
+        pgd_restarts=args.pgd_restarts,
+        eot_samples=args.eot_samples,
     )

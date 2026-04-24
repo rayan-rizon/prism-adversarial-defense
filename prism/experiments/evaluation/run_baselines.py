@@ -1,29 +1,40 @@
 """
-Reproduced Baseline Detectors: LID + Mahalanobis
+Reproduced Baseline Detectors: LID + Mahalanobis + ODIN + Energy
 
-Implements and evaluates two established adversarial detection baselines
+Implements and evaluates four established adversarial detection / OOD baselines
 on the same CIFAR-10 eval split used by PRISM, providing a fair comparison.
 
 LID (Local Intrinsic Dimensionality)
   Ma et al., "Characterizing Adversarial Subspaces Using Local Intrinsic
   Dimensionality", ICLR 2018.
-  - Estimates the local intrinsic dimensionality of activation representations
-  - Uses k-nearest-neighbor distances at multiple layers
-  - Threshold fitted on calibration split (test 5000-6999) at FPR ≤ 10%
 
 Mahalanobis Distance
   Lee et al., "A Simple Unified Framework for Detecting Out-of-Distribution
   Samples and Adversarial Attacks", NeurIPS 2018.
-  - Computes Mahalanobis distance of activations to class-conditional Gaussians
-  - Per-layer distances combined via logistic regression (simplified: max across layers)
-  - Class means and covariance fitted on calibration split
-  - Threshold fitted at FPR ≤ 10% on calibration split
+
+ODIN (Out-of-DIstribution detector for Neural networks)
+  Liang et al., "Enhancing The Reliability of Out-of-distribution Image
+  Detection in Neural Networks", ICLR 2018.
+  - Temperature-scaled max softmax probability; input-preprocessing gradient
+    perturbation to widen the clean/OOD gap.
+  - Score: 1 - max_c softmax(f(x + eps * sign(grad)) / T)_c.
+  - Higher score = more adversarial/OOD.
+
+Energy (Liu 2020)
+  Liu et al., "Energy-based Out-of-distribution Detection", NeurIPS 2020.
+  - Free energy of the logits: E(x) = -T * logsumexp(f(x) / T).
+  - Adversarial / OOD inputs have higher E(x) (less negative).
+  - No training, no input preprocessing; single forward pass.
+
+All four detectors are calibrated at matched FPR tiers (10% / 3% / 0.5%)
+on a disjoint threshold-fit split so the comparison table vs. PRISM's
+three-tier output is apples-to-apples (P0.2).
 
 USAGE
 -----
   cd prism/
-  python experiments/evaluation/run_baselines.py --n-test 500 --attacks FGSM PGD Square
-  python experiments/evaluation/run_baselines.py --n-test 500 --attacks FGSM
+  python experiments/evaluation/run_baselines.py --n-test 1000 --attacks FGSM PGD Square
+  python experiments/evaluation/run_baselines.py --methods lid mahalanobis odin energy
 
 EVAL SPLIT:   CIFAR-10 test indices 8000-9999 (same held-out split as PRISM evaluation)
 REF SPLIT:    CIFAR-10 test indices 5000-5999 (k-NN reference / Gaussian fitting)
@@ -44,6 +55,9 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+
 try:
     from art.attacks.evasion import (
         FastGradientMethod,
@@ -58,8 +72,9 @@ except ImportError:
 
 from src.config import (
     LAYER_NAMES, IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
-    EVAL_IDX, CAL_IDX,
+    EVAL_IDX, CAL_IDX, DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 
 _MEAN = IMAGENET_MEAN
 _STD  = IMAGENET_STD
@@ -172,9 +187,9 @@ def fit_mahalanobis_params(model, dataset, cal_indices, layer_names, device,
     """
     Fit class-conditional Gaussians per layer on calibration split.
 
-    Uses CIFAR-10 ground-truth labels (0-9) by default for stable per-class
-    estimates (~100 samples per class at n=1000).  Set use_true_labels=False
-    to fall back to ImageNet backbone argmax pseudo-labels.
+    Uses dataset ground-truth labels (CIFAR-10: 0-9; CIFAR-100: 0-99) by
+    default for stable per-class estimates. Set use_true_labels=False to
+    fall back to ImageNet backbone argmax pseudo-labels.
     """
     mean_t = torch.tensor(_MEAN, device=device).view(1, 3, 1, 1)
     std_t  = torch.tensor(_STD, device=device).view(1, 3, 1, 1)
@@ -241,6 +256,52 @@ def fit_mahalanobis_params(model, dataset, cal_indices, layer_names, device,
     return params
 
 
+def compute_odin_score(norm_model, x_pixel, device, T=1000.0, eps=0.0014):
+    """
+    ODIN score (Liang et al., ICLR 2018).
+
+    Implements temperature scaling plus input-gradient preprocessing:
+      1. Forward pass: softmax(f(x)/T), take predicted class c*.
+      2. Gradient step: x' = x - eps * sign(grad_x log softmax(f(x)/T)_{c*}).
+      3. Recompute softmax(f(x')/T); score = 1 - max_c softmax.
+
+    Higher score ⇒ more OOD/adversarial. Uses norm_model (normalisation
+    baked in) so x_pixel stays in [0,1] and the preprocessing gradient
+    is well-defined in pixel space. T and eps follow the ODIN paper's
+    CIFAR-10/ResNet defaults.
+    """
+    x = x_pixel.clone().detach().to(device).requires_grad_(True)
+    logits = norm_model(x) / T
+    log_probs = torch.nn.functional.log_softmax(logits, dim=1)
+    pred = int(logits.argmax(1).item())
+    loss = -log_probs[0, pred]
+    (grad_x,) = torch.autograd.grad(loss, x)
+    x_pert = (x - eps * grad_x.sign()).detach().clamp(0.0, 1.0)
+    with torch.no_grad():
+        logits_pert = norm_model(x_pert) / T
+        msp = float(torch.softmax(logits_pert, dim=1).max().item())
+    return 1.0 - msp
+
+
+def compute_energy_score(norm_model, x_pixel, device, T=1.0):
+    """
+    Free-energy OOD score (Liu et al., NeurIPS 2020).
+
+        E(x) = -T * logsumexp(f(x) / T)
+
+    Higher E(x) ⇒ more OOD/adversarial. We return +E (i.e. a score where
+    larger means more anomalous) so thresholding is consistent with
+    LID/Mahalanobis/ODIN. T=1.0 matches the paper default; T can be
+    tuned on the threshold-fit split but we keep the literature default
+    to avoid hyperparameter tuning on the target distribution.
+    """
+    x = x_pixel.to(device)
+    with torch.no_grad():
+        logits = norm_model(x) / T
+        lse = torch.logsumexp(logits, dim=1).item()
+    return float(-T * lse)
+
+
 def compute_mahalanobis_score(model, x_pixel, maha_params, layer_names, device):
     """
     Compute max Mahalanobis distance across layers (simplified Lee et al.).
@@ -272,6 +333,22 @@ def compute_mahalanobis_score(model, x_pixel, maha_params, layer_names, device):
 # Main Evaluation
 # ═════════════════════════════════════════════════════════════════════════════
 
+_DEFAULT_METHODS = ['lid', 'mahalanobis', 'odin', 'energy']
+_METHOD_DISPLAY = {
+    'lid': 'LID',
+    'mahalanobis': 'Mahalanobis',
+    'odin': 'ODIN',
+    'energy': 'Energy',
+}
+# Match PRISM's three-tier conformal output (L1/L2/L3) so the comparison table
+# is apples-to-apples. Percentiles correspond to FPR targets 10% / 3% / 0.5%.
+_FPR_TIERS = [
+    ('L1', 10.0, 90.0),
+    ('L2',  3.0, 97.0),
+    ('L3',  0.5, 99.5),
+]
+
+
 def run_baselines(
     n_test=500,
     attacks_to_run=None,
@@ -280,17 +357,26 @@ def run_baselines(
     device_str=None,
     data_root='./data',
     lid_k=20,
+    methods=None,
+    odin_T=1000.0,
+    odin_eps=0.0014,
+    energy_T=1.0,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
 
     eps = EPS_LINF_STANDARD
     attacks_to_run = attacks_to_run or ['FGSM', 'PGD', 'Square']
+    methods = [m.lower() for m in (methods or _DEFAULT_METHODS)]
+    for m in methods:
+        if m not in _METHOD_DISPLAY:
+            raise ValueError(f"Unknown baseline method: {m} (expected one of {list(_METHOD_DISPLAY)})")
+    method_displays = [_METHOD_DISPLAY[m] for m in methods]
 
     device = torch.device(device_str) if device_str else \
              torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
-    print(f"Baselines: LID (k={lid_k}), Mahalanobis")
+    print(f"Baselines: {', '.join(method_displays)} (LID k={lid_k}, ODIN T={odin_T} eps={odin_eps}, Energy T={energy_T})")
     print(f"Attacks: {attacks_to_run}")
     cal_start, cal_end = CAL_IDX
     cal_mid = cal_start + (cal_end - cal_start) // 2  # 6000
@@ -305,6 +391,10 @@ def run_baselines(
     model = model.to(device).eval()
 
     layer_names = LAYER_NAMES
+
+    # ── Scorer registry: per-method callables on (x_pixel: (1,3,H,W) tensor) → float ──
+    # Built after model/maha_params are ready; populated inside Phase 1/2.
+    scorer_fns = {}
 
     # ── ART classifier ──
     norm_model = _NormalizedResNet(model).to(device).eval()
@@ -326,9 +416,8 @@ def run_baselines(
             classifier, eps=eps, max_iter=5000, nb_restarts=1),
     }
 
-    # ── Dataset ──
-    ds = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM)
+    # ── Dataset (dispatches on DATASET: cifar10 / cifar100) ──
+    ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
     # ref_indices   — k-NN reference database and Gaussian fitting (never used to set threshold)
     # thresh_indices — threshold calibration only (disjoint from ref, prevents self-reference bias)
@@ -345,51 +434,68 @@ def run_baselines(
     print("="*60)
 
     # LID: collect reference activations (ref_indices only — threshold images are kept separate)
-    print("\n  [LID] Collecting reference activations...")
-    cal_acts_per_layer = defaultdict(list)
-    for i in tqdm(ref_indices, desc="  LID ref"):
-        img, _ = ds[int(i)]
-        x = img.unsqueeze(0).to(device)
-        acts = _extract_activations(model, x, layer_names, device)
+    cal_acts_per_layer = None
+    if 'lid' in methods:
+        print("\n  [LID] Collecting reference activations...")
+        cal_acts_per_layer = defaultdict(list)
+        for i in tqdm(ref_indices, desc="  LID ref"):
+            img, _ = ds[int(i)]
+            x = img.unsqueeze(0).to(device)
+            acts = _extract_activations(model, x, layer_names, device)
+            for name in layer_names:
+                cal_acts_per_layer[name].append(acts[name].squeeze(0))
         for name in layer_names:
-            cal_acts_per_layer[name].append(acts[name].squeeze(0))
-
-    for name in layer_names:
-        cal_acts_per_layer[name] = np.stack(cal_acts_per_layer[name])
-    print(f"  LID reference: {cal_acts_per_layer[layer_names[0]].shape[0]} samples × "
-          f"{len(layer_names)} layers")
+            cal_acts_per_layer[name] = np.stack(cal_acts_per_layer[name])
+        print(f"  LID reference: {cal_acts_per_layer[layer_names[0]].shape[0]} samples × "
+              f"{len(layer_names)} layers")
+        scorer_fns['lid'] = lambda x: compute_lid_multi_layer(
+            model, x, cal_acts_per_layer, layer_names, device, k=lid_k)
 
     # Mahalanobis: fit class-conditional Gaussians on ref_indices with true CIFAR-10 labels
-    print("\n  [Mahalanobis] Fitting class-conditional Gaussians...")
-    maha_params = fit_mahalanobis_params(
-        model, ds, ref_indices, layer_names, device, n_classes=10, use_true_labels=True
-    )
+    maha_params = None
+    if 'mahalanobis' in methods:
+        print("\n  [Mahalanobis] Fitting class-conditional Gaussians...")
+        _n_classes = 100 if DATASET == 'cifar100' else 10
+        maha_params = fit_mahalanobis_params(
+            model, ds, ref_indices, layer_names, device,
+            n_classes=_n_classes, use_true_labels=True
+        )
+        scorer_fns['mahalanobis'] = lambda x: compute_mahalanobis_score(
+            model, x, maha_params, layer_names, device)
+
+    # ODIN and Energy: no fitting phase, just bind hyperparameters.
+    if 'odin' in methods:
+        scorer_fns['odin'] = lambda x: compute_odin_score(
+            norm_model, x, device, T=odin_T, eps=odin_eps)
+    if 'energy' in methods:
+        scorer_fns['energy'] = lambda x: compute_energy_score(
+            norm_model, x, device, T=energy_T)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Phase 2: Compute clean calibration scores for threshold fitting
     # ═══════════════════════════════════════════════════════════════════════
-    # Threshold fitting on thresh_indices — disjoint from ref so no self-reference bias
+    # Threshold fitting on thresh_indices — disjoint from ref so no self-reference bias.
+    # Fit thresholds at three FPR tiers (10% / 3% / 0.5%) to match PRISM's
+    # conformal L1/L2/L3 output for apples-to-apples comparison.
     print(f"\n  Computing clean detection scores on threshold-fit split ({len(thresh_indices)} images)...")
-
-    lid_cal_scores = []
-    maha_cal_scores = []
+    cal_scores = {m: [] for m in methods}
     for i in tqdm(thresh_indices, desc="  Threshold fit"):
         img, _ = ds[int(i)]
         x = img.unsqueeze(0).to(device)
-        lid_s = compute_lid_multi_layer(model, x, cal_acts_per_layer, layer_names, device, k=lid_k)
-        maha_s = compute_mahalanobis_score(model, x, maha_params, layer_names, device)
-        lid_cal_scores.append(lid_s)
-        maha_cal_scores.append(maha_s)
+        for m in methods:
+            cal_scores[m].append(float(scorer_fns[m](x)))
 
-    lid_cal_scores = np.array(lid_cal_scores)
-    maha_cal_scores = np.array(maha_cal_scores)
-
-    # Threshold at 90th percentile of clean scores (≤10% FPR)
-    lid_threshold = float(np.percentile(lid_cal_scores, 90))
-    maha_threshold = float(np.percentile(maha_cal_scores, 90))
-
-    print(f"  LID threshold (FPR≤10%):  {lid_threshold:.4f}")
-    print(f"  Maha threshold (FPR≤10%): {maha_threshold:.4f}")
+    thresholds = {}  # thresholds[method][tier] = float
+    for m in methods:
+        arr = np.asarray(cal_scores[m], dtype=float)
+        thresholds[m] = {
+            tier: float(np.percentile(arr, pct)) for (tier, _fpr, pct) in _FPR_TIERS
+        }
+        tier_str = ', '.join(
+            f"{tier}(FPR≤{fpr}%)={thresholds[m][tier]:.4f}"
+            for (tier, fpr, _pct) in _FPR_TIERS
+        )
+        print(f"  {_METHOD_DISPLAY[m]:>12}: {tier_str}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # Phase 3: Evaluate on held-out eval split per attack
@@ -402,7 +508,7 @@ def run_baselines(
     X_pixel_np = torch.stack(imgs_pixel).numpy()
     print(f"Pre-loaded {len(imgs_pixel)} images\n")
 
-    results = {'LID': {}, 'Mahalanobis': {}}
+    results = {_METHOD_DISPLAY[m]: {} for m in methods}
     t_start = time.time()
 
     for attack_name in attacks_to_run:
@@ -429,104 +535,117 @@ def run_baselines(
                 except Exception:
                     X_adv_np[idx_i] = x_np_i
 
-        # Evaluate both detectors
-        for detector_name in ['LID', 'Mahalanobis']:
-            tp, fp, fn, tn = 0, 0, 0, 0
+        # Cache clean + adv scores per method so each image only runs the scorer twice.
+        scores_clean = {m: np.empty(len(imgs_pixel), dtype=float) for m in methods}
+        scores_adv   = {m: np.empty(len(imgs_pixel), dtype=float) for m in methods}
 
-            for j, img_pixel in enumerate(tqdm(imgs_pixel, desc=f"  {detector_name}")):
-                x = img_pixel.unsqueeze(0).to(device)
+        for j, img_pixel in enumerate(tqdm(imgs_pixel, desc="  scoring")):
+            x_clean = img_pixel.unsqueeze(0).to(device)
+            x_adv = torch.tensor(X_adv_np[j]).unsqueeze(0).to(device)
+            for m in methods:
+                scores_clean[m][j] = float(scorer_fns[m](x_clean))
+                scores_adv[m][j]   = float(scorer_fns[m](x_adv))
 
-                # Clean score
-                if detector_name == 'LID':
-                    s_clean = compute_lid_multi_layer(
-                        model, x, cal_acts_per_layer, layer_names, device, k=lid_k)
-                    detected_clean = s_clean > lid_threshold
-                else:
-                    s_clean = compute_mahalanobis_score(
-                        model, x, maha_params, layer_names, device)
-                    detected_clean = s_clean > maha_threshold
+        for m in methods:
+            display = _METHOD_DISPLAY[m]
+            per_tier = {}
+            for (tier, fpr_target, _pct) in _FPR_TIERS:
+                thr = thresholds[m][tier]
+                det_adv   = scores_adv[m]   > thr
+                det_clean = scores_clean[m] > thr
+                tp = int(det_adv.sum()); fn = int((~det_adv).sum())
+                fp = int(det_clean.sum()); tn = int((~det_clean).sum())
+                n_adv = tp + fn; n_clean = fp + tn
+                tpr = tp / max(n_adv, 1)
+                fpr_emp = fp / max(n_clean, 1)
+                prec = tp / max(tp + fp, 1)
+                f1 = 2 * prec * tpr / max(prec + tpr, 1e-8)
+                tpr_ci = wilson_ci(tp, n_adv)
+                fpr_ci = wilson_ci(fp, n_clean)
+                per_tier[tier] = {
+                    'TPR': round(tpr, 4),
+                    'TPR_CI_95': [round(tpr_ci[0], 4), round(tpr_ci[1], 4)],
+                    'FPR': round(fpr_emp, 4),
+                    'FPR_CI_95': [round(fpr_ci[0], 4), round(fpr_ci[1], 4)],
+                    'FPR_target': fpr_target / 100.0,
+                    'Precision': round(prec, 4),
+                    'F1': round(f1, 4),
+                    'TP': tp, 'FP': fp, 'FN': fn, 'TN': tn,
+                    'n_adv': n_adv, 'n_clean': n_clean,
+                    'threshold': round(thr, 6),
+                }
 
-                if detected_clean:
-                    fp += 1
-                else:
-                    tn += 1
-
-                # Adversarial score
-                x_adv = torch.tensor(X_adv_np[j]).unsqueeze(0).to(device)
-                if detector_name == 'LID':
-                    s_adv = compute_lid_multi_layer(
-                        model, x_adv, cal_acts_per_layer, layer_names, device, k=lid_k)
-                    detected_adv = s_adv > lid_threshold
-                else:
-                    s_adv = compute_mahalanobis_score(
-                        model, x_adv, maha_params, layer_names, device)
-                    detected_adv = s_adv > maha_threshold
-
-                if detected_adv:
-                    tp += 1
-                else:
-                    fn += 1
-
-            n_adv = tp + fn
-            n_clean = fp + tn
-            tpr = tp / max(n_adv, 1)
-            fpr = fp / max(n_clean, 1)
-            prec = tp / max(tp + fp, 1)
-            f1 = 2 * prec * tpr / max(prec + tpr, 1e-8)
-            tpr_ci = wilson_ci(tp, n_adv)
-            fpr_ci = wilson_ci(fp, n_clean)
-
-            results[detector_name][attack_name] = {
-                'TPR': round(tpr, 4),
-                'TPR_CI_95': [round(tpr_ci[0], 4), round(tpr_ci[1], 4)],
-                'FPR': round(fpr, 4),
-                'FPR_CI_95': [round(fpr_ci[0], 4), round(fpr_ci[1], 4)],
-                'Precision': round(prec, 4),
-                'F1': round(f1, 4),
-                'TP': tp, 'FP': fp, 'FN': fn, 'TN': tn,
-                'n_adv': n_adv, 'n_clean': n_clean,
+            # Top-level keys mirror PRISM's L1 default so existing consumers keep working.
+            l1 = per_tier['L1']
+            results[display][attack_name] = {
+                **l1,
+                'tiers': per_tier,
             }
 
-            status = '✅' if tpr >= 0.85 else ('⚠' if tpr >= 0.70 else '❌')
-            print(f"  {detector_name}: TPR={tpr:.4f} CI[{tpr_ci[0]:.4f}, {tpr_ci[1]:.4f}] "
-                  f"FPR={fpr:.4f} {status}")
+            status = '✅' if l1['TPR'] >= 0.85 else ('⚠' if l1['TPR'] >= 0.70 else '❌')
+            print(f"  {display}: L1 TPR={l1['TPR']:.4f} FPR={l1['FPR']:.4f} | "
+                  f"L2 TPR={per_tier['L2']['TPR']:.4f} FPR={per_tier['L2']['FPR']:.4f} | "
+                  f"L3 TPR={per_tier['L3']['TPR']:.4f} FPR={per_tier['L3']['FPR']:.4f} {status}")
 
     elapsed = time.time() - t_start
 
-    # ── Summary table ──
+    # ── Summary table (L1 tier, matches PRISM default) ──
     print(f"\n{'='*70}")
     print(f"{'Detector':>12} {'Attack':>8} {'TPR':>8} {'FPR':>8} {'F1':>8}")
     print(f"{'-'*70}")
-    for det in ['LID', 'Mahalanobis']:
+    for m in methods:
+        display = _METHOD_DISPLAY[m]
         for atk in attacks_to_run:
-            if atk in results[det]:
-                r = results[det][atk]
-                print(f"{det:>12} {atk:>8} {r['TPR']:>8.4f} {r['FPR']:>8.4f} {r['F1']:>8.4f}")
+            if atk in results[display]:
+                r = results[display][atk]
+                print(f"{display:>12} {atk:>8} {r['TPR']:>8.4f} {r['FPR']:>8.4f} {r['F1']:>8.4f}")
+
+    thresholds_serializable = {
+        _METHOD_DISPLAY[m]: {tier: round(thr, 6) for tier, thr in thresholds[m].items()}
+        for m in methods
+    }
+
+    all_refs = {
+        'LID': 'Ma et al., 2018. Characterizing Adversarial Subspaces Using Local '
+               'Intrinsic Dimensionality. ICLR 2018.',
+        'Mahalanobis': 'Lee et al., 2018. A Simple Unified Framework for Detecting '
+                       'Out-of-Distribution Samples and Adversarial Attacks. NeurIPS 2018.',
+        'ODIN': 'Liang et al., 2018. Enhancing The Reliability of Out-of-distribution '
+                'Image Detection in Neural Networks. ICLR 2018.',
+        'Energy': 'Liu et al., 2020. Energy-based Out-of-distribution Detection. '
+                  'NeurIPS 2020.',
+    }
 
     results['_meta'] = {
         'n_test': n_test,
         'n_actual': int(len(sample_idx)),
         'n_ref': len(ref_indices),
         'n_thresh': len(thresh_indices),
-        'eval_split': f'CIFAR-10 test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
-        'ref_split': f'CIFAR-10 test idx {cal_start}-{cal_mid-1}',
-        'thresh_split': f'CIFAR-10 test idx {cal_mid}-{cal_end-1}',
+        'dataset': DATASET,
+        'eval_split': f'{DATASET.upper()} test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+        'ref_split': f'{DATASET.upper()} test idx {cal_start}-{cal_mid-1}',
+        'thresh_split': f'{DATASET.upper()} test idx {cal_mid}-{cal_end-1}',
         'seed': seed,
         'device': str(device),
         'attacks': attacks_to_run,
+        'methods': methods,
         'eps': round(eps, 6),
         'lid_k': lid_k,
-        'lid_threshold': round(lid_threshold, 6),
-        'maha_threshold': round(maha_threshold, 6),
-        'maha_label_source': 'CIFAR-10 ground-truth labels (0-9), n_classes=10',
+        'odin_T': odin_T,
+        'odin_eps': odin_eps,
+        'energy_T': energy_T,
+        'fpr_tiers': [
+            {'name': name, 'target_fpr': fpr / 100.0, 'percentile': pct}
+            for (name, fpr, pct) in _FPR_TIERS
+        ],
+        'thresholds': thresholds_serializable,
+        'maha_label_source': (
+            f'{DATASET.upper()} ground-truth labels, '
+            f'n_classes={100 if DATASET == "cifar100" else 10}'
+        ),
         'layer_names': LAYER_NAMES,
         'elapsed_s': round(elapsed, 1),
-        'references': {
-            'LID': 'Ma et al., 2018. Characterizing Adversarial Subspaces Using Local '
-                   'Intrinsic Dimensionality. ICLR 2018.',
-            'Mahalanobis': 'Lee et al., 2018. A Simple Unified Framework for Detecting '
-                           'Out-of-Distribution Samples and Adversarial Attacks. NeurIPS 2018.',
-        },
+        'references': {_METHOD_DISPLAY[m]: all_refs[_METHOD_DISPLAY[m]] for m in methods},
     }
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -537,12 +656,27 @@ def run_baselines(
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="LID + Mahalanobis baseline evaluation")
+    parser = argparse.ArgumentParser(
+        description="Baseline adversarial detectors: LID, Mahalanobis, ODIN, Energy")
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--n-test', type=int, default=500)
     parser.add_argument('--attacks', nargs='+', default=['FGSM', 'PGD', 'Square'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--lid-k', type=int, default=20)
-    parser.add_argument('--output', default='experiments/evaluation/results_baselines.json')
+    parser.add_argument('--methods', nargs='+', default=_DEFAULT_METHODS,
+                        choices=list(_METHOD_DISPLAY),
+                        help='Which baselines to run (default: all four)')
+    parser.add_argument('--odin-T', type=float, default=1000.0)
+    parser.add_argument('--odin-eps', type=float, default=0.0014)
+    parser.add_argument('--energy-T', type=float, default=1.0)
+    _default_out = os.path.join(
+        os.path.dirname(PATHS['clean_scores']).replace('calibration', 'evaluation')
+            or 'experiments/evaluation',
+        (os.path.basename(PATHS['clean_scores']).replace('clean_scores.npy', '')
+         + 'results_baselines.json')
+    )
+    parser.add_argument('--output', default=_default_out)
     parser.add_argument('--device', default=None)
     args = parser.parse_args()
 
@@ -553,4 +687,8 @@ if __name__ == '__main__':
         output_path=args.output,
         device_str=args.device,
         lid_k=args.lid_k,
+        methods=args.methods,
+        odin_T=args.odin_T,
+        odin_eps=args.odin_eps,
+        energy_T=args.energy_T,
     )

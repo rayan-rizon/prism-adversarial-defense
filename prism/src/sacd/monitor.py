@@ -3,10 +3,23 @@ SACD: Sequential Adversarial Campaign Monitor (L0)
 Monitors the stream of anomaly scores for sustained attack campaigns
 using BOCPD, with a rolling score buffer for trend analysis.
 """
+import os
+import pickle
 import numpy as np
 from collections import deque
 from typing import Dict, List, Optional, Any
 from .bocpd import BayesianOnlineChangepoint
+
+
+def _load_thresholds(thresholds_path: Optional[str]) -> Dict[str, Any]:
+    """Load a calibrated threshold dict if the file exists; else {}."""
+    if not thresholds_path or not os.path.exists(thresholds_path):
+        return {}
+    with open(thresholds_path, 'rb') as f:
+        data = pickle.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{thresholds_path}: expected dict, got {type(data)}")
+    return data
 
 
 class CampaignMonitor:
@@ -30,6 +43,7 @@ class CampaignMonitor:
         warmup_steps: int = 35,        # raised from 20 to let BOCPD stabilize on clean data
         l0_factor: float = 0.8,
         cooldown_steps: int = 50,
+        thresholds_path: Optional[str] = None,
     ):
         """
         Args:
@@ -45,6 +59,22 @@ class CampaignMonitor:
             l0_factor: Threshold multiplier when L0 is active (lower = more sensitive).
             cooldown_steps: Steps after deactivation before L0 can re-trigger.
         """
+        # Overlay calibrated thresholds if provided. `thresholds_path` takes
+        # precedence over the constructor defaults for the keys it carries;
+        # anything missing falls through to the kwarg values. Persisted fields
+        # are populated by scripts/calibrate_l0_thresholds.py.
+        tcal = _load_thresholds(thresholds_path)
+        hazard_rate      = tcal.get('hazard_rate',      hazard_rate)
+        alert_run_length = tcal.get('alert_run_length', alert_run_length)
+        alert_run_prob   = tcal.get('alert_run_prob',   alert_run_prob)
+        warmup_steps     = tcal.get('warmup_steps',     warmup_steps)
+        mu0              = tcal.get('mu0',              mu0)
+        kappa0           = tcal.get('kappa0',           kappa0)
+        alpha0           = tcal.get('alpha0',           alpha0)
+        beta0            = tcal.get('beta0',            beta0)
+        self._thresholds_source = thresholds_path if tcal else None
+        self._thresholds_calibration = tcal.get('calibration_metrics') if tcal else None
+
         self.window_size = window_size
         self.cp_threshold = cp_threshold
         self.alert_run_length = alert_run_length

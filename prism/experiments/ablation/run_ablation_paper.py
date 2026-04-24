@@ -38,6 +38,9 @@ ssl._create_default_https_context = ssl.create_default_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+
 try:
     from art.attacks.evasion import (
         FastGradientMethod, ProjectedGradientDescent, SquareAttack
@@ -55,7 +58,9 @@ from src.tamsh.experts import TopologyAwareMoE, ExpertSubNetwork
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    DATASET, PATHS, EVAL_IDX,
 )
+from src.data_loader import load_test_dataset
 
 _MEAN = IMAGENET_MEAN
 _STD  = IMAGENET_STD
@@ -90,21 +95,24 @@ def build_prism(cfg, model, device):
     # calibrate_ensemble.py (which writes to calibrator.pkl only).
     # This gives a fair, non-degenerate comparison: TDA-only uses proper
     # conformal thresholds calibrated on raw Wasserstein scores.
+    # calibrator_base lives next to the ensemble calibrator (same dir as PATHS['calibrator']).
+    _cal_dir = os.path.dirname(PATHS['calibrator']) or 'models'
+    _cal_base_path = os.path.join(_cal_dir, 'calibrator_base.pkl')
     if cfg.get('tda_only', False):
-        cal_path = 'models/calibrator_base.pkl'
+        cal_path = _cal_base_path
         ens_path = None   # no ensemble scorer
     else:
-        cal_path = 'models/calibrator.pkl'
-        ens_path = 'models/ensemble_scorer.pkl' if cfg.get('use_ensemble', True) else None
+        cal_path = PATHS['calibrator']
+        ens_path = PATHS['ensemble_scorer'] if cfg.get('use_ensemble', True) else None
 
-    prof_path = 'models/reference_profiles.pkl'
+    prof_path = PATHS['reference_profiles']
 
     # Verify calibrator_base.pkl exists for TDA-only
     if not os.path.exists(cal_path):
         if cfg.get('tda_only', False):
-            print(f"WARNING: {cal_path} not found. Falling back to calibrator.pkl.")
+            print(f"WARNING: {cal_path} not found. Falling back to {PATHS['calibrator']}.")
             print("  Re-run 'python run_pipeline.py --phases 2' to regenerate calibrator_base.pkl.")
-            cal_path = 'models/calibrator.pkl'
+            cal_path = PATHS['calibrator']
         else:
             raise FileNotFoundError(f"{cal_path} not found.")
 
@@ -292,9 +300,7 @@ def run_ablation_multiseed(
     if 'Square' in attacks_to_run:
         attacks['Square'] = SquareAttack(art_clf, eps=EPS, max_iter=5000)
 
-    dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
-    )
+    dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
     # ── Collect per-seed results ───────────────────────────────────────────────
     # Structure: per_seed[seed_str][config_name][attack_name] = {TPR, FPR, F1, ...}
@@ -304,7 +310,7 @@ def run_ablation_multiseed(
         print(f"Seed {seed}")
         print(f"{'─'*65}")
         rng = np.random.RandomState(seed)
-        eval_pool = list(range(8000, 10000))
+        eval_pool = list(range(*EVAL_IDX))
         sample_idx = rng.choice(eval_pool, min(n, len(eval_pool)), replace=False)
 
         seed_results = {}
@@ -490,6 +496,8 @@ def _write_markdown_multiseed(aggregate, statistical_tests, attacks, seeds, outp
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--n',         type=int, default=500,
                         help='Images per config per attack (default 500)')
     parser.add_argument('--fast',      action='store_true',
@@ -546,9 +554,10 @@ def main():
     if 'Square' in args.attacks:
         attacks['Square'] = SquareAttack(art_clf, eps=EPS, max_iter=5000)
 
-    # Dataset — held-out eval split (same as run_evaluation_full.py)
-    dataset = torchvision.datasets.CIFAR10(
-        root=args.data_root, train=False, download=True, transform=_PIXEL_TRANSFORM
+    # Dataset — held-out eval split (same as run_evaluation_full.py).
+    # Dispatches on DATASET via load_test_dataset (cifar10 | cifar100).
+    dataset = load_test_dataset(
+        root=args.data_root, download=True, transform=_PIXEL_TRANSFORM,
     )
     rng = np.random.RandomState(42)
     eval_pool = list(range(8000, 10000))

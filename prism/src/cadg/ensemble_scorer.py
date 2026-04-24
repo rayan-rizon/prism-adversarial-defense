@@ -81,6 +81,7 @@ class PersistenceEnsembleScorer:
         training_n: Optional[int] = None,
         use_dct: bool = False,
         use_grad_norm: bool = False,
+        use_tda: bool = True,
     ):
         """
         Args:
@@ -123,11 +124,18 @@ class PersistenceEnsembleScorer:
         self.training_n = training_n
         self.use_dct = use_dct
         self.use_grad_norm = use_grad_norm
+        # P0.6 ablation flag: when False, the 36-dim persistence-statistics block
+        # is dropped from extract_features() and alpha is expected to be 0 so
+        # the Wasserstein component does not contribute. score() returns the
+        # logistic prob directly in that case.
+        self.use_tda = use_tda
 
     @property
     def n_features(self) -> int:
-        """Feature vector dimension: 6 stats × len(dims) × len(layer_names) [+1 DCT] [+1 grad_norm]."""
-        base = len(self.layer_names) * len(self.dims) * 6
+        """Feature vector dimension: 6 stats × len(dims) × len(layer_names) [+1 DCT] [+1 grad_norm].
+        When use_tda=False (P0.6 ablation), the persistence-stats block is
+        dropped and only DCT/grad-norm features remain."""
+        base = len(self.layer_names) * len(self.dims) * 6 if self.use_tda else 0
         return base + (1 if self.use_dct else 0) + (1 if self.use_grad_norm else 0)
 
     def extract_features(
@@ -136,13 +144,18 @@ class PersistenceEnsembleScorer:
         image: Optional[np.ndarray] = None,
         grad_norm: Optional[float] = None,
     ) -> np.ndarray:
-        """Extract feature vector. Length depends on use_dct and use_grad_norm flags."""
+        """Extract feature vector. Length depends on use_tda/use_dct/use_grad_norm flags."""
         ref = self.base_scorer.ref_profiles
-        return extract_feature_vector(
+        full = extract_feature_vector(
             diagrams, ref, self.layer_names, self.dims,
             image=image,
             grad_norm=grad_norm if self.use_grad_norm else None,
         )
+        if not self.use_tda:
+            # P0.6: strip the 36 leading persistence-statistics features.
+            n_tda = len(self.layer_names) * len(self.dims) * 6
+            return full[n_tda:]
+        return full
 
     def _normalise(self, x: np.ndarray) -> np.ndarray:
         """Z-score normalisation using training statistics."""
@@ -181,7 +194,7 @@ class PersistenceEnsembleScorer:
             Scalar — higher means more likely adversarial.
             Falls back to base Wasserstein score if logistic is not fitted.
         """
-        w_score = self.base_scorer.score(diagrams)
+        w_score = self.base_scorer.score(diagrams) if self.use_tda else 0.0
 
         if not self._logistic_fitted:
             return w_score
@@ -194,6 +207,13 @@ class PersistenceEnsembleScorer:
 
         feat = self.extract_features(diagrams, image=image, grad_norm=grad_norm)
         logit_prob = self._logistic_prob(feat)
+
+        if not self.use_tda:
+            # P0.6: alpha=0 and Wasserstein disabled. Return the centred logit
+            # directly so downstream calibration can thresh on a raw score.
+            logit_score = float(np.clip(logit_prob, 1e-6, 1 - 1e-6))
+            logit_score = float(np.log(logit_score / (1 - logit_score)))
+            return logit_score - self.logit_shift
 
         # Convert probability to raw logit (unbounded)
         logit_score = float(np.clip(logit_prob, 1e-6, 1 - 1e-6))
@@ -295,6 +315,103 @@ class PersistenceEnsembleScorer:
         logger.info("Features: %d-dim, n_clean=%d, n_adv=%d",
                     self.n_features, len(clean_features), len(adv_features))
 
+    def composite_score_from_features(
+        self,
+        features: np.ndarray,
+        w_scores: np.ndarray,
+        alpha: Optional[float] = None,
+    ) -> np.ndarray:
+        """
+        Batched recomputation of the inference-time composite score.
+
+        Replays the same formula used at inference (see `score()`) for a matrix
+        of pre-extracted feature vectors and their matching aggregate Wasserstein
+        scores. Intended for alpha grid-search on a held-out training slice —
+        avoids re-extracting persistence diagrams during hyperparameter tuning.
+
+        Args:
+            features: (N, d) pre-extracted feature vectors (same layout as
+                      `extract_features` produces for this scorer).
+            w_scores: (N,) aggregate Wasserstein composite scores (same layout
+                      as `base_scorer.score(diagrams)` produces).
+            alpha:    Optional override for self.alpha during scoring.
+                      When None, uses self.alpha.
+
+        Returns:
+            (N,) float32 array of composite scores, one per input.
+        """
+        if not self._logistic_fitted:
+            raise RuntimeError("composite_score_from_features: logistic not fitted.")
+        a = self.alpha if alpha is None else alpha
+        feats_norm = (features - self.feature_mean) / (self.feature_std + 1e-8)
+        logits = feats_norm @ self.logistic_weights + self.logistic_bias
+        logit_prob = 1.0 / (1.0 + np.exp(-logits))
+        logit_prob = np.clip(logit_prob, 1e-6, 1 - 1e-6)
+        logit_score = np.log(logit_prob / (1 - logit_prob))
+        logit_centered = logit_score - self.logit_shift
+        if not self.use_tda:
+            # P0.6 ablation: pure logistic, alpha must be 0 at inference.
+            return logit_centered.astype(np.float32)
+        w_norm = w_scores / max(self.w_score_mean, 1e-4)
+        logit_scaled = logit_centered * (w_norm + 1e-4)
+        return (a * w_scores + (1.0 - a) * logit_scaled).astype(np.float32)
+
+    def tune_alpha(
+        self,
+        clean_features: np.ndarray,
+        adv_features: np.ndarray,
+        clean_w_scores: np.ndarray,
+        adv_w_scores: np.ndarray,
+        grid: Tuple[float, ...] = (0.2, 0.35, 0.5, 0.65, 0.8),
+    ) -> Dict[str, float]:
+        """
+        Pick alpha that maximises held-out composite-score AUC.
+
+        Must be called *after* `fit_logistic` (the logistic weights and the
+        data-derived normalisation constants need to already exist). Skips
+        and returns a no-op summary when use_tda=False (P0.6 ablation), since
+        alpha is meaningless when the Wasserstein head is disabled.
+
+        Args:
+            clean_features, adv_features: held-out feature matrices, MUST be
+                disjoint from those passed to fit_logistic() to get an
+                honest AUC estimate.
+            clean_w_scores, adv_w_scores: aggregate Wasserstein scores for the
+                same held-out rows.
+            grid: alpha values to evaluate.
+
+        Returns:
+            {'selected_alpha', 'grid', 'aucs'} — selected alpha is also
+            written to self.alpha as a side effect.
+        """
+        from sklearn.metrics import roc_auc_score
+
+        if not self.use_tda:
+            logger.info("tune_alpha: skipped (use_tda=False, alpha remains %.3f)", self.alpha)
+            return {'selected_alpha': self.alpha, 'grid': list(grid), 'aucs': [], 'skipped': True}
+
+        X = np.vstack([clean_features, adv_features])
+        w = np.concatenate([clean_w_scores, adv_w_scores])
+        y = np.array([0] * len(clean_features) + [1] * len(adv_features))
+
+        aucs = []
+        for a in grid:
+            s = self.composite_score_from_features(X, w, alpha=a)
+            aucs.append(float(roc_auc_score(y, s)))
+
+        best_idx = int(np.argmax(aucs))
+        self.alpha = float(grid[best_idx])
+        logger.info("tune_alpha: selected α=%.3f (AUC=%.4f); grid AUCs: %s",
+                    self.alpha, aucs[best_idx],
+                    ", ".join(f"α={a:.2f}:{auc:.4f}" for a, auc in zip(grid, aucs)))
+        return {
+            'selected_alpha': self.alpha,
+            'grid': list(grid),
+            'aucs': aucs,
+            'best_auc': aucs[best_idx],
+            'skipped': False,
+        }
+
     def save(self, path: str) -> None:
         """Save ensemble scorer to disk (includes provenance metadata)."""
         data = {
@@ -313,9 +430,17 @@ class PersistenceEnsembleScorer:
             'training_eps': self.training_eps,
             'training_attacks': self.training_attacks,
             'training_n': self.training_n,
+            # P0.3 regression gate: sanity_checks.py::Check 6 asserts >= 2.5.
+            'fgsm_oversample': getattr(self, 'fgsm_oversample', None),
+            'no_tda_features': getattr(self, 'no_tda_features', False),
+            # P0.6 lever: held-out AUC grid search picks α; summary records the
+            # grid and per-α AUCs so downstream verification can reconstruct why
+            # this α was selected.
+            'alpha_tune_summary': getattr(self, 'alpha_tune_summary', None),
             # Feature engineering flags
             'use_dct': self.use_dct,
             'use_grad_norm': self.use_grad_norm,
+            'use_tda': self.use_tda,   # P0.6 ablation flag
             'n_features': self.n_features,   # @property value; serialised for verification
         }
         with open(path, 'wb') as f:
@@ -344,6 +469,7 @@ class PersistenceEnsembleScorer:
             training_n=data.get('training_n'),
             use_dct=data.get('use_dct', False),
             use_grad_norm=data.get('use_grad_norm', False),
+            use_tda=data.get('use_tda', True),
         )
         scorer._logistic_fitted = data.get('_logistic_fitted', False)
         return scorer

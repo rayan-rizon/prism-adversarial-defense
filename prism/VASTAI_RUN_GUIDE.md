@@ -1,8 +1,15 @@
 # PRISM — Vast.ai RTX 5090 Full Pipeline Guide
 
+> ⚠️ **SOURCE OF TRUTH:** For the NeurIPS/ICLR/ICML research-plan campaign,
+> **follow Appendix §A1 only** (14-step pipeline). The 7-step body below is
+> historical and retained for forensic continuity. Where body and appendix
+> conflict, **Appendix wins**. All pre-research-plan result JSONs have been
+> archived under `prism_results/archive_pre_research_plan/` — do not reference
+> them.
+
 > **Goal:** Run the complete publishable pipeline from scratch on a single Vast.ai
 > RTX 5090 instance. Retrain → Calibrate → Gate → Evaluate (5 attacks × 5 seeds,
-> parallel) → Adaptive PGD → Ablation → Download.
+> parallel) → Adaptive PGD → Ablation → Campaign → Recovery → Baselines → Paper Tables → Download.
 >
 > **Every evaluation script now prints a TARGET METRIC GATE** at the end of
 > each multi-seed run — explicit ✅/❌ per metric, so you know immediately
@@ -167,7 +174,7 @@ bash run_vastai_full.sh
 |------|--------|------|
 | 0 | GPU + PyTorch verification + determinism flags | <1 min |
 | 1 | Build reference profiles | ~10 min |
-| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.0**) | ~40 min |
+| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.5**) | ~40 min |
 | 2b | Post-retrain verification gate | <1 min |
 | 3 | Calibrate conformal thresholds | ~3 min |
 | 4 | FPR gate check (abort if fail) | ~2 min |
@@ -191,7 +198,7 @@ python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 ```bash
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
-  --fgsm-oversample 2.0 \
+  --fgsm-oversample 2.5 \
   --include-cw \
   --include-autoattack \
   --cw-max-iter 30 \
@@ -234,7 +241,7 @@ RETRAIN CHECK: PASS
 ```
 
 > [!IMPORTANT]
-> **FGSM Oversample:** 2.0 is used to restore FGSM's training share (~28.6%) and maintain TPR $\ge$ 85% with the 5-attack mix.
+> **FGSM Oversample:** **2.5** is the locked research-plan value (P0.3). Earlier commits tested 1.8/2.0 and dropped FGSM TPR from 0.87 to 0.806 — this is a regression, not an acceptable operating point. `sanity_checks.py` Check 6 enforces `fgsm_oversample >= 2.5`.
 > **Grad-Norm:** This feature was tested and **REVERTED** (April 22). It inflated calibration thresholds by 20%, dropping FGSM TPR to 63%. Do not enable it.
 
 ### 4.3 Calibrate + gate
@@ -257,15 +264,20 @@ Do NOT retrain or recalibrate between attack runs.**
 
 ### 4.4 Full parallel evaluation (Steps 5 + 6 + 7 simultaneously)
 
+> ⚠️ This section is historical (pre-research-plan). For the submission campaign,
+> use `bash run_vastai_full.sh` which wraps the 14-step Appendix §A1 pipeline
+> including parallel 7a/7b/7c phases. The commands below are kept for manual
+> debugging only.
+
 All three evaluation phases read only locked frozen artifacts — launch them all
 at once to overlap Step 6 + 7 with the CW bottleneck.
 
 ```bash
-# Step 5A: CW — paper-canonical (max_iter=100, bss=9), the bottleneck
+# Step 5A: CW — research-plan canonical (max_iter=40, bss=5, bs=256 via chunk=128)
 python experiments/evaluation/run_evaluation_full.py \
   --n-test 1000 --attacks CW \
   --multi-seed --seeds 42 123 456 789 999 \
-  --cw-max-iter 100 --cw-bss 9 --cw-chunk 64 \
+  --cw-max-iter 40 --cw-bss 5 --cw-chunk 128 \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_cw_n1000_ms5.json \
   2>&1 | tee logs/cw_ms5.log &
@@ -366,7 +378,7 @@ and re-run Step 2 (~40 min):
 ```bash
 rm models/ensemble_scorer.pkl
 python scripts/train_ensemble_scorer.py \
-  --n-train 4000 --fgsm-oversample 2.0 \
+  --n-train 4000 --fgsm-oversample 2.5 \
   --include-cw --include-autoattack \
   --cw-max-iter 30 --cw-bss 3 \
   --output models/ensemble_scorer.pkl \
@@ -484,14 +496,24 @@ scp -P <port> \
 
 ## 7. Post-Run Verification Checklist
 
+> **Note:** Checklist applies to the output of the current run (fresh JSONs
+> produced by `run_vastai_full.sh`). Any file under
+> `prism_results/archive_pre_research_plan/` is frozen pre-research-plan state
+> and is **not** authoritative.
+
 - [ ] Retrain check passed: `training_attacks` includes `CW` and `AutoAttack`
-- [ ] FPR gate: all three tiers `passed: true` in `ensemble_fpr_report.json`
-- [ ] `results_cw_n1000_ms5.json` — CW TPR ≥ 0.85 across 5 seeds
-- [ ] `results_fast_n1000_ms5.json` — FGSM ≥ 0.85, PGD ≥ 0.90, Square ≥ 0.85, AA ≥ 0.90
+- [ ] Sanity Check 6 (FGSM-oversample regression gate): `fgsm_oversample >= 2.5`, `use_grad_norm == False`
+- [ ] FPR gate: all three tiers PASS in `experiments/calibration/ensemble_fpr_report.json`
+- [ ] CW results — pooled TPR ≥ 0.85 across 5 seeds
+- [ ] Fast-attack results — FGSM ≥ 0.85, PGD ≥ 0.90, Square ≥ 0.85, AA ≥ 0.90
 - [ ] Pooled per-tier FPR: L1 ≤ 0.10, L2 ≤ 0.03, L3 ≤ 0.005
 - [ ] Latency `_meta.latency.pass == true` (expect ~50 ms on RTX 5090)
-- [ ] Adaptive PGD results exist for all 5 seeds
-- [ ] Ablation JSON + MD saved
+- [ ] Adaptive PGD results exist for all 5 seeds (λ ∈ {0, 0.5, 1, 2, 5, 10})
+- [ ] Ablation JSON includes ensemble-no-TDA arm (P0.6)
+- [ ] Campaign-stream JSONs — `sustained_rho100.asr_gap_pp ≥ 10`, `clean_only.l0_on.l0_active_fraction ≤ 0.01` (P0.4)
+- [ ] Recovery JSONs — `tamsh.recovery_accuracy − passthrough.recovery_accuracy ≥ 0.15` (P0.5)
+- [ ] Baselines JSONs — LID / Mahalanobis / ODIN / Energy × 5 seeds (P0.2)
+- [ ] `paper/tables/*.tex` — 6 LaTeX files generated (P0.7)
 - [ ] `logs/manifest.json` SHA256 matches across all result files
 
 ---
@@ -502,7 +524,7 @@ scp -P <port> \
 | Step 2b: `n_features=0, expected 37` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
 | Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
 | FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
-| FGSM TPR ~80 % | Training mix dilution | Increase `--fgsm-oversample` to 2.0 |
+| FGSM TPR ~80 % | Training mix dilution | Ensure `--fgsm-oversample 2.5` (locked research-plan value). 1.8/2.0 is a regression and fails sanity Check 6. |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
 | CW shows no output | gen_chunk was too large | Fixed: defaults to 64 for CW for full GPU occupancy (batch_size=128). Use `--cw-chunk` to configure. |
@@ -512,3 +534,151 @@ scp -P <port> \
 | OOM on parallel eval | Too many models in VRAM | Use sequential: remove `&` from process launches |
 | Screen not found | Not in Docker image | `apt-get install -y screen` |
 | autoattack import error | Not installed | `pip install git+https://github.com/fra31/auto-attack` |
+
+---
+
+# Appendix — Research-Plan Pipeline Update (v2)
+
+This appendix **supersedes the 7-step pipeline in §Pipeline Overview** for the
+NeurIPS/ICLR/ICML research-standard campaign. The original 7 steps are
+preserved above for reference, but the full submission campaign executes the
+14-step pipeline below. Work items are tagged with their plan IDs (P0.1–P1.4).
+
+## A1. Expanded 14-Step Pipeline
+
+```
+ 1. Build reference profiles            (scripts/build_profile_testset.py)
+ 2. Train ensemble scorer               (scripts/train_ensemble_scorer.py --fgsm-oversample 2.5)
+ 2b.Train ensemble-no-TDA variant       (P0.6:  --no-tda-features --output models/ensemble_no_tda.pkl)
+ 3. Train differentiated experts        (P0.5:  scripts/train_experts.py   — only if audit shows homogeneity)
+ 4. Calibrate conformal thresholds      (scripts/calibrate_ensemble.py)
+ 5. FPR gate check                      (scripts/compute_ensemble_val_fpr.py — abort on fail)
+ 6. Fast attacks (FGSM/PGD/Square/AA)   (experiments/evaluation/run_evaluation_full.py, 5 seeds, parallel)
+ 7. CW-L2                               (P0.1:  40 iter × 5 bss × bs=256 via --cw-chunk=128, 5 seeds)
+ 8. Adaptive PGD                        (P1.4:  λ ∈ {0, 0.5, 1, 2, 5, 10}, 100 steps × 10 restarts, EOT=1)
+ 9. Ablation                            (existing arms + P0.6 ensemble-no-TDA)
+**6b. L0 threshold calibration**        (P0.4 lever: scripts/calibrate_l0_thresholds.py — runs AFTER steps 6/7/8/9 join, BEFORE 10/11/12)
+   - Grid-searches (hazard_rate, alert_run_prob, warmup_steps) on real scorer streams
+   - Writes models/l0_thresholds.pkl; CampaignMonitor auto-discovers and overlays it
+   - Aborts with non-zero exit if no feasible cell (clean FPR ≤ 1%) found
+10. Campaign-stream eval                (P0.4:  run_campaign_eval.py — 6 scenarios × 5 seeds)
+11. L3-recovery eval                    (P0.5:  run_recovery_eval.py — 3 strategies × 5 seeds)
+12. Baseline detectors                  (P0.2:  run_baselines.py --methods lid mahalanobis odin energy)
+13. Paper tables                        (P0.7:  scripts/build_paper_tables.py --out-dir paper/tables)
+14. Manifest + SHA256                   (embedded in run_vastai_full.sh Step 8 — covers all artifacts)
+```
+
+### Parallel Launch Map (phases 10+11+12)
+
+Steps 10 (campaign), 11 (recovery), and 12 (baselines) all read-only the frozen
+`ensemble_scorer.pkl` + `calibrator.pkl` + `experts.pkl` + `reference_profiles.pkl`.
+They have zero write contention (separate output dirs). `run_vastai_full.sh`
+launches them concurrently via background subshells:
+
+```
+PID_7A (campaign  → experiments/campaign/)    ──┐
+PID_7B (recovery  → experiments/recovery/)    ──┼── wait all three
+PID_7C (baselines → experiments/evaluation/)  ──┘   → run combined gate-check
+                                                    → then step 13 (paper tables)
+```
+
+Peak VRAM on RTX 5090 (32 GB): ~6.5 GB with all three live (ResNet-18 activations
+cached once per process). Wall-clock saving vs. sequential: ~40–50 % of phase-B.
+Seeds remain serial within each suite to keep logs readable.
+
+All 14 steps must execute against `configs/default.yaml` (CIFAR-10). For
+P1.1, re-run steps 1–13 against `configs/cifar100.yaml` (see §A4 below);
+artifacts land in `models/cifar100/*.pkl` and `prism_results/cifar100/...`
+so the CIFAR-10 run is not clobbered.
+
+## A2. Locked Attack & Training Configurations
+
+| Config | Value | Rationale |
+|---|---|---|
+| FGSM oversample | **2.5** | Restores pre-regression value (commits `dadf2cf` → `cf854f0` dropped to 1.8/2.0; FGSM TPR fell from 0.87 to 0.806) |
+| CW iter | **40** | RobustBench detector-eval norm; balances ℓ₂ attack strength vs. GPU-hours |
+| CW binary search steps | **5** | Standard Carlini 2017 parameterization |
+| CW batch size | **256** | Fills a single 24 GB card; reduces wall-clock ~6× vs. bs=32 |
+| Adaptive PGD λ sweep | **{0.0, 0.5, 1.0, 2.0, 5.0, 10.0}** | Athalye/Carlini; confirms no collapse at high λ |
+| Adaptive PGD steps × restarts | **100 × 10** | Strong-attack standard for detector papers |
+| Adaptive PGD EOT samples | **1** (verified) | Hash subsample is deterministic; EOT should be no-op, verify once |
+| Seeds | **{42, 123, 456, 789, 999}** | 5-seed pooled, Wilson CI, paired t-test across seeds |
+| Eval n per seed | **1000** | Pooled n=5000, width of 95% Wilson CI ≈ ±1pp at TPR=0.90 |
+
+## A3. Go/No-Go Gates (extended)
+
+Existing gates (§5 of main guide) remain in force. New gates:
+
+| Gate | Threshold | Result file | Action on miss |
+|---|---|---|---|
+| **P0.1** CW-L2 TPR (pooled 5-seed) | ≥ 0.85 | `results_cw_n1000_ms5.json` | Report honestly; discuss in FGSM-shortfall section. Do **not** drop ℓ₂ from threat model. |
+| **P0.2** Baselines complete | 4 methods × 5 seeds × N attacks | `results_baselines_*.json` | Block submission — no detection paper ships without reproduced baselines on matched splits. |
+| **P0.3** FGSM TPR (pooled) | ≥ 0.85 | `results_fast_n1000_ms5.json` | **Blocks NeurIPS/ICLR submission.** If the new 2.5-oversample run misses 0.85, investigate training-mix / calibration regression — do **not** accept the old 0.806 number or cherry-pick seed 42. Fallback is the AAAI/UAI venue path with an honest FGSM-shortfall section. |
+| **P0.4** Campaign ASR gap (sustained ρ=1.0, L0-off − L0-on) | ≥ 10 pp | `results_campaign_*.json` | Demote C3 (SACD) to appendix; cut from contributions list. |
+| **P0.4** Clean-stream L0 false-alarm | ≤ 1 % | `results_campaign_clean_only_*.json` | Retune BOCPD priors (`mu0`, `beta0`) in `configs/default.yaml::campaign`; re-run. |
+| **P0.5** TAMSH recovery gap (TAMSH − passthrough, L3-triggered) | ≥ 15 pp | `results_recovery_*.json` | Demote C4 (TAMSH) to appendix; cut from contributions list. |
+| **P0.6** Ensemble-no-TDA Δ (Full − no-TDA, TPR) | ≥ 3 pp | `results_ablation_multiseed.json` | Cut C1 (TAMM) novelty claim; reframe ensemble as primary detector. |
+
+Gates that **block submission**: P0.2, the FPR tier gate (existing), and the
+coverage regression test (`tests/test_research_gates.py::TestConformalCoverageRegression`).
+All other gates determine **venue**, not submission (see §A5).
+
+## A4. CIFAR-100 Variant (P1.1)
+
+Config: `configs/cifar100.yaml` (already in tree). Same ResNet-18, same
+`layer_weights`, same 5000/2000/1000/2000 split shape as CIFAR-10; artifacts
+at `models/cifar100/*.pkl`. Execution order matches §A1 steps 1–13, each
+invoked with `--config configs/cifar100.yaml`. Launch via the sibling script:
+
+```bash
+bash run_vastai_cifar100.sh
+```
+
+Expected budget: ~1 GPU-week on a 5090-class card (bulk: CW + campaign +
+recovery + baselines all need re-fitting against the CIFAR-100 clean-score
+distribution). If cal→val FPR overruns target by >1 pp, tighten
+`conformal.tier_cal_alpha_factors.L3` from 0.50 → 0.45 before re-running.
+
+## A5. Venue Decision Matrix (end of week 7)
+
+| Gates passed | Venue target | Story |
+|---|---|---|
+| P0.1 + P0.2 + P0.3 + P0.4 + P0.5 + P0.6 + P1.1 | **NeurIPS / ICLR** | 4-contribution story (C1–C4) supported by evidence; soften "architecture-agnostic" to "evaluated on ResNet-18 across CIFAR-10/100; architecture generalization left as future work." |
+| P0.1 + P0.2 + P0.3 + P0.6 + P1.1, but P0.4 **or** P0.5 miss | **ICLR / ICML / CVPR** | Conformal-ensemble reframe; demote failing C3 or C4 to appendix; 2–3 contributions. |
+| P0.1 + P0.2 + P0.3 clear, but P0.4 + P0.5 + P0.6 + P1.1 slip | **AAAI / UAI 2026** | Original 4-contribution story; broader ML audience; honest ablation framing. |
+
+## A6. Compute Budget (added work on top of existing Step 6 budget)
+
+| New step | GPU-days (est., 5090-class) | Notes |
+|---|---|---|
+| CW-L2 (P0.1, 5 seeds × n=1000 × 40 iter × 5 bss) | 1–2 | Largest single add; verify `--cw-chunk=64`, bs=256 |
+| Campaign-stream (P0.4, 6 scenarios × 5 seeds) | 0.5–1 | PGD-40 adversarial pool dominates; cache pool across seeds |
+| L3-recovery (P0.5, 3 strategies × 5 seeds) | 0.5–1 | TAMSH routing is single forward pass; pool re-used from step 10 |
+| Baselines (P0.2, 4 methods × N attacks × 5 seeds) | 0.5–1 | Mahalanobis fit dominates; reuse per-seed activation cache |
+| Adaptive PGD expanded (P1.4, 6 λ × 5 seeds × 100 steps × 10 restarts) | 1 | EOT-verify pass is cheap |
+| Ensemble-no-TDA arm (P0.6, 1 retrain + 5-seed eval) | 0.25 | Retrain only step 2b; reuse existing adv pool |
+| CIFAR-100 full repeat (P1.1) | 5–7 | Includes all above, top to bottom |
+
+**Serial wall-clock:** ~3 weeks end-to-end. **With parallelism (§Run Full Pipeline):**
+~1.5–2 weeks. All new scripts respect the existing `&` launch pattern and
+screen-session logging convention documented in §4.
+
+## A7. Reproducibility Endpoint
+
+`scripts/build_paper_tables.py` (P0.7) is the end-point that downstream users
+and reviewers should run. It reads every `prism_results/experiments/**/*.json`
+produced by steps 6–12 and emits six LaTeX-ready tables with pooled Wilson
+95% CIs:
+
+```
+paper/tables/main_attacks.tex     (step  6 + 7 + 12)
+paper/tables/adaptive_pgd.tex     (step  8)
+paper/tables/ablation.tex         (step  9)
+paper/tables/baselines.tex        (step 12)
+paper/tables/campaign.tex         (step 10)
+paper/tables/recovery.tex         (step 11)
+```
+
+A reviewer reproducing numbers should: `bash run_vastai_full.sh` →
+`python scripts/build_paper_tables.py` → `sha256sum -c logs/manifest.json`.
+Any divergence from paper numbers is a bug to triage, not a retraining excuse.

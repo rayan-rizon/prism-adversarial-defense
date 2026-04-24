@@ -288,6 +288,54 @@ else:
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# Check 6: FGSM-oversample regression gate (Research-Plan P0.3)
+# ────────────────────────────────────────────────────────────────────────────
+# Commits dadf2cf (→ 2.5) and cf854f0 (→ 1.8) then eabcba8 (→ 2.0) regressed
+# pooled FGSM TPR from 0.87 to 0.806, below the paper's own 0.85 gate.
+# The ensemble scorer pkl must record fgsm_oversample ≥ 2.5. This check fails
+# fast on any commit that re-introduces the regression.
+
+print("\n=== Check 6: FGSM-oversample regression gate ===")
+ensemble_path = 'models/ensemble_scorer.pkl'
+
+if not os.path.exists(ensemble_path):
+    skip("ensemble_scorer.pkl exists", "not trained yet — run train_ensemble_scorer.py")
+else:
+    ens = pickle.load(open(ensemble_path, 'rb'))
+    if not isinstance(ens, dict):
+        check("ensemble pkl is dict", False, f"got type={type(ens).__name__}")
+    else:
+        os_val = ens.get('fgsm_oversample')
+        # Older pkls may not persist fgsm_oversample; try to infer from train_attacks count
+        if os_val is None:
+            ta = ens.get('training_attacks', [])
+            # Cannot verify from tuple alone; mark indeterminate but not failing
+            skip("fgsm_oversample recorded", f"not persisted in pkl (training_attacks={ta})")
+        else:
+            try:
+                os_val = float(os_val)
+            except (TypeError, ValueError):
+                check("fgsm_oversample numeric", False, f"got {os_val!r}")
+                os_val = None
+            if os_val is not None:
+                check(
+                    "fgsm_oversample >= 2.5 (P0.3)",
+                    os_val >= 2.5,
+                    f"got {os_val} — regressed below the paper's own 0.85 FGSM gate. "
+                    f"Restore --fgsm-oversample 2.5 in run_vastai_full.sh (see commits "
+                    f"dadf2cf/cf854f0/eabcba8 for history) and retrain."
+                )
+        # Also assert grad-norm is OFF (reverted in regression_analysis_20260422.md)
+        ug = bool(ens.get('use_grad_norm', False))
+        check(
+            "use_grad_norm == False (reverted)",
+            not ug,
+            "use_grad_norm=True — FGSM TPR 80.6% → 63.0% regression. "
+            "Drop --use-grad-norm."
+        )
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────────────────────────────────────
 

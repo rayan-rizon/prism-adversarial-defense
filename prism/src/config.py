@@ -12,6 +12,10 @@ Usage
 
     cfg = load_config()                      # full config dict
     cfg = load_config('configs/custom.yaml') # override path
+
+Config routing for multi-dataset runs (e.g. CIFAR-100):
+    # Set env var before importing src.config (scripts use src.bootstrap)
+    PRISM_CONFIG=configs/cifar100.yaml python scripts/build_profile_testset.py
 """
 import os
 import yaml
@@ -27,14 +31,15 @@ def load_config(path: Optional[str] = None) -> dict:
     """Load and return the YAML config as a nested dict.
 
     Args:
-        path: Path to the YAML file.  Defaults to configs/default.yaml
-              relative to the prism/ project root.
+        path: Explicit path to the YAML file. If None, honors the
+              PRISM_CONFIG environment variable, else falls back to
+              configs/default.yaml relative to the prism/ project root.
     Returns:
         Nested dict matching the YAML structure.
     Raises:
         FileNotFoundError: If the config file does not exist.
     """
-    cfg_path = path or _DEFAULT_CONFIG_PATH
+    cfg_path = path or os.environ.get('PRISM_CONFIG') or _DEFAULT_CONFIG_PATH
     cfg_path = os.path.abspath(cfg_path)
     if not os.path.exists(cfg_path):
         raise FileNotFoundError(
@@ -126,3 +131,19 @@ PROFILE_IDX: Tuple[int, int] = tuple(_splits['profile_idx'])
 CAL_IDX:     Tuple[int, int] = tuple(_splits['cal_idx'])
 VAL_IDX:     Tuple[int, int] = tuple(_splits['val_idx'])
 EVAL_IDX:    Tuple[int, int] = tuple(_splits['eval_idx'])
+
+# Dataset routing (P1.1 CIFAR-100). Falls back to cifar10 if config predates the
+# data.dataset key. Scripts that load CIFAR data must dispatch on this constant
+# — see src.data_loader.load_test_dataset().
+DATASET: str = _CFG.get('data', {}).get('dataset', 'cifar10').lower()
+
+# Artifact paths. Config can override these to route per-dataset (e.g.
+# models/cifar100/ensemble_scorer.pkl) so CIFAR-10 artifacts are not clobbered.
+_default_paths = {
+    'reference_profiles': 'models/reference_profiles.pkl',
+    'calibrator':         'models/calibrator.pkl',
+    'ensemble_scorer':    'models/ensemble_scorer.pkl',
+    'experts':            'models/experts.pkl',
+    'clean_scores':       'experiments/calibration/clean_scores.npy',
+}
+PATHS: Dict[str, str] = {**_default_paths, **(_CFG.get('paths', {}) or {})}

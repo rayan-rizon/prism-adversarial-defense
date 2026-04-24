@@ -1,0 +1,104 @@
+# PRISM — CIFAR-100 configuration (P1.1)
+#
+# Same ResNet-18 backbone as default.yaml, but retargets the profiling /
+# calibration / evaluation pipeline at CIFAR-100. The backbone is
+# ImageNet-1000 pretrained, so class count does not change — CIFAR-100 only
+# swaps the input distribution. Reference profiles, ensemble scorer,
+# calibrator, and experts must all be retrained against CIFAR-100 using the
+# same scripts:
+#
+#   python scripts/build_profile_testset.py     --config configs/cifar100.yaml
+#   python scripts/train_ensemble_scorer.py    --config configs/cifar100.yaml --fgsm-oversample 2.5
+#   python scripts/calibrate_ensemble.py       --config configs/cifar100.yaml
+#   python scripts/train_experts.py            --config configs/cifar100.yaml   # optional
+#
+# All artifacts land in models/cifar100/*.pkl to avoid clobbering CIFAR-10.
+
+model:
+  name: resnet18
+  weights: IMAGENET1K_V1
+  layer_names:
+    - layer2
+    - layer3
+    - layer4
+  layer_weights:
+    layer2: 0.30
+    layer3: 0.30
+    layer4: 0.40
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas:
+    L1: 0.10
+    L2: 0.03
+    L3: 0.005
+  calibration_size: 5000
+  validation_size: 5000
+  cal_alpha_factor: 0.7
+  # Tier cal alpha factors may need light re-tuning after fresh CIFAR-100
+  # calibration — the L3 tail is again sparse, so the 0.50 factor is inherited
+  # as a starting point. If cal→val FPR overruns, tighten further (e.g. 0.45).
+  tier_cal_alpha_factors:
+    L1: 0.70
+    L2: 0.70
+    L3: 0.50
+
+# CIFAR-100 test set is 10k images — reuse the exact same split shape as
+# CIFAR-10 for reproducibility.
+splits:
+  profile_idx: [0, 5000]
+  cal_idx:     [5000, 7000]
+  val_idx:     [7000, 8000]
+  eval_idx:    [8000, 10000]
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  # Clean-score mean may shift slightly vs CIFAR-10; set mu0 / beta0
+  # conservatively and let BOCPD's prior adapt during warmup. Re-tune after
+  # observing actual clean-stream stats on CIFAR-100.
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 10
+  alert_run_prob: 0.60
+  warmup_steps: 35
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar100
+  image_size: 224
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 10000
+
+evaluation:
+  n_test_images: 1000
+  attacks:
+    - FGSM
+    - PGD
+    - CW
+    - Square
+    - HopSkipJump
+
+paths:
+  reference_profiles: models/cifar100/reference_profiles.pkl
+  calibrator:         models/cifar100/calibrator.pkl
+  ensemble_scorer:    models/cifar100/ensemble_scorer.pkl
+  experts:            models/cifar100/experts.pkl
+  clean_scores:       experiments/calibration/cifar100_clean_scores.npy

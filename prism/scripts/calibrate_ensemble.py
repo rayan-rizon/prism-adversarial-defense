@@ -29,6 +29,8 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
@@ -41,7 +43,9 @@ from src.config import (
     CAL_IDX, VAL_IDX, CONFORMAL_ALPHAS, CAL_ALPHA_FACTOR,
     TIER_CAL_ALPHA_FACTORS,
     N_SUBSAMPLE, MAX_DIM,
+    DATASET, PATHS,
 )
+from src.data_loader import load_test_dataset
 
 _TRANSFORM = T.Compose([
     T.Resize(224),
@@ -52,10 +56,14 @@ _TRANSFORM = T.Compose([
 
 def calibrate_ensemble(
     data_root: str = './data',
-    ensemble_path: str = 'models/ensemble_scorer.pkl',
-    profile_path: str  = 'models/reference_profiles.pkl',
-    output_path: str   = 'models/calibrator.pkl',
+    ensemble_path: str = None,
+    profile_path: str  = None,
+    output_path: str   = None,
 ):
+    # Route artifact paths through PATHS so CIFAR-100 lands in models/cifar100/.
+    ensemble_path = ensemble_path or PATHS['ensemble_scorer']
+    profile_path  = profile_path  or PATHS['reference_profiles']
+    output_path   = output_path   or PATHS['calibrator']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")
     print(f"Cal split:  test idx {CAL_IDX[0]}-{CAL_IDX[1]-1}  (n={CAL_IDX[1]-CAL_IDX[0]})")
@@ -91,9 +99,8 @@ def calibrate_ensemble(
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
-    dataset = torchvision.datasets.CIFAR10(
-        root=data_root, train=False, download=True, transform=_TRANSFORM
-    )
+    # Dispatch dataset loader on DATASET (cifar10 / cifar100).
+    dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
 
     def get_ensemble_scores(idx_range, label):
         scores = []
@@ -182,6 +189,8 @@ def calibrate_ensemble(
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--data-root', default='./data')
     args = parser.parse_args()
     calibrate_ensemble(data_root=args.data_root)
