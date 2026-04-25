@@ -48,7 +48,7 @@ except ImportError:
 from src.prism import PRISM
 from src.cadg.calibrate import ConformalCalibrator
 from src.sacd.monitor import NoOpCampaignMonitor
-from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD
+from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD, PATHS
 
 # Normalization constants from src.config (backed by configs/default.yaml)
 _MEAN = IMAGENET_MEAN
@@ -107,14 +107,16 @@ def run_evaluation(
     dim_weights   = DIM_WEIGHTS
 
     # --- Load PRISM (requires pre-built profiles and calibrator) ---
-    calibrator_path = 'models/calibrator.pkl'
-    profile_path = 'models/reference_profiles.pkl'
+    # Routed via PATHS so CIFAR-100 (configs/cifar100.yaml) lands in the right
+    # subdirectory rather than clobbering CIFAR-10 artifacts.
+    calibrator_path = PATHS['calibrator']
+    profile_path = PATHS['reference_profiles']
 
     if not os.path.exists(calibrator_path) or not os.path.exists(profile_path):
         print("ERROR: Pre-built models not found.")
         print("Run these first:")
-        print("  1. python scripts/build_profile.py")
-        print("  2. python scripts/calibrate_thresholds.py")
+        print("  1. python scripts/build_profile_testset.py")
+        print("  2. python scripts/calibrate_ensemble.py")
         sys.exit(1)
 
     prism = PRISM.from_saved(

@@ -24,15 +24,22 @@ This guide answers three questions after your code is written:
 ### Data Split Strategy
 
 ```
-Clean Data (total: ~12,000 images per dataset)
-├── Profile Set     — 10,000 images → build topological self-profile (TAMM)
-├── Calibration Set —  1,000 images → fit conformal thresholds (CADG)
-└── Validation Set  —  1,000 images → verify FPR guarantees
+Clean Data — CIFAR-10 test set (10,000 images), partitioned by index range.
+Source of truth: configs/default.yaml::splits + src.config.{PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX}.
+
+├── Profile Set     [    0,  5000) — 5,000 images → reference-profile medoids (TAMM)
+├── Calibration Set [5000,  7000) — 2,000 images → conformal thresholds (CADG)
+├── Validation Set  [7000,  8000) — 1,000 images → FPR verification (strict)
+└── Eval Set        [8000, 10000) — 2,000 images → held out, sampled per seed
 
 Adversarial Data
 ├── Generated at test time using ART / AutoAttack
 └── RobustBench pre-computed sets (for reproducibility)
 ```
+
+Any script that needs these splits **must import from `src.config`** rather than
+hardcoding ranges — see `experiments/ablation/run_ablation_paper.py` for the
+canonical pattern.
 
 <aside>
 ⚠️
@@ -49,33 +56,33 @@ PRISM has **no single training loop** — each module is fitted/trained separate
 
 ### 2.1 TAMM — Topological Self-Profile
 
-**What "training" means here:** Running 10,000 clean images through the frozen backbone and computing their persistence diagrams. No gradient updates.
+**What "training" means here:** Running the 5,000 profile-set images through the frozen backbone, computing their persistence diagrams, and selecting medoid representatives. No gradient updates.
 
-```python
-# scripts/build_profile.py (already in Phase 1)
-# Run this ONCE on the profile set
-python scripts/build_profile.py
-# Output: models/reference_profiles.pkl
+```bash
+# scripts/build_profile_testset.py — run ONCE on the profile set
+python scripts/build_profile_testset.py
+# Output: models/reference_profiles.pkl  (or models/cifar100/... under PRISM_CONFIG=configs/cifar100.yaml)
 ```
 
 **Validation check:**
 
 ```python
-import pickle, numpy as np
-profiles = pickle.load(open('models/reference_profiles.pkl', 'rb'))
+import pickle
+from src.config import PATHS
+profiles = pickle.load(open(PATHS['reference_profiles'], 'rb'))
 for layer, dgms in profiles.items():
     print(f"{layer}: {len(dgms)} diagrams collected")
-    # Should be 10,000 for each layer
+    # Reference set is 50 medoid diagrams per layer (configurable via tda.n_reference)
 ```
 
 ### 2.2 CADG — Conformal Calibration
 
-**What "training" means here:** Computing anomaly scores on 1,000 clean images and setting the quantile thresholds.
+**What "training" means here:** Computing anomaly scores on the 2,000-image calibration set (`cal_idx = [5000, 7000)`) and setting the quantile thresholds. Validation FPR is then verified on the disjoint 1,000-image validation set (`val_idx = [7000, 8000)`).
 
-```python
-# scripts/calibrate_thresholds.py (already in Phase 2)
-python scripts/calibrate_thresholds.py
-# Output: models/calibrator.pkl
+```bash
+# scripts/calibrate_ensemble.py — run AFTER train_ensemble_scorer.py
+python scripts/calibrate_ensemble.py
+# Output: models/calibrator.pkl  (or models/cifar100/... under PRISM_CONFIG)
 ```
 
 **Validation check — the conformal guarantee:**

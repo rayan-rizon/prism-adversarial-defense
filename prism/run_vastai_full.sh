@@ -593,12 +593,18 @@ echo "Steps 7a+7b+7c: COMPLETE"
 #   run_recovery_eval.py:278 → results[strategy]['recovery_accuracy']
 echo ""
 echo "=== Gate checks (P0.4 campaign, P0.5 recovery) ==="
+# Gate misses set GATE_MISS_PHASE2=1 → captured below; pipeline exits non-zero
+# at the very end of the script (after Step 7d + Step 8 manifest still run, so
+# the operator gets paper tables and provenance even on a gate miss).
 python -c "
-import json, glob
+import json, glob, sys
+miss = []
+
 # ── P0.4 campaign gates ──
 cfiles = sorted(glob.glob('experiments/campaign/results_campaign_seed*.json'))
 if not cfiles:
     print('WARN: no campaign results found — skipping P0.4 gate check')
+    miss.append('P0.4_no_results')
 else:
     gaps, fas = [], []
     for f in cfiles:
@@ -613,16 +619,25 @@ else:
     if gaps:
         mean_gap = sum(gaps)/len(gaps)
         print(f'P0.4 sustained-rho=1.0 ASR gap (mean across seeds): {mean_gap:.2f}pp  [gate >= 10pp]')
-        if mean_gap < 10: print('  -> C3 gate MISS: demote SACD to appendix per Appendix A3')
+        if mean_gap < 10:
+            print('  -> C3 gate MISS: demote SACD to appendix per Appendix A3')
+            miss.append(f'P0.4_asr_gap={mean_gap:.2f}pp<10')
+    else:
+        miss.append('P0.4_no_asr_gap_recorded')
     if fas:
         max_fa = max(fas)
         print(f'P0.4 clean-only false-alarm (max across seeds): {max_fa:.4f}  [gate <= 0.01]')
-        if max_fa > 0.01: print('  -> BOCPD priors (mu0/beta0) need retune in configs/default.yaml')
+        if max_fa > 0.01:
+            print('  -> BOCPD priors (mu0/beta0) need retune in configs/default.yaml')
+            miss.append(f'P0.4_clean_fpr={max_fa:.4f}>0.01')
+    else:
+        miss.append('P0.4_no_clean_fpr_recorded')
 
 # ── P0.5 recovery gate ──
 rfiles = sorted(glob.glob('experiments/recovery/results_recovery_seed*.json'))
 if not rfiles:
     print('WARN: no recovery results found — skipping P0.5 gate check')
+    miss.append('P0.5_no_results')
 else:
     gaps = []
     for f in rfiles:
@@ -634,8 +649,20 @@ else:
     if gaps:
         mean_gap = sum(gaps)/len(gaps)
         print(f'P0.5 TAMSH - passthrough gap (mean across seeds): {mean_gap:.2f}pp  [gate >= 15pp]')
-        if mean_gap < 15: print('  -> C4 gate MISS: demote TAMSH to appendix per Appendix A3')
-"
+        if mean_gap < 15:
+            print('  -> C4 gate MISS: demote TAMSH to appendix per Appendix A3')
+            miss.append(f'P0.5_recovery_gap={mean_gap:.2f}pp<15')
+    else:
+        miss.append('P0.5_no_recovery_gap_recorded')
+
+if miss:
+    print('')
+    print(f'GATE SUMMARY: {len(miss)} miss(es): {miss}')
+    sys.exit(1)
+print('')
+print('GATE SUMMARY: ALL P0.4/P0.5 gates PASS')
+" || GATE_MISS_PHASE2=1
+GATE_MISS_PHASE2=${GATE_MISS_PHASE2:-0}
 
 # ── Step 7d: Build paper tables (P0.7) ───────────────────────────────────────
 echo ""
@@ -699,3 +726,16 @@ echo "  scp -P <port> root@<ip>:/workspace/prism-repo/prism/experiments/evaluati
 echo "  scp -P <port> root@<ip>:/workspace/prism-repo/prism/experiments/evaluation/results_adaptive_pgd_*.json ."
 echo "  scp -P <port> root@<ip>:/workspace/prism-repo/prism/logs/*.log ."
 echo "  scp -P <port> root@<ip>:/workspace/prism-repo/prism/models/*.pkl ."
+
+# ── Final exit code reflects gate outcomes ───────────────────────────────────
+# All artifacts (paper tables, manifest) are written before this point so the
+# operator gets full diagnostics even when a gate misses. Exit-code contract:
+#   0 → all gates pass (Step 4 + P0.4 + P0.5)
+#   3 → Phase 2 gate miss (P0.4 ASR gap, FPR, or P0.5 recovery gap)
+# Step 4 (FPR) and earlier failures already exited 1/2 before we got here.
+if [ "${GATE_MISS_PHASE2:-0}" -ne 0 ]; then
+  echo ""
+  echo "EXIT 3: One or more Phase 2 gates failed (see GATE SUMMARY above)."
+  echo "        Paper tables + manifest were written for diagnostic review."
+  exit 3
+fi

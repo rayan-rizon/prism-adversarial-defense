@@ -231,7 +231,7 @@ def run_evaluation_full(
     for p in [cal_path, prof_path]:
         if not os.path.exists(p):
             print(f"ERROR: {p} not found. Run build_profile_testset.py + "
-                  f"calibrate_testset.py first.")
+                  f"calibrate_ensemble.py first.")
             sys.exit(1)
 
     prism_base = PRISM.from_saved(

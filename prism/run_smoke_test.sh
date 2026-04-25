@@ -176,10 +176,16 @@ echo ""
 echo "=== Step 2b: Retrain Verification ==="
 python3 -c "
 import pickle, sys
+# ensemble_scorer.save() pickles a dict (see ensemble_scorer.py:417). Use
+# dict.get(...) — getattr() on a dict silently returns the default and would
+# false-fail the FGSM-presence check below.
 e = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
-ta = list(getattr(e, 'training_attacks', []))
-ng = bool(getattr(e, 'use_grad_norm', False))
-nf = int(getattr(e, 'n_features', 0)) if hasattr(e, 'n_features') else None
+if not isinstance(e, dict):
+    print(f'RETRAIN VERIFICATION FAIL: ensemble_scorer.pkl is {type(e).__name__}, expected dict')
+    sys.exit(1)
+ta = list(e.get('training_attacks', []))
+ng = bool(e.get('use_grad_norm', False))
+nf = int(e.get('n_features', 0)) if 'n_features' in e else None
 errors = []
 # Smoke-test-specific: CW/AA not included (CPU budget), but FGSM must be present
 if 'FGSM' not in ta:

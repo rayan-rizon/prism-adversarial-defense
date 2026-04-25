@@ -129,7 +129,19 @@ class PRISM:
             raise TypeError(f"Expected dict for ref_profiles, got {type(ref_profiles)}")
 
         ensemble_scorer = None
-        if ensemble_path and Path(ensemble_path).exists():
+        if ensemble_path is not None:
+            # When the caller explicitly requests an ensemble, missing file is a
+            # hard error — silent fallback to the baseline TopologicalScorer
+            # would invisibly degrade detection (no logistic component, no α
+            # fusion) and falsify any "PRISM full" claim downstream. Callers
+            # that genuinely want the optional path can pass ensemble_path=None.
+            if not Path(ensemble_path).exists():
+                raise FileNotFoundError(
+                    f"PRISM.from_saved: ensemble_path='{ensemble_path}' does not "
+                    "exist. Run scripts/train_ensemble_scorer.py to produce it, "
+                    "or pass ensemble_path=None to run with the baseline "
+                    "TopologicalScorer (Wasserstein-only, no logistic fusion)."
+                )
             # PersistenceEnsembleScorer requires loading with base_scorer
             from .cadg.ensemble_scorer import PersistenceEnsembleScorer
             from .tamm.scorer import TopologicalScorer

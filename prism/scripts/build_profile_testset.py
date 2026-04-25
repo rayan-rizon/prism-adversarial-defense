@@ -27,7 +27,7 @@ USAGE
 -----
   cd prism/
   python scripts/build_profile_testset.py          # builds from CIFAR-10 test
-  python scripts/calibrate_testset.py              # calibrates using test cal split
+  python scripts/calibrate_ensemble.py             # calibrates using test cal split
 """
 import torch
 import torchvision
@@ -204,7 +204,7 @@ def build_profile_testset(
     print(f"   Cal     : {len(cal_scores)} images (test idx 5000-6999)")
     print(f"   Val     : {len(val_scores)} images (test idx 7000-7999)")
     print(f"   Eval    : 2000 images HELD OUT (test idx 8000-9999)")
-    print(f"\nNext step: python scripts/calibrate_testset.py")
+    print(f"\nNext step: python scripts/calibrate_ensemble.py")
 
     return ref_profiles, cal_scores, val_scores
 
