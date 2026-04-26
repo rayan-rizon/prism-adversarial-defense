@@ -239,19 +239,33 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
             diags.append(profiler.compute_diagram(a_np))
 
         # Pick medoid: diagram minimising sum of total-persistence distances to others.
+        # Persistence diagrams from gudhi can contain `inf` for features that
+        # are born but never die (e.g. dim-0 connected component covering the
+        # whole filtration). `inf - finite = inf` and `inf - inf = NaN`, which
+        # poisoned the argmin and silently selected index 0 for every expert.
+        # Filter to finite lifetimes before summing.
         def _total_persistence(dgm_list):
             s = 0.0
             for dgm in dgm_list:
                 if len(dgm) > 0:
-                    arr = np.asarray(dgm)
+                    arr = np.asarray(dgm, dtype=float)
                     if arr.ndim == 2:
-                        s += float(np.sum(arr[:, 1] - arr[:, 0]))
+                        lifetimes = arr[:, 1] - arr[:, 0]
+                        finite = lifetimes[np.isfinite(lifetimes)]
+                        s += float(np.sum(finite))
             return s
 
-        medoid_idx = int(np.argmin([
-            abs(_total_persistence(d) - np.mean([_total_persistence(o) for o in diags]))
-            for d in diags
-        ]))
+        tps = np.array([_total_persistence(d) for d in diags], dtype=float)
+        if not np.any(np.isfinite(tps)):
+            # Pathological — fall through with index 0 but warn loudly.
+            print(f"  WARN: all total-persistence values non-finite; medoid=0")
+            medoid_idx = 0
+        else:
+            mean_tp = float(np.mean(tps[np.isfinite(tps)]))
+            distances = np.abs(tps - mean_tp)
+            # Replace any residual NaN with +inf so they lose argmin.
+            distances = np.where(np.isfinite(distances), distances, np.inf)
+            medoid_idx = int(np.argmin(distances))
         medoid_diagrams.append(diags[medoid_idx])
         print(f"  medoid diagram index: {medoid_idx}")
 

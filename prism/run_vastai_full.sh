@@ -6,20 +6,27 @@
 # Runs the entire publishable pipeline on a single RTX 5090 instance.
 #
 # Parallelism map (safe — no shared mutable state between concurrent jobs):
-#   Steps 5+6+7: ALL launched simultaneously after Step 4 LOCK.
-#     Step 5A: CW-L2          (bottleneck, ~2h)
-#     Step 5B: FGSM+PGD+Square+AA
-#     Step 6 : 5 adaptive-PGD seeds in parallel
-#     Step 7 : Ablation (FGSM+PGD+Square)
-#   Wait order: Step 5 first (provenance check needs its JSON), then 6, then 7.
-#   Saves ~35-40% wall-clock vs old sequential 5→6→7 schedule.
+#   Phase 0 training:
+#     Step 2  : ensemble_scorer.pkl (foreground, gates Step 3)
+#     Step 2c : ensemble_no_tda.pkl (background — overlaps with Step 2)
+#     Step 2d : experts.pkl         (background — overlaps with Step 2)
+#     Step 2/2c/2d join before LOCK. Wall-clock: was 30+30+25=85min, now ~30min.
+#   Phase 1 attacks (after LOCK):
+#     Step 5A : CW-L2          (bottleneck, ~2h)
+#     Step 5B : FGSM+PGD+Square+AA
+#     Step 6  : 5 adaptive-PGD seeds in parallel
+#     Step 7  : Ablation (FGSM+PGD+Square)
+#     Step 6b : L0 calibration (background — hidden behind 2h CW bottleneck)
+#   Phase 2 (after Phase 1 join):
+#     Steps 7a+7b+7c parallel
+#   Saves ~55min in Phase 0 + ~10-15min in Phase 1 = ~65-70min vs sequential.
 #
 # Sequential constraints that CANNOT be parallelised:
-#   Steps 1→2: Step 2 reads reference_profiles.pkl written by Step 1
+#   Steps 1→2/2c/2d: all three trainers read reference_profiles.pkl from Step 1
 #   Steps 2→3: Step 3 reads ensemble_scorer.pkl written by Step 2
 #   Steps 3→4: Step 4 reads calibrator.pkl written by Step 3
-#   Steps 4→5/6/7: All eval phases require the FPR gate to have passed
-#   Steps 5+6+7 join → Step 6b (L0 calibration) → Steps 7a+7b+7c
+#   Steps 4→5/6/7/6b: all eval/calibration phases require the FPR gate
+#   Steps 5+6+7+6b join → Steps 7a+7b+7c
 #
 # Exit codes: 0=success, 1=gate failure, 2=eval failure
 
@@ -111,9 +118,34 @@ if [ "$STEP1_EXIT" -ne 0 ]; then
   echo "ERROR: Step 1 failed. Check logs/step1_build_profile.log"; exit 1
 fi
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Steps 2 + 2c + 2d: PARALLEL TRAINING LAUNCH
+# ══════════════════════════════════════════════════════════════════════════════
+# All three training jobs read the same frozen reference_profiles.pkl (Step 1
+# output, read-only) and write to DISTINCT output files. They have zero shared
+# mutable state. Concurrent GPU memory peak: ~8 + 8 + 3 = 19 GB on RTX 5090
+# (32 GB) — comfortable headroom.
+#
+# Wall-clock: was sequential (30 + 30 + 25 = 85 min); now parallel max(30,30,25)
+# ≈ 30 min. Saves ~55 minutes vs the previous schedule.
+#
+# Wait order:
+#   1. Wait Step 2 first → Step 2b verification gates Step 3
+#   2. Run Step 2b (verification)
+#   3. Continue Step 3, 4 (these only need ensemble_scorer.pkl, not 2c/2d)
+#   4. Wait Step 2c + 2d before Phase 1 LOCK announcement (purely cosmetic —
+#      Step 2c output is consumed by no current pipeline step; Step 2d output
+#      is consumed by Phase 2 Step 7b which is ~2h after this point).
+# ══════════════════════════════════════════════════════════════════════════════
+
 # ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=$FGSM_OVERSAMPLE] ==="
+echo "=== Steps 2 + 2c + 2d: Parallel Training Launch ==="
+echo "  Step 2  : ensemble (n=4000, CW+AA, fgsm-os=$FGSM_OVERSAMPLE) — foreground"
+echo "  Step 2c : ensemble-no-TDA variant — background"
+echo "  Step 2d : differentiated experts — background"
+echo ""
+
 # Research-plan P0.3: FGSM oversample 2.5 restores the pre-regression training
 # mix share that achieved pooled FGSM TPR 0.87. Commits dadf2cf/cf854f0
 # temporarily lowered this to 1.8/2.0 and dropped pooled FGSM TPR to 0.806 —
@@ -122,6 +154,46 @@ echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=$FGSM_OVERSAMP
 # NOTE: --use-grad-norm was tested on the 2026-04-22 Vast.ai run and REVERTED.
 # It caused a catastrophic regression: FGSM TPR 80.6% → 63.0%, Square 89.1% → 79.8%.
 # See regression_analysis_20260422.md for the full forensic analysis.
+
+# ── Step 2c: launched in background (independent of Step 2) ───────────────────
+# train_ensemble_scorer.py with --no-tda-features → models/ensemble_no_tda.pkl.
+# Reads reference_profiles.pkl (read-only). Independent of Step 2.
+PID_2C=""
+if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-features'; then
+  python scripts/train_ensemble_scorer.py \
+    --n-train 4000 \
+    --fgsm-oversample $FGSM_OVERSAMPLE \
+    --include-cw \
+    --include-autoattack \
+    --cw-max-iter 30 \
+    --cw-bss 3 \
+    --no-tda-features \
+    --output models/ensemble_no_tda.pkl \
+    > logs/step2c_retrain_no_tda.log 2>&1 &
+  PID_2C=$!
+  echo "  Step 2c launched (PID=$PID_2C, background) → models/ensemble_no_tda.pkl"
+else
+  echo "  Step 2c SKIP: --no-tda-features flag not available."
+fi
+
+# ── Step 2d: launched in background (independent of Step 2) ───────────────────
+# train_experts.py → models/experts.pkl. Reads reference_profiles.pkl + CIFAR
+# CAL split. Independent of Step 2/2c.
+PID_2D=""
+if [ -f scripts/train_experts.py ]; then
+  python scripts/train_experts.py \
+    --config configs/default.yaml \
+    --output models/experts.pkl \
+    > logs/step2d_train_experts.log 2>&1 &
+  PID_2D=$!
+  echo "  Step 2d launched (PID=$PID_2D, background) → models/experts.pkl"
+else
+  echo "  Step 2d SKIP: scripts/train_experts.py not present."
+fi
+
+# ── Step 2: foreground (gates Step 3) ─────────────────────────────────────────
+echo ""
+echo "=== Step 2: Retrain Ensemble [n=4000, CW+AA in mix, fgsm-os=$FGSM_OVERSAMPLE] ==="
 python scripts/train_ensemble_scorer.py \
   --n-train 4000 \
   --fgsm-oversample $FGSM_OVERSAMPLE \
@@ -134,7 +206,11 @@ python scripts/train_ensemble_scorer.py \
 STEP2_EXIT=${PIPESTATUS[0]:-$?}
 echo "Step 2 exit: $STEP2_EXIT"
 if [ "$STEP2_EXIT" -ne 0 ]; then
-  echo "ERROR: Step 2 failed. Check logs/step2_retrain.log"; exit 1
+  echo "ERROR: Step 2 failed. Check logs/step2_retrain.log"
+  # Cleanly terminate background jobs before exiting
+  [ -n "$PID_2C" ] && kill $PID_2C 2>/dev/null || true
+  [ -n "$PID_2D" ] && kill $PID_2D 2>/dev/null || true
+  exit 1
 fi
 
 # ── Step 2b: Post-retrain verification ────────────────────────────────────────
@@ -179,50 +255,10 @@ if [ $? -ne 0 ]; then
   echo "ERROR: Post-retrain verification failed. Fix and re-run Step 2."; exit 1
 fi
 
-# ── Step 2c: Ensemble-no-TDA variant (P0.6) ──────────────────────────────────
-# Research-plan P0.6: retrain the ensemble scorer with TDA features disabled so
-# we can quantify TAMM's (C1) marginal contribution in the ablation table.
-# Artifact lands at models/ensemble_no_tda.pkl so the canonical pipeline
-# (calibrator, FPR gate, eval) continues to use models/ensemble_scorer.pkl.
-# If `--no-tda-features` is not implemented in train_ensemble_scorer.py on this
-# branch, the step skips with a warning rather than aborting — the main
-# pipeline does not depend on it.
-echo ""
-echo "=== Step 2c: Ensemble-no-TDA variant [P0.6] ==="
-if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-features'; then
-  python scripts/train_ensemble_scorer.py \
-    --n-train 4000 \
-    --fgsm-oversample $FGSM_OVERSAMPLE \
-    --include-cw \
-    --include-autoattack \
-    --cw-max-iter 30 \
-    --cw-bss 3 \
-    --no-tda-features \
-    --output models/ensemble_no_tda.pkl \
-    2>&1 > >(tee logs/step2c_retrain_no_tda.log) || {
-      echo "WARN: Step 2c (ensemble-no-TDA) failed. Ablation arm will be missing."
-    }
-else
-  echo "SKIP: --no-tda-features flag not available on this branch. Re-run after merging P0.6 support."
-fi
-
-# ── Step 2d: Differentiated experts (P0.5) ───────────────────────────────────
-# Research-plan P0.5: the existing MoE experts may be homogeneous (all trained
-# on the same distillation target). Re-train four experts with distinct attack
-# mixes (clean / fgsm / pgd / mixed) so TAMSH routing has something to choose
-# between. Skipped if scripts/train_experts.py is absent.
-echo ""
-echo "=== Step 2d: Differentiated experts [P0.5] ==="
-if [ -f scripts/train_experts.py ]; then
-  python scripts/train_experts.py \
-    --config configs/default.yaml \
-    --output models/experts.pkl \
-    2>&1 > >(tee logs/step2d_train_experts.log) || {
-      echo "WARN: Step 2d (experts) failed. Recovery eval may produce trivial results."
-    }
-else
-  echo "SKIP: scripts/train_experts.py not present. Recovery eval will use existing experts."
-fi
+# Steps 2c (ensemble-no-TDA) and 2d (differentiated experts) launched in
+# background above. They overlap with Steps 2 → 2b → 3 → 4 in foreground.
+# We join them just before the LOCK announcement to ensure both artifacts
+# exist on disk before Phase 1 starts.
 
 # ── Step 3: Calibrate conformal thresholds ───────────────────────────────────
 echo ""
@@ -268,6 +304,32 @@ if [ $GATE_EXIT -ne 0 ]; then
   echo "ERROR: FPR gate failed. Check logs/step4_val_fpr.log"
   echo "FIX: Lower tier_cal_alpha_factors in configs/default.yaml, re-run steps 3-4"
   exit 1
+fi
+
+# ── Join Steps 2c, 2d (background trainers) before LOCK ──────────────────────
+# By this point Steps 2/2b/3/4 have run sequentially in foreground (~40 min)
+# while Steps 2c/2d ran in background (~25-30 min each). Both should already
+# be done, but we join properly to surface any errors. Failures are warned
+# but do NOT abort the run — Step 2c output is currently unused; Step 2d
+# failure means recovery eval falls back to whatever experts.pkl exists.
+echo ""
+echo "=== Join Steps 2c, 2d (background trainers) ==="
+STEP2C_EXIT=0; STEP2D_EXIT=0
+if [ -n "$PID_2C" ]; then
+  wait $PID_2C || STEP2C_EXIT=$?
+  if [ $STEP2C_EXIT -ne 0 ]; then
+    echo "  WARN: Step 2c (ensemble-no-TDA) failed (exit $STEP2C_EXIT). Check logs/step2c_retrain_no_tda.log"
+  else
+    echo "  Step 2c: DONE → models/ensemble_no_tda.pkl"
+  fi
+fi
+if [ -n "$PID_2D" ]; then
+  wait $PID_2D || STEP2D_EXIT=$?
+  if [ $STEP2D_EXIT -ne 0 ]; then
+    echo "  WARN: Step 2d (experts) failed (exit $STEP2D_EXIT). Recovery eval may produce trivial results."
+  else
+    echo "  Step 2d: DONE → models/experts.pkl"
+  fi
 fi
 
 # ── LOCK: ensemble_scorer.pkl + calibrator.pkl are now frozen ────────────────
@@ -387,11 +449,27 @@ python experiments/ablation/run_ablation_paper.py \
 PID_ABLATION=$!
 echo "  Step 7 ablation started (PID=$PID_ABLATION)"
 
+# ── Step 6b: L0 threshold calibration (LAUNCHED IN PARALLEL with Phase 1) ────
+# Was previously run sequentially after Steps 5+6+7 join, blocking Phase 2 by
+# 10-15 min. Step 6b only consumes locked artifacts (ensemble_scorer.pkl,
+# calibrator.pkl, reference_profiles.pkl) — no dependency on Steps 5/6/7
+# results. Launching it in parallel with Phase 1 hides its runtime entirely
+# behind the CW bottleneck (~2h). Joined later before Phase 2 launches.
+echo ""
+echo "  Step 6b: L0 threshold calibration launched in parallel (P0.4)"
+python scripts/calibrate_l0_thresholds.py \
+  --n-clean 500 \
+  --n-adv   500 \
+  > logs/step6b_l0_calibration.log 2>&1 &
+PID_6B=$!
+echo "  Step 6b started (PID=$PID_6B, background)"
+
 echo ""
 echo "  All processes running. Monitor logs:"
 echo "    tail -f logs/step5_cw_ms5.log"
 echo "    tail -f logs/step6_adaptive_pgd_seed42.log"
 echo "    tail -f logs/step7_ablation.log"
+echo "    tail -f logs/step6b_l0_calibration.log"
 echo ""
 
 # ── Wait order 1: Step 5 (provenance check needs its JSON output) ────────────
@@ -475,20 +553,15 @@ if [ $STEP6_FAIL -ne 0 ]; then
   exit 2
 fi
 
-# ── Step 6b: Calibrate L0 thresholds on real score streams (P0.4 lever) ──────
-# Must run after the ensemble scorer + calibrator (Steps 3+4) are written and
-# before Step 7a (campaign eval). Reads models/ensemble_scorer.pkl,
-# models/calibrator.pkl, and models/reference_profiles.pkl (all read-only) and
-# writes models/l0_thresholds.pkl. CampaignMonitor (Step 7a) auto-discovers this
-# pkl and overlays its hazard_rate/alert_run_prob/warmup_steps, replacing the
-# synthetic-tuned defaults. On any feasibility failure the script exits non-zero.
+# ── Step 6b: Join (L0 calibration was launched in parallel with Phase 1) ─────
+# Step 6b started in background back at line ~445, overlapping with Phase 1's
+# ~2h CW bottleneck. By now it should already be done (~10-15 min runtime).
+# We join here to surface any feasibility failure before Phase 2 starts.
+# l0_thresholds.pkl is read by run_campaign_eval.py via auto-discovery.
 echo ""
-echo "=== Step 6b: L0 Threshold Calibration [P0.4] ==="
-python scripts/calibrate_l0_thresholds.py \
-  --n-clean 500 \
-  --n-adv   500 \
-  2>&1 | tee logs/step6b_l0_calibration.log
-L0_CAL_EXIT=${PIPESTATUS[0]}
+echo "=== Step 6b: Join L0 Threshold Calibration [P0.4] ==="
+L0_CAL_EXIT=0
+wait $PID_6B || L0_CAL_EXIT=$?
 if [ $L0_CAL_EXIT -ne 0 ]; then
   echo "ERROR: L0 calibration FAILED (exit $L0_CAL_EXIT). No feasible (hazard_rate, alert_run_prob) cell found."
   echo "       P0.4 gate cannot be evaluated with calibrated thresholds."

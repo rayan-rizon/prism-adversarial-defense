@@ -192,9 +192,12 @@ print('  P0.1/FPR GATE: PASS')
 
 # ── Step 6b: L0 threshold calibration (P0.4 lever) ──────────────────────────
 echo ""
-echo "=== Step 6b: L0 Threshold Calibration [P0.4 lever, n_clean=n_adv=64] ==="
+echo "=== Step 6b: L0 Threshold Calibration [P0.4 lever, n_clean=n_adv=200] ==="
+# n=64 produced a trivial (gap=0, FPR=0) selection because the score streams
+# were too short to discriminate. n=200 keeps local runtime bounded (~12min)
+# while producing meaningful BOCPD streams. Vast.ai uses n=500.
 python3 scripts/calibrate_l0_thresholds.py \
-  --n-clean 64 --n-adv 64 \
+  --n-clean 200 --n-adv 200 \
   2>&1 | tee logs/local_step6b_l0_cal.log
 L0_CAL_EXIT=${PIPESTATUS[0]}
 if [ $L0_CAL_EXIT -ne 0 ]; then
@@ -285,20 +288,29 @@ else:
     print('  P0.5: no recovery results found')
     miss.append('P0.5_no_results')
 
-# ── P0.6 ablation ──
+# ── P0.6 ablation (proxy: Full PRISM vs TDA only) ──
+# Ablation produces 4 configs: Full PRISM / No L0 / No MoE / TDA only. The
+# strict P0.6 (Full PRISM beats Ensemble-no-TDA) requires a 5th config with
+# use_tda=False that run_ablation_paper.py does not yet produce. The proxy
+# below compares Full vs TDA-only and reports the ensemble lift instead.
 afiles = sorted(glob.glob('experiments/ablation/results_ablation_paper*.json'))
 if afiles:
     for f in afiles[-1:]:
         d = json.load(open(f))
-        # Look for full vs ensemble-no-tda comparison
-        full_auc = d.get('full', {}).get('auc') or d.get('Full PRISM', {}).get('AUC')
-        no_tda_auc = d.get('ensemble_no_tda', {}).get('auc') or d.get('Ensemble (no TDA)', {}).get('AUC')
-        if full_auc is not None and no_tda_auc is not None:
-            print(f'  P0.6 Full PRISM AUC: {full_auc:.4f}, Ensemble-no-TDA AUC: {no_tda_auc:.4f}  [gate full > no-tda]')
-            if full_auc <= no_tda_auc: miss.append(f'P0.6_full={full_auc:.4f}<=no_tda={no_tda_auc:.4f}')
+        full = d.get('Full PRISM', {})
+        tda  = d.get('TDA only', {})
+        full_tpr = full.get('mean_TPR')
+        tda_tpr  = tda.get('mean_TPR')
+        if full_tpr is not None and tda_tpr is not None:
+            print(f'  P0.6 (proxy) Full PRISM mean_TPR={full_tpr:.4f}, TDA only mean_TPR={tda_tpr:.4f}  [gate full > tda-only]')
+            if full_tpr <= tda_tpr:
+                miss.append(f'P0.6_full={full_tpr:.4f}<=tda_only={tda_tpr:.4f}')
+            else:
+                print(f'    Lift from ensemble layer: {(full_tpr - tda_tpr)*100:+.2f}pp')
         else:
-            print('  P0.6: ablation result keys not found in JSON; inspect manually')
+            print('  P0.6: ablation key mismatch')
             print(f'        keys present: {list(d.keys())[:10]}')
+            miss.append('P0.6_key_mismatch')
 else:
     print('  P0.6: no ablation results found')
     miss.append('P0.6_no_results')

@@ -53,38 +53,64 @@ All TPR/FPR figures reported with Wilson 95 % CIs pooled across 5 seeds.
 ## Pipeline Overview
 
 ```
-build_profile_testset.py         → reference_profiles.pkl
+PHASE 0 — TRAINING (all three launchers start simultaneously after Step 1)
+─────────────────────────────────────────────────────────────────────────────
+build_profile_testset.py         → reference_profiles.pkl  [Step 1, ~10 min]
         │
-        ▼
-train_ensemble_scorer.py         → ensemble_scorer.pkl
-  (--include-cw --include-autoattack)
-  Step 2b: post-retrain verification gate ← catches stale pkl early
-        │
-        ▼
-calibrate_ensemble.py            → calibrator.pkl
-        │
-        ▼
-compute_ensemble_val_fpr.py      → FPR gate (abort if any tier fails)
+        ├──[foreground]──► train_ensemble_scorer.py         [Step 2,  ~30 min]
+        │                    (n=4000, CW+AA, fgsm-os=2.5)
+        │                    Step 2b: post-retrain verify gate
+        ├──[background]──► train_ensemble_scorer.py --no-tda-features  [Step 2c, ~30 min]
+        │                    → models/ensemble_no_tda.pkl
+        └──[background]──► train_experts.py                [Step 2d, ~25 min]
+                             → models/experts.pkl
+
+        ← all three join before LOCK (wall-clock ≈ max(30,30,25) = 30 min) →
+
+LOCK: calibrate_ensemble.py      → calibrator.pkl          [Step 3,   ~3 min]
+      compute_ensemble_val_fpr.py → FPR gate               [Step 4,   ~2 min]
         │
         ▼   ARTIFACTS LOCKED — all below are read-only consumers
         │
-┌───────┼────────────────────────────────┐  ← ALL LAUNCHED SIMULTANEOUSLY
-│       │                                │
-│ 5A CW │ 5B FGSM+PGD+Square+AA │ 6 Adaptive PGD × 5 seeds │ 7 Ablation
-│       │                                │
-└───────┼────────────────────────────────┘
-        │  wait Step 5 → provenance check
-        │  wait Step 6 → STEP6_FAIL gate
-        │  wait Step 7
+PHASE 1 — ATTACKS (all launched simultaneously, ~2h ceiling on CW)
+─────────────────────────────────────────────────────────────────────────────
+┌─────────────────────────────────────────────────────┐
+│ 5A CW-L2          (bottleneck, ~2h)                 │
+│ 5B FGSM+PGD+Square+AutoAttack                       │ ← all launched at once
+│ 6  Adaptive PGD × 5 seeds in parallel               │
+│ 7  Ablation (FGSM+PGD+Square)                       │
+│ 6b L0 calibration (background — hidden in CW gap)   │
+└─────────────────────────────────────────────────────┘
+        │  wait 5A+5B → combined gate check
+        │  wait 6     → STEP6_FAIL gate
+        │  wait 7     → ablation done
+        │  wait 6b    → L0 thresholds locked
         ▼
-manifest.json                    → reproducibility record
+PHASE 2 — SECONDARY EVAL (all launched simultaneously, ~1h)
+─────────────────────────────────────────────────────────────────────────────
+┌─────────────────────────────────────────────────────┐
+│ 7a Campaign eval   (P0.4)                            │
+│ 7b Recovery eval   (P0.5)                            │ ← all launched at once
+│ 7c Baseline detectors (P0.2)                        │
+└─────────────────────────────────────────────────────┘
+        │  wait all three
+        ▼
+Step 8: paper tables (P0.7) → manifest.json (SHA256)
 ```
 
-**Why full parallelism is safe:** Steps 5, 6, and 7 are all pure read-only
-consumers of the locked frozen artifacts. No inter-step file dependency.
-CUDA SM time-slicing handles ≤8 concurrent light-batch processes on the 5090.
-GPU utilization rises from ~25 % (sequential) to ~80–90 %. Saves ~35–40 %
-wall-clock time vs the old sequential 5→6→7 schedule.
+**Why full parallelism is safe:** All concurrent jobs are pure read-only
+consumers of frozen artifacts. No inter-step write contention.
+CUDA SM time-slicing handles ≤8 concurrent light-batch processes on the RTX 5090.
+
+**GPU memory budget (RTX 5090, 32 GB GDDR7):**
+
+| Phase | Active jobs | Peak VRAM | Headroom |
+|-------|-------------|-----------|---------|
+| Phase 0 training (2+2c+2d overlap) | 3 × ResNet-18 + ART | ~8+8+3 = **19 GB** | 13 GB |
+| Phase 1 attacks (5A+5B+6+7+6b) | CW dominant | ~22 GB | 10 GB |
+| Phase 2 secondary eval (7a+7b+7c) | 3 × scorer inference | ~6.5 GB | 25 GB |
+
+GPU utilization: Phase 0 ~70 %, Phase 1 ~85–90 %, Phase 2 ~40 %.
 
 ---
 
@@ -170,17 +196,81 @@ bash run_vastai_full.sh
 
 **Steps executed by `run_vastai_full.sh`:**
 
-| Step | Script | Time |
-|------|--------|------|
-| 0 | GPU + PyTorch verification + determinism flags | <1 min |
-| 1 | Build reference profiles | ~10 min |
-| 2 | Retrain ensemble (n=4000, CW+AA, **FGSM-os=2.5**) | ~40 min |
-| 2b | Post-retrain verification gate | <1 min |
-| 3 | Calibrate conformal thresholds | ~3 min |
-| 4 | FPR gate check (abort if fail) | ~2 min |
-| 5+6+7 | **ALL PARALLEL**: CW + Fast + Adaptive PGD × 5 seeds + Ablation | ~150 min ← CW bottleneck |
-| 8 | Reproducibility manifest (SHA256) | <1 min |
-| **Total** | | **~3.5 h** (same ceiling; 5→6→7 now overlap) |
+| Step | Script | Wall-clock | Notes |
+|------|--------|-----------|-------|
+| 0 | GPU + PyTorch verification + determinism flags | <1 min | |
+| 1 | Build reference profiles | ~10 min | |
+| 2+2c+2d | **Parallel training**: ensemble + no-TDA variant + experts | ~30 min | Was 85 min sequential; saves ~55 min |
+| 2b | Post-retrain verification gate | <1 min | |
+| 3 | Calibrate conformal thresholds | ~3 min | |
+| 4 | FPR gate check (abort if fail) | ~2 min | |
+| 5A+5B+6+7+6b | **All parallel**: CW + Fast + Adaptive PGD + Ablation + L0 cal | ~2 h | CW bottleneck; 6b hidden inside |
+| 7a+7b+7c | **All parallel**: Campaign + Recovery + Baselines | ~1 h | |
+| 8 | Paper tables + reproducibility manifest (SHA256) | <5 min | |
+| **Total** | | **~2 h 35 min** | Was ~3 h 45 min; ~30 % faster |
+
+---
+
+## 3b. Local Pre-Flight Validation (run this BEFORE Vast.ai)
+
+`run_local_full.sh` is a CPU-scale dry-run that exercises the entire pipeline
+end-to-end on one seed at reduced n — validating every algorithmic component
+(train → calibrate → L0 cal → campaign → recovery → ablation → gate check)
+before you spend the ~8h Vast.ai budget.
+
+### Coverage vs. the other scripts
+
+| Phase | Smoke test | **Local full** | Vast.ai |
+|-------|:----------:|:-----------:|:-------:|
+| Build reference profiles | ✅ | ✅ | ✅ |
+| Train ensemble scorer | ✅ | ✅ | ✅ |
+| Calibrate conformal thresholds | ✅ | ✅ | ✅ |
+| Train experts (TAMSH) | ❌ | ✅ | ✅ |
+| Validation FPR gate | ✅ | ✅ | ✅ |
+| L0 threshold calibration (P0.4) | ❌ | ✅ | ✅ |
+| Standard eval (FGSM TPR, etc.) | ✅ | ✅ | ✅ |
+| Campaign eval (P0.4) | ❌ | ✅ | ✅ |
+| Recovery eval (P0.5) | ❌ | ✅ | ✅ |
+| Ablation (P0.6) | ❌ | ✅ | ✅ |
+| Gate check with exit code | partial | ✅ | ✅ |
+
+### Usage
+
+```bash
+cd prism/
+
+# Default — n=100, seed=42, trains from scratch (~2.5–3.5 h on M-series)
+bash run_local_full.sh
+
+# Higher-confidence dry run (n=200, ~5 h)
+bash run_local_full.sh 200
+
+# Skip training if models/*.pkl already exist from a previous run (~45 min)
+bash run_local_full.sh 100 --skip-train
+```
+
+### Local deviations (algorithm identical; only scale reduced)
+
+| Parameter | Local | Vast.ai |
+|-----------|-------|---------|
+| n-train (ensemble) | 500 | 4000 |
+| n-test (eval) | 100 | 1000 |
+| Seeds | 1 (seed=42) | 5 |
+| Attacks | FGSM + PGD + Square | + CW + AutoAttack |
+| Campaign scenarios | 2 (clean + sustained_ρ=1.0) | 6 |
+| Ablation n | 50 / attack | 500 / attack |
+
+### Exit codes
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| 0 | All P0.4 / P0.5 / P0.6 gates pass | Safe to proceed to Vast.ai |
+| 1 | Setup / training / calibration error | Fix error; re-run from scratch |
+| 3 | Gate miss (artifacts written) | Review gate_check output; retune config before Vast.ai |
+
+> **Rule of thumb:** if exit code is 3 locally (gate miss at n=100), do NOT
+> launch Vast.ai. Fix the underlying issue first — gates are soft at n=100 but
+> the direction of the miss tells you where the problem is.
 
 ---
 
@@ -520,10 +610,12 @@ scp -P <port> \
 
 ## 8. Troubleshooting
 
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
 | Step 2b: `training_attacks: []` | Stale code on instance (used `getattr` on dict pkl) | `git pull`, then re-run Step 2b check — see §4b |
 | Step 2b: `n_features=0, expected 37` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
 | Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
-| FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds |
+| FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds. See `regression_analysis_20260422.md`. |
 | FGSM TPR ~80 % | Training mix dilution | Ensure `--fgsm-oversample 2.5` (locked research-plan value). 1.8/2.0 is a regression and fails sanity Check 6. |
 | CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
@@ -534,6 +626,11 @@ scp -P <port> \
 | OOM on parallel eval | Too many models in VRAM | Use sequential: remove `&` from process launches |
 | Screen not found | Not in Docker image | `apt-get install -y screen` |
 | autoattack import error | Not installed | `pip install git+https://github.com/fra31/auto-attack` |
+| `PRISM.from_saved` raises `FileNotFoundError` for ensemble_path | Expected — this is now a hard error when an explicit path is given but the file is missing. Silently falling back to baseline TopologicalScorer was masking misconfigured runs. | Either train `ensemble_scorer.pkl` first (`scripts/train_ensemble_scorer.py`) or pass `ensemble_path=None` to use the Wasserstein-only baseline. |
+| Recovery accuracy 0 % for all strategies in Step 7b | `experts.pkl` is stale (trained before differentiated expert fix) | Re-train experts: `python scripts/train_experts.py --n-train 4000 --epochs 5`. Step 2d in `run_vastai_full.sh` does this automatically. |
+| Medoid expert index always 0 (silent) | Pre-fix bug: gudhi inf-valued features caused `NaN` in argmin, which silently resolved to index 0, giving all experts the same medoid | Pull latest — `train_experts.py` now filters non-finite lifetimes before summing total persistence. |
+| Gate-check prints MISS but pipeline exits 0 | Pre-fix bug: gate-check had no `sys.exit(1)`, so bash never saw a non-zero code | Pull latest — gate-check now calls `sys.exit(1)` on miss; `run_vastai_full.sh` captures this as exit code 3. |
+| P0.4 ASR gap = 0 at n=100 (local run) | CADG catches 100 % of PGD-40 at small n → both l0_on and l0_off show 0 % ASR | Expected at n=100; run at n ≥ 200 locally or rely on Vast.ai n=1000. Gap is measurable when some adversarials slip through. |
 
 ---
 
@@ -546,44 +643,73 @@ preserved above for reference, but the full submission campaign executes the
 
 ## A1. Expanded 14-Step Pipeline
 
-```
- 1. Build reference profiles            (scripts/build_profile_testset.py)
- 2. Train ensemble scorer               (scripts/train_ensemble_scorer.py --fgsm-oversample 2.5)
- 2b.Train ensemble-no-TDA variant       (P0.6:  --no-tda-features --output models/ensemble_no_tda.pkl)
- 3. Train differentiated experts        (P0.5:  scripts/train_experts.py   — only if audit shows homogeneity)
- 4. Calibrate conformal thresholds      (scripts/calibrate_ensemble.py)
- 5. FPR gate check                      (scripts/compute_ensemble_val_fpr.py — abort on fail)
- 6. Fast attacks (FGSM/PGD/Square/AA)   (experiments/evaluation/run_evaluation_full.py, 5 seeds, parallel)
- 7. CW-L2                               (P0.1:  40 iter × 5 bss × bs=256 via --cw-chunk=128, 5 seeds)
- 8. Adaptive PGD                        (P1.4:  λ ∈ {0, 0.5, 1, 2, 5, 10}, 100 steps × 10 restarts, EOT=1)
- 9. Ablation                            (existing arms + P0.6 ensemble-no-TDA)
-**6b. L0 threshold calibration**        (P0.4 lever: scripts/calibrate_l0_thresholds.py — runs AFTER steps 6/7/8/9 join, BEFORE 10/11/12)
-   - Grid-searches (hazard_rate, alert_run_prob, warmup_steps) on real scorer streams
-   - Writes models/l0_thresholds.pkl; CampaignMonitor auto-discovers and overlays it
-   - Aborts with non-zero exit if no feasible cell (clean FPR ≤ 1%) found
-10. Campaign-stream eval                (P0.4:  run_campaign_eval.py — 6 scenarios × 5 seeds)
-11. L3-recovery eval                    (P0.5:  run_recovery_eval.py — 3 strategies × 5 seeds)
-12. Baseline detectors                  (P0.2:  run_baselines.py --methods lid mahalanobis odin energy)
-13. Paper tables                        (P0.7:  scripts/build_paper_tables.py --out-dir paper/tables)
-14. Manifest + SHA256                   (embedded in run_vastai_full.sh Step 8 — covers all artifacts)
-```
-
-### Parallel Launch Map (phases 10+11+12)
-
-Steps 10 (campaign), 11 (recovery), and 12 (baselines) all read-only the frozen
-`ensemble_scorer.pkl` + `calibrator.pkl` + `experts.pkl` + `reference_profiles.pkl`.
-They have zero write contention (separate output dirs). `run_vastai_full.sh`
-launches them concurrently via background subshells:
+Steps marked **[BG]** run as background subshells (parallel). Steps marked **[FG]**
+are foreground and gate the next sequential constraint. Wall-clock: ~2 h 35 min
+total on RTX 5090 with the current parallelism map.
 
 ```
-PID_7A (campaign  → experiments/campaign/)    ──┐
-PID_7B (recovery  → experiments/recovery/)    ──┼── wait all three
-PID_7C (baselines → experiments/evaluation/)  ──┘   → run combined gate-check
-                                                    → then step 13 (paper tables)
+PHASE 0 — TRAINING (wall-clock ≈ 30 min; was 85 min sequential)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1.    [FG]  Build reference profiles            scripts/build_profile_testset.py
+ 2.    [FG]  Train ensemble scorer               scripts/train_ensemble_scorer.py
+                                                   --fgsm-oversample 2.5 --include-cw --include-autoattack
+ 2c.   [BG]  Train ensemble-no-TDA variant       scripts/train_ensemble_scorer.py --no-tda-features
+                                                   → models/ensemble_no_tda.pkl   (P0.6)
+ 2d.   [BG]  Train differentiated experts        scripts/train_experts.py
+                                                   → models/experts.pkl            (P0.5)
+         └─ all three join before Step 3 (2+2c+2d gate together)
+ 2b.   [FG]  Post-retrain verification gate      (inline python -c check)
+
+PHASE 0 LOCK — calibration runs sequentially; artifacts sealed after Step 4
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 3.    [FG]  Calibrate conformal thresholds      scripts/calibrate_ensemble.py
+ 4.    [FG]  FPR gate check (abort on fail)      scripts/compute_ensemble_val_fpr.py
+
+PHASE 1 — ATTACKS + L0 CAL (wall-clock ≈ 2 h; CW bottleneck)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 5A.   [BG]  CW-L2 (P0.1)                       run_evaluation_full.py  40 iter×5 bss×bs=256, 5 seeds
+ 5B.   [BG]  FGSM+PGD+Square+AutoAttack         run_evaluation_full.py  5 seeds
+ 6.    [BG]  Adaptive PGD × 5 seeds in parallel  run_adaptive_pgd.py     λ sweep, 100 steps×10 restarts
+ 7.    [BG]  Ablation (FGSM+PGD+Square)         run_ablation_paper.py   5 seeds
+ 6b.   [BG]  L0 threshold calibration (P0.4)    calibrate_l0_thresholds.py
+                Grid-searches (hazard_rate, alert_run_prob, warmup_steps) on real scorer streams.
+                Writes models/l0_thresholds.pkl; CampaignMonitor auto-discovers + overlays it.
+                Aborts non-zero if no feasible cell (clean FPR ≤ 1 %) found.
+                ← runs hidden behind the ~2h CW bottleneck; adds ~0 wall-clock
+         └─ 5A+5B+6+7+6b all join after CW finishes
+
+PHASE 2 — SECONDARY EVAL (wall-clock ≈ 1 h)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 7a.   [BG]  Campaign-stream eval (P0.4)         run_campaign_eval.py    6 scenarios × 5 seeds
+ 7b.   [BG]  L3-recovery eval (P0.5)             run_recovery_eval.py    3 strategies × 5 seeds
+ 7c.   [BG]  Baseline detectors (P0.2)           run_baselines.py        LID/Mahalanobis/ODIN/Energy
+         └─ 7a+7b+7c join → combined gate-check (sys.exit(1) on miss → bash exit 3)
+ 13.   [FG]  Paper tables (P0.7)                 scripts/build_paper_tables.py --out-dir paper/tables
+ 14.   [FG]  Manifest + SHA256                   (inline, Step 8 of run_vastai_full.sh)
 ```
 
-Peak VRAM on RTX 5090 (32 GB): ~6.5 GB with all three live (ResNet-18 activations
-cached once per process). Wall-clock saving vs. sequential: ~40–50 % of phase-B.
+### Parallel Launch Map (background PID assignments)
+
+```
+PHASE 0 training simultaneous launch:
+  PID_2C (ensemble-no-TDA) ──┐
+  PID_2D (experts)          ──┼── joined before Step 2b; crash-safe: kill on Step 2 fail
+  Step 2 foreground (gates) ──┘
+
+PHASE 1 attacks simultaneous launch (after Step 4 LOCK):
+  PID_CW   (Step 5A CW)           ──┐
+  PID_FAST (Step 5B fast attacks) ──┤
+  PID_6x   (Step 6, 5 seeds)      ──┼── joined in wait loop; STEP6_FAIL captured
+  PID_ABL  (Step 7 ablation)      ──┤
+  PID_6B   (Step 6b L0 cal)       ──┘
+
+PHASE 2 simultaneous launch (after Phase 1 join):
+  PID_7A (campaign  → experiments/campaign/)  ──┐
+  PID_7B (recovery  → experiments/recovery/)  ──┼── joined → gate-check → paper tables
+  PID_7C (baselines → experiments/baselines/) ──┘
+```
+
+Peak VRAM on RTX 5090 (32 GB): ~19 GB Phase 0, ~22 GB Phase 1, ~6.5 GB Phase 2.
 Seeds remain serial within each suite to keep logs readable.
 
 All 14 steps must execute against `configs/default.yaml` (CIFAR-10). For
@@ -659,9 +785,19 @@ distribution). If cal→val FPR overruns target by >1 pp, tighten
 | Ensemble-no-TDA arm (P0.6, 1 retrain + 5-seed eval) | 0.25 | Retrain only step 2b; reuse existing adv pool |
 | CIFAR-100 full repeat (P1.1) | 5–7 | Includes all above, top to bottom |
 
-**Serial wall-clock:** ~3 weeks end-to-end. **With parallelism (§Run Full Pipeline):**
-~1.5–2 weeks. All new scripts respect the existing `&` launch pattern and
-screen-session logging convention documented in §4.
+**Updated parallelism schedule (run_vastai_full.sh):**
+
+| Phase | Jobs | Wall-clock | vs. old sequential |
+|-------|------|-----------|-------------------|
+| Phase 0 training (2+2c+2d) | 3 parallel | ~30 min | was ~85 min; saves **55 min** |
+| Phase 0 lock (calibrate+gate) | sequential | ~5 min | unchanged |
+| Phase 1 attacks + L0 cal | 5+1 parallel | ~2 h | L0 cal hidden in CW gap; saves **10–15 min** |
+| Phase 2 secondary eval | 3 parallel | ~1 h | saves **40–50 % of phase** |
+| **Total** | | **~2 h 35 min** | was ~3 h 45 min; **~30 % faster** |
+
+**Serial wall-clock for the full CIFAR-10 campaign (Vast.ai):** ~2.5–3 h.
+**With CIFAR-100 repeat (P1.1):** add ~5–7 GPU-days.
+All scripts respect the `&` launch pattern and screen-session logging convention documented in §4.
 
 ## A7. Reproducibility Endpoint
 
