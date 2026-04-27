@@ -193,7 +193,7 @@ order, or the conformal guarantee is void:
 1. `python scripts/train_ensemble_scorer.py` → `models/ensemble_scorer.pkl`
 2. `python scripts/calibrate_ensemble.py` → `models/calibrator.pkl`
 3. `python scripts/compute_ensemble_val_fpr.py` → `experiments/calibration/ensemble_fpr_report.json` — all three tiers must be `passed: true`
-4. `python experiments/evaluation/run_evaluation_full.py --multi-seed --attacks FGSM PGD Square`
+4. `python experiments/evaluation/run_evaluation_full.py --multi-seed --attacks FGSM PGD Square CW` (38 features)
 
 Skipping any step silently breaks the FPR claim. Pre-research-plan artefacts
 are not used for the submission — see Appendix B §A1 for the full 14-step
@@ -279,7 +279,7 @@ Key formulas:
 Implementation:
 
 - [`src/tamm/persistence_stats.py`](prism/src/tamm/persistence_stats.py) — extracts a fixed-length feature vector (per-layer, per-dim summary statistics) from a persistence diagram.
-- [`src/cadg/ensemble_scorer.py`](prism/src/cadg/ensemble_scorer.py) — `PersistenceEnsembleScorer` combines the base Wasserstein score with a logistic-regression probability fit on those features. Parameters `logit_shift` and `w_score_mean` are data-derived (no magic numbers).
+- [`src/cadg/ensemble_scorer.py`](prism/src/cadg/ensemble_scorer.py) — `PersistenceEnsembleScorer` combines the base Wasserstein score with a logistic-regression probability fit on 38 features (36 TDA + 1 DCT + 1 Softmax Entropy). This fixes the CW-L2 detection gap.
 
 Training driver: [`scripts/train_ensemble_scorer.py`](prism/scripts/train_ensemble_scorer.py) — trains the logistic on CIFAR-10 *train* images (2000 clean + 2000 adversarial). The adversarial mix has been broadened for publishability:
 
@@ -289,7 +289,7 @@ Training driver: [`scripts/train_ensemble_scorer.py`](prism/scripts/train_ensemb
 | PGD (L∞) | 33 % | eps = 8/255, 20 steps, step = 2/255 |
 | Square (L∞) | 33 % | eps = 8/255, 1000 queries |
 
-CW-L2 is **not** in the training mix; it is evaluated on remote GPU only.
+CW-L2 is now included in the training mix by default to fix the detection gap. Training and Ablation phases use an extracted **native PyTorch CW generator** (`src/attacks/cw_torch.py`) that operates entirely on GPU. This avoids the CPU-GPU bouncing of ART's `CarliniL2Method`, yielding a ~24× speedup and removing the ~2h generation bottleneck from the pipeline.
 
 Recalibration driver: [`scripts/calibrate_ensemble.py`](prism/scripts/calibrate_ensemble.py) — runs the ensemble on cal/val splits, fits thresholds at `cal_alphas = {L1: 0.07, L2: 0.021, L3: 0.0035}` (70 % of published), verifies empirical FPR ≤ published α on the val split with `tolerance=0.0`. Saves `models/calibrator.pkl`.
 
@@ -397,7 +397,7 @@ Canonical local command (paper table 1):
 ```
 python experiments/evaluation/run_evaluation_full.py \
   --multi-seed --seeds 42 123 456 789 999 \
-  --n-test 1000 --attacks FGSM PGD Square \
+  --n-test 1000 --attacks FGSM PGD Square CW \
   --output experiments/evaluation/results_paper.json
 ```
 
@@ -560,7 +560,7 @@ Run, in order:
 1. `python scripts/train_ensemble_scorer.py --n-train 2000`
 2. `python scripts/calibrate_ensemble.py`
 3. `python scripts/compute_ensemble_val_fpr.py` → expect all three tiers `passed: true`, L3 empirical FPR in [0.002, 0.005].
-4. `python experiments/evaluation/run_evaluation_full.py --multi-seed --seeds 42 123 456 789 999 --n-test 1000 --attacks FGSM PGD Square`
+4. `python experiments/evaluation/run_evaluation_full.py --multi-seed --seeds 42 123 456 789 999 --n-test 1000 --attacks FGSM PGD Square CW` (38 features)
 5. `python experiments/ablation/run_ablation_paper.py --n-test 1000 --seeds 42 123 456 789 999`
 
 Reject the run and investigate if any of:

@@ -72,14 +72,14 @@ LOCK: calibrate_ensemble.py      → calibrator.pkl          [Step 3,   ~3 min]
         │
         ▼   ARTIFACTS LOCKED — all below are read-only consumers
         │
-PHASE 1 — ATTACKS (all launched simultaneously, ~2h ceiling on CW)
+PHASE 1 — ATTACKS (all launched simultaneously, ~35m ceiling on CW)
 ─────────────────────────────────────────────────────────────────────────────
 ┌─────────────────────────────────────────────────────┐
-│ 5A CW-L2          (bottleneck, ~2h)                 │
+│ 5A CW-L2          (torch engine, ~35m)              │
 │ 5B FGSM+PGD+Square+AutoAttack                       │ ← all launched at once
 │ 6  Adaptive PGD × 5 seeds in parallel               │
-│ 7  Ablation (FGSM+PGD+Square)                       │
-│ 6b L0 calibration (background — hidden in CW gap)   │
+│ 7  Ablation (FGSM+PGD+Square+CW)                    │
+│ 6b L0 calibration (background)                      │
 └─────────────────────────────────────────────────────┘
         │  wait 5A+5B → combined gate check
         │  wait 6     → STEP6_FAIL gate
@@ -204,10 +204,10 @@ bash run_vastai_full.sh
 | 2b | Post-retrain verification gate | <1 min | |
 | 3 | Calibrate conformal thresholds | ~3 min | |
 | 4 | FPR gate check (abort if fail) | ~2 min | |
-| 5A+5B+6+7+6b | **All parallel**: CW + Fast + Adaptive PGD + Ablation + L0 cal | ~2 h | CW bottleneck; 6b hidden inside |
+| 5A+5B+6+7+6b | **All parallel**: CW + Fast + Adaptive PGD + Ablation + L0 cal | ~1 h | Adaptive PGD is now the bottleneck; CW finished in ~35m |
 | 7a+7b+7c | **All parallel**: Campaign + Recovery + Baselines | ~1 h | |
 | 8 | Paper tables + reproducibility manifest (SHA256) | <5 min | |
-| **Total** | | **~2 h 35 min** | Was ~3 h 45 min; ~30 % faster |
+| **Total** | | **~2 h 35 min** | Faster CW engine saves ~2 hours |
 
 ---
 

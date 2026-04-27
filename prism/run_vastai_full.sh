@@ -10,13 +10,13 @@
 #     Step 2  : ensemble_scorer.pkl (foreground, gates Step 3)
 #     Step 2c : ensemble_no_tda.pkl (background — overlaps with Step 2)
 #     Step 2d : experts.pkl         (background — overlaps with Step 2)
-#     Step 2/2c/2d join before LOCK. Wall-clock: was 30+30+25=85min, now ~30min.
+#     Step 2/2c/2d join before LOCK. Wall-clock: ~25–35 min (CW now uses native torch engine).
 #   Phase 1 attacks (after LOCK):
-#     Step 5A : CW-L2          (bottleneck, ~2h)
+#     Step 5A : CW-L2          (torch engine, ~25–35 min per seed × 5 seeds)
 #     Step 5B : FGSM+PGD+Square+AA
 #     Step 6  : 5 adaptive-PGD seeds in parallel
-#     Step 7  : Ablation (FGSM+PGD+Square)
-#     Step 6b : L0 calibration (background — hidden behind 2h CW bottleneck)
+#     Step 7  : Ablation (FGSM+PGD+Square+CW via torch engine)
+#     Step 6b : L0 calibration (background)
 #   Phase 2 (after Phase 1 join):
 #     Steps 7a+7b+7c parallel
 #   Saves ~55min in Phase 0 + ~10-15min in Phase 1 = ~65-70min vs sequential.
@@ -370,10 +370,10 @@ echo "Step 4b: DONE"
 # output paths and loads the same read-only pkl artifacts from Step 4.
 #
 # Parallelism map:
-#   Step 5A : CW-L2 eval (bottleneck, ~2h)
+#   Step 5A : CW-L2 eval (torch engine, ~25-35 min per seed)
 #   Step 5B : FGSM + PGD + Square + AutoAttack eval
 #   Step 6  : 5 adaptive PGD seeds (each ~1h; overlap with Step 5)
-#   Step 7  : Ablation (FGSM+PGD+Square, overlap with Steps 5+6)
+#   Step 7  : Ablation (FGSM+PGD+Square+CW, overlap with Steps 5+6)
 #
 # This collapses the original 3-phase sequential schedule into one wall-clock
 # phase, saving ~35-40% total GPU instance time (CW is the hard ceiling).
@@ -393,11 +393,11 @@ echo "Step 4b: DONE"
 
 echo ""
 echo "=== Steps 5+6+7: Full Parallel Launch [n=$N_TEST × 5 seeds] ==="
-echo "  Step 5A: CW-L2 (max_iter=$CW_MAX_ITER, bss=$CW_BSS)"
+echo "  Step 5A: CW-L2 (torch engine, max_iter=$CW_MAX_ITER, bss=$CW_BSS, ~25-35 min/seed)"
 echo "  Step 5B: FGSM + PGD + Square + AutoAttack"
 echo "  Step 6 : Adaptive PGD × 5 seeds"
-echo "  Step 7 : Ablation"
-echo "  All launched simultaneously — CW is the wall-clock bottleneck."
+echo "  Step 7 : Ablation (FGSM+PGD+Square+CW via torch engine)"
+echo "  All launched simultaneously — CW eval is the wall-clock bottleneck."
 echo ""
 
 # ── Step 5A: CW ──────────────────────────────────────────────────────────────
@@ -493,10 +493,11 @@ echo "  Step 6b started (PID=$PID_6B, background)"
 
 echo ""
 echo "  All processes running. Monitor logs:"
-echo "    tail -f logs/step5_cw_ms5.log"
-echo "    tail -f logs/step6_adaptive_pgd_seed42.log"
-echo "    tail -f logs/step7_ablation.log"
-echo "    tail -f logs/step6b_l0_calibration.log"
+echo "    tail -f logs/step5_cw_ms5.log          # CW eval (~25-35 min/seed)"
+echo "    tail -f logs/step5_fast_ms5.log         # FGSM+PGD+Square+AA"
+echo "    tail -f logs/step6_adaptive_pgd_seed42.log  # Adaptive PGD"
+echo "    tail -f logs/step7_ablation.log         # Ablation (FGSM+PGD+Square+CW)"
+echo "    tail -f logs/step6b_l0_calibration.log  # L0 calibration"
 echo ""
 
 # ── Wait order 1: Step 5 (provenance check needs its JSON output) ────────────

@@ -3,7 +3,7 @@ Paper-Quality Ablation Study — Multi-Attack, n=500 per config
 
 Fixes from run_ablation.py audit:
   1. n=500 per config  (up from 100 — reduces variance from ±10% to ±4.5%)
-  2. All 3 attacks: FGSM, PGD, Square  (original used only FGSM)
+  2. All 4 attacks: FGSM, PGD, Square, CW  (CW via native PyTorch engine)
   3. Standard ε=8/255 for FGSM and PGD  (matches full eval)
   4. Uses held-out test split (images 8000-9999, same as run_evaluation_full.py)
   5. Reports 95% Wilson CIs per configuration
@@ -67,6 +67,7 @@ from src.config import (
     DATASET, PATHS, EVAL_IDX,
 )
 from src.data_loader import load_test_dataset
+from src.attacks.cw_torch import TorchCWGenerator
 
 _MEAN = IMAGENET_MEAN
 _STD  = IMAGENET_STD
@@ -354,6 +355,12 @@ def run_ablation_multiseed(
         )
     if 'Square' in attacks_to_run:
         attacks['Square'] = SquareAttack(art_clf, eps=EPS, max_iter=5000)
+    if 'CW' in attacks_to_run:
+        # Native PyTorch CW — ~24x faster than ART's CarliniL2Method.
+        attacks['CW'] = TorchCWGenerator(
+            norm_model, device,
+            max_iter=40, bss=5, lr=0.01, confidence=0.0,
+        )
 
     dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
@@ -620,6 +627,12 @@ def main():
         )
     if 'Square' in args.attacks:
         attacks['Square'] = SquareAttack(art_clf, eps=EPS, max_iter=5000)
+    if 'CW' in args.attacks:
+        # Native PyTorch CW — ~24x faster than ART's CarliniL2Method.
+        attacks['CW'] = TorchCWGenerator(
+            norm_model, device,
+            max_iter=40, bss=5, lr=0.01, confidence=0.0,
+        )
 
     # Dataset — held-out eval split (same as run_evaluation_full.py).
     # Dispatches on DATASET via load_test_dataset (cifar10 | cifar100).

@@ -9,8 +9,8 @@ Feature vector: 6 stats × 2 dims (H0, H1) × 3 layers = 36 features.
   Per (layer, dim): [wasserstein_dist, total_persistence, max_persistence,
                      n_features, entropy, mean_persistence]
 Optional 37th feature: log high-frequency DCT energy (use_dct=True).
-Optional 38th feature: softmax entropy of model logits (use_softmax_entropy=True).
-Optional 39th feature: input-gradient L2 norm (use_grad_norm=True).
+Optional 38th feature: softmax entropy of model logits (use_softmax_entropy=True) [Standard for CW detection].
+Optional 39th feature: input-gradient L2 norm (use_grad_norm=True) [Reverted due to regression].
 
 Architecture:
   score = α * wasserstein_score + (1-α) * logistic_score_centered
