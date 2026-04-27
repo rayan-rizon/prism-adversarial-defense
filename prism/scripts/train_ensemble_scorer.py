@@ -45,6 +45,7 @@ USAGE
     python scripts/train_ensemble_scorer.py --n-train 3000 --fgsm-oversample 1.5
 """
 import torch
+import time
 import torchvision
 import torchvision.transforms as T
 from torchvision.models import ResNet18_Weights
@@ -158,12 +159,64 @@ class _APGDGenerator:
         return x_adv.detach().cpu().numpy()
 
 
+def _batch_generate_adversarials(art_attack, dataset, indices, label,
+                                  gen_chunk=128):
+    """Pre-generate all adversarial examples in GPU-batched chunks.
+
+    Returns an np.ndarray of shape (N, C, H, W) in pixel [0,1] space,
+    exactly like art_attack.generate() would produce per-sample, but
+    ~30-60x faster for CW/PGD because of batch GPU parallelism.
+
+    This is mathematically identical to per-sample generation:
+    ART computes gradients independently per image in the batch.
+    """
+    all_imgs_pixel = [dataset[int(i)][0] for i in indices]
+    X_pixel_np = torch.stack(all_imgs_pixel).numpy()  # (N, C, H, W)
+    X_adv_np = np.zeros_like(X_pixel_np)
+
+    t0 = time.perf_counter()
+    c_start = 0
+    while c_start < len(X_pixel_np):
+        c_end = min(c_start + gen_chunk, len(X_pixel_np))
+        try:
+            X_adv_np[c_start:c_end] = art_attack.generate(
+                X_pixel_np[c_start:c_end]
+            )
+        except Exception as e:
+            # Fallback: per-sample on batch failure
+            print(f"    [gen] batch failed at {c_start}-{c_end}: {e}. "
+                  "Falling back to per-sample.", flush=True)
+            for j in range(c_start, c_end):
+                try:
+                    X_adv_np[j] = art_attack.generate(
+                        X_pixel_np[j:j+1]
+                    )[0]
+                except Exception:
+                    X_adv_np[j] = X_pixel_np[j]  # keep clean on failure
+        dt = time.perf_counter() - t0
+        print(f"    [gen] {c_end}/{len(X_pixel_np)} "
+              f"elapsed={dt:.1f}s  rate={dt/max(c_end,1):.2f}s/img",
+              flush=True)
+        c_start = c_end
+
+    dt = time.perf_counter() - t0
+    print(f"  {label}: batch-generated {len(X_pixel_np)} adversarials "
+          f"in {dt:.1f}s ({dt/max(len(X_pixel_np),1):.3f}s/img)", flush=True)
+    return X_adv_np
+
+
 def _extract_features(dataset_indices, dataset, model, extractor, profiler,
                       scorer, ref_profiles, device, art_attack=None,
+                      adv_cache=None,
                       label='clean', n_max=None, use_grad_norm=False,
                       use_softmax_entropy=False):
     """
     Extract feature vectors AND base Wasserstein scores.
+
+    If *adv_cache* is provided (np.ndarray of pre-generated adversarials),
+    it is used instead of calling art_attack.generate() per-sample.
+    This separates the GPU-heavy attack generation (batchable) from the
+    CPU-bound TDA persistence computation (inherently per-image).
 
     Feature dimension:
       37 = 36 persistence + 1 DCT energy (use_grad_norm=False, use_softmax_entropy=False)
@@ -180,10 +233,14 @@ def _extract_features(dataset_indices, dataset, model, extractor, profiler,
     if n_max is not None:
         indices = indices[:n_max]
 
-    for i in tqdm(indices, desc=f"Extracting {label} features"):
+    for j, i in enumerate(tqdm(indices, desc=f"Extracting {label} features")):
         img_pixel, _ = dataset[int(i)]  # pixel [0,1] space
 
-        if art_attack is not None:
+        if adv_cache is not None:
+            # Use pre-generated adversarial from batch cache
+            img_tensor = _NORMALIZE(torch.tensor(adv_cache[j]))
+            img_for_dct = torch.tensor(adv_cache[j])
+        elif art_attack is not None:
             x_np = img_pixel.unsqueeze(0).numpy()
             try:
                 x_adv_np = art_attack.generate(x_np)
@@ -340,14 +397,15 @@ def train_ensemble_scorer(
         # Square: gradient-free black-box; 1000 queries is enough for training
         # signal (eval uses 5000). Lower budget keeps training time reasonable.
         'Square': SquareAttack(
-            art_clf, eps=fgsm_eps, max_iter=1000, batch_size=1, verbose=False),
+            art_clf, eps=fgsm_eps, max_iter=1000, batch_size=64, verbose=False),
     }
     if include_cw:
         # CW max_iter / binary_search_steps reduced vs eval for training-time
         # budget; still produces in-distribution L2 adversarials for logistic fit.
+        # batch_size=64 matches gen_chunk for full GPU utilization.
         attacks['CW'] = CarliniL2Method(
             art_clf, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
-            binary_search_steps=cw_bss, batch_size=1,
+            binary_search_steps=cw_bss, batch_size=64,
         )
     if include_autoattack:
         # APGD-CE slice only (fastest component); full AutoAttack ensemble is
@@ -389,12 +447,26 @@ def train_ensemble_scorer(
     per_attack_shapes = {}
     for atk_name in attack_names:
         n_atk = counts[atk_name]
-        print(f"\nExtracting {n_atk} {atk_name} adversarial features "
+        atk_indices = adv_pool[off: off + n_atk]
+
+        # Phase 1: Batch-generate all adversarials on GPU in chunks.
+        # CW with batch_size=1 at 10.7s/img × 615 images = ~1.8h per-sample.
+        # Batched at gen_chunk=128: ~30-60s total. Same math, just parallelized.
+        print(f"\nBatch-generating {n_atk} {atk_name} adversarials "
               f"(eps={fgsm_eps:.6f})...", flush=True)
+        adv_cache = _batch_generate_adversarials(
+            attacks[atk_name], pixel_dataset, atk_indices,
+            label=f'{atk_name} adv',
+            gen_chunk=64 if atk_name == 'CW' else 128,
+        )
+
+        # Phase 2: Extract TDA features from pre-generated adversarials.
+        # TDA persistence is CPU-bound and per-image; cannot be batched.
+        print(f"Extracting {n_atk} {atk_name} TDA features...", flush=True)
         X_atk, W_atk = _extract_features(
-            adv_pool[off: off + n_atk], pixel_dataset, model, extractor, profiler,
+            atk_indices, pixel_dataset, model, extractor, profiler,
             base_scorer, ref_profiles, device,
-            art_attack=attacks[atk_name], label=f'{atk_name} adv',
+            adv_cache=adv_cache, label=f'{atk_name} adv',
             use_grad_norm=use_grad_norm,
             use_softmax_entropy=use_softmax_entropy,
         )
