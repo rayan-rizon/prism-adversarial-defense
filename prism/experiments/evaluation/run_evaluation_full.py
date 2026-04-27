@@ -122,6 +122,118 @@ class _NormalizedResNet(torch.nn.Module):
         return self._model((x - self._mean) / self._std)
 
 
+def _atanh_stable(x: torch.Tensor) -> torch.Tensor:
+    x = torch.clamp(x, -0.999999, 0.999999)
+    return 0.5 * torch.log((1.0 + x) / (1.0 - x))
+
+
+def _cw_l2_attack_torch(
+    norm_model: torch.nn.Module,
+    x_pixel: torch.Tensor,
+    device: torch.device,
+    max_iter: int = 40,
+    binary_search_steps: int = 5,
+    learning_rate: float = 0.01,
+    confidence: float = 0.0,
+    initial_const: float = 0.01,
+) -> tuple[torch.Tensor, dict]:
+    """
+    Native PyTorch untargeted C&W-L2 attack.
+
+    This is the standard tanh-space Carlini-Wagner objective:
+        min ||x' - x||_2^2 + c * max(logit_y - max_{i!=y} logit_i + kappa, 0)
+
+    ART's NumPy-driven implementation is correct but very slow for this
+    evaluator because every optimisation step bounces tensors through the ART
+    estimator interface. This path keeps the entire optimisation on GPU while
+    preserving the same labels, confidence=0 default, binary search over c,
+    and per-sample best-adversarial tracking.
+    """
+    norm_model.eval()
+    x = x_pixel.detach().to(device).clamp(0.0, 1.0)
+    batch = x.size(0)
+
+    with torch.no_grad():
+        y = norm_model(x).argmax(dim=1)
+
+    w_orig = _atanh_stable(x * 2.0 - 1.0)
+    lower = torch.zeros(batch, device=device)
+    upper = torch.full((batch,), float('inf'), device=device)
+    const = torch.full((batch,), float(initial_const), device=device)
+
+    best_l2 = torch.full((batch,), float('inf'), device=device)
+    best_adv = x.clone()
+    best_success = torch.zeros(batch, dtype=torch.bool, device=device)
+
+    total_steps = 0
+    for _ in range(binary_search_steps):
+        w = w_orig.clone().detach().requires_grad_(True)
+        opt = torch.optim.Adam([w], lr=learning_rate)
+        step_success = torch.zeros(batch, dtype=torch.bool, device=device)
+
+        for _iter in range(max_iter):
+            adv = 0.5 * (torch.tanh(w) + 1.0)
+            logits = norm_model(adv)
+
+            real = logits.gather(1, y.view(-1, 1)).squeeze(1)
+            mask = torch.nn.functional.one_hot(y, num_classes=logits.size(1)).bool()
+            other = logits.masked_fill(mask, -1e9).max(dim=1).values
+            margin = torch.clamp(real - other + confidence, min=0.0)
+            l2 = (adv - x).flatten(1).pow(2).sum(dim=1)
+            loss = (l2 + const * margin).sum()
+
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step()
+            total_steps += 1
+
+            with torch.no_grad():
+                adv_updated = 0.5 * (torch.tanh(w) + 1.0)
+                logits_updated = norm_model(adv_updated)
+                pred = logits_updated.argmax(dim=1)
+                success = pred.ne(y)
+                l2_updated = (adv_updated - x).flatten(1).pow(2).sum(dim=1)
+                improved = success & (l2_updated < best_l2)
+                if improved.any():
+                    best_l2[improved] = l2_updated[improved]
+                    best_adv[improved] = adv_updated.detach()[improved]
+                    best_success[improved] = True
+                step_success |= success
+
+        with torch.no_grad():
+            upper = torch.where(step_success, torch.minimum(upper, const), upper)
+            lower = torch.where(step_success, lower, torch.maximum(lower, const))
+            has_upper = torch.isfinite(upper)
+            bisected = (lower + upper) / 2.0
+            const = torch.where(
+                has_upper,
+                bisected,
+                torch.where(step_success, const, const * 10.0),
+            )
+
+    l2_out = torch.where(best_success, best_l2, torch.zeros_like(best_l2))
+    stats = {
+        'attack_success': int(best_success.sum().item()),
+        'batch_size': int(batch),
+        'total_optimizer_steps': int(total_steps),
+        'mean_l2_success': (
+            float(best_l2[best_success].sqrt().mean().item())
+            if best_success.any() else None
+        ),
+        'max_l2_success': (
+            float(best_l2[best_success].sqrt().max().item())
+            if best_success.any() else None
+        ),
+        'mean_l2_all': float(l2_out.sqrt().mean().item()),
+        'success_mask': best_success.detach().cpu().numpy().astype(bool),
+        'success_l2': (
+            best_l2[best_success].sqrt().detach().cpu().numpy()
+            if best_success.any() else np.array([], dtype=np.float32)
+        ),
+    }
+    return best_adv.detach().clamp(0.0, 1.0), stats
+
+
 def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple:
     """
     Wilson score 95% confidence interval for a proportion k/n.
@@ -200,6 +312,10 @@ def run_evaluation_full(
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
+    cw_engine: str = 'torch',
+    skip_latency: bool = False,
+    latency_only: bool = False,
+    allow_cpu_cw: bool = False,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
@@ -286,12 +402,9 @@ def run_evaluation_full(
             max_iter=40,
             num_random_init=1,
         ),
-        # CW-L2: batch_size=256 per P0.1 (publishability plan) so the 40-iter
-        # × 5-binary-search config completes within the GPU budget. Prior
-        # batch_size=64/128 left significant GPU idle time (verified by
-        # nvidia-smi); 256 fills a 5090-class card. On smaller GPUs reduce
-        # --cw-chunk and batch_size proportionally. verbose=True keeps ART's
-        # per-step loss logging so convergence can be inspected post-hoc.
+        # ART CW is kept as a compatibility fallback. The default evaluator
+        # uses the native PyTorch CW path below, which avoids ART's NumPy/GPU
+        # transfer overhead and exposes chunk-level progress in the logs.
         'CW': lambda: CarliniL2Method(
             classifier, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
             binary_search_steps=cw_bss, batch_size=256, verbose=True,
@@ -301,16 +414,23 @@ def run_evaluation_full(
         ),
     }
 
-    attacks_to_run = attacks_to_run or ['FGSM', 'PGD', 'CW', 'Square']
+    if attacks_to_run is None:
+        attacks_to_run = ['FGSM', 'PGD', 'CW', 'Square']
     # CW warning: slow on CPU, fast on GPU (ART classifier now follows device)
     if 'CW' in attacks_to_run and device.type == 'cpu' and n_test > 50:
-        print("⚠  CW on CPU with n>50 will be very slow (~285s/sample). "
-              "Use a GPU instance or pass --attacks FGSM PGD Square.")
+        msg = ("CW on CPU with n>50 is not a publishable run configuration "
+               "(~285s/sample observed historically). Use CUDA or pass "
+               "--allow-cpu-cw only for smoke/debug runs.")
+        if allow_cpu_cw:
+            print(f"⚠  {msg}")
+        else:
+            print(f"ERROR: {msg}")
+            sys.exit(1)
     elif 'CW' in attacks_to_run and device.type == 'cuda':
-        _cw_est = n_test * cw_max_iter * cw_bss * 0.003  # rough estimate: 3ms per iter per sample
+        _cw_est = n_test * cw_max_iter * cw_bss * 0.003  # optimistic lower bound
         print(f"✅ CW running on {device_type.upper()} (ART classifier on GPU)")
         print(f"   CW params: max_iter={cw_max_iter}, bss={cw_bss}, "
-              f"estimated ~{_cw_est/60:.0f} min per seed")
+              f"engine={cw_engine}, optimistic lower-bound ~{_cw_est/60:.0f} min per seed")
 
     # ── Dataset (held-out eval split) — dispatch on DATASET ────────────────────
     pixel_dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
@@ -319,8 +439,31 @@ def run_evaluation_full(
     sample_idx = rng.choice(eval_indices, n_eval, replace=False)
 
     # ── Latency benchmark ──────────────────────────────────────────────────────
-    norm_dataset_for_bench = load_test_dataset(root=data_root, download=False, transform=_PIXEL_TRANSFORM)
-    latency = run_latency_benchmark(prism_base, norm_dataset_for_bench, device)
+    if skip_latency:
+        latency = {'skipped': True}
+        print("\nLatency benchmark skipped (--skip-latency).")
+    else:
+        norm_dataset_for_bench = load_test_dataset(root=data_root, download=False, transform=_PIXEL_TRANSFORM)
+        latency = run_latency_benchmark(prism_base, norm_dataset_for_bench, device)
+
+    if latency_only:
+        results = {
+            '_meta': {
+                'n_test':       n_test,
+                'n_actual':     int(len(sample_idx)),
+                'eval_split':   f'CIFAR-10 test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+                'seed':         seed,
+                'attacks':      [],
+                'latency':      latency,
+                'device':       str(device),
+                'ensemble':     _ens_meta,
+            }
+        }
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2)
+        print(f"\nLatency-only results saved → {output_path}")
+        return results
 
     # ── Per-attack evaluation ──────────────────────────────────────────────────
     results = {}
@@ -344,7 +487,8 @@ def run_evaluation_full(
         print(f"Attack: {attack_name}")
         print(f"{'='*60}")
 
-        attack = all_attacks[attack_name]()
+        use_torch_cw = attack_name == 'CW' and cw_engine == 'torch'
+        attack = None if use_torch_cw else all_attacks[attack_name]()
 
         prism_attack = PRISM.from_saved(
             model=model,
@@ -371,42 +515,135 @@ def run_evaluation_full(
         # internally per generate() call. With gen_chunk=128 that's 128 images
         # × 100 iter × 9 bss = ~15-30 min of silence. Force gen_chunk=8 for
         # CW to get progress every ~8 samples (~30-60 sec per chunk).
+        cw_generation_stats = None
+        cw_success_mask_np = None
         if gen_chunk is not None:
             _bs = gen_chunk
+        elif use_torch_cw:
+            _bs = cw_chunk
         elif attack_name == 'CW':
             _bs = cw_chunk  # CW-specific: configurable chunk for GPU batch parallelism
         else:
             _bs = getattr(attack, '_batch_size', None) or getattr(attack, 'batch_size', None) or 32
         if attack_name == 'CW':
-            _est_per_img = cw_max_iter * cw_bss * 0.003  # ~3ms per iter per sample on GPU
+            _est_per_img = cw_max_iter * cw_bss * 0.003  # optimistic lower bound
             _est_chunk = _est_per_img * _bs
-            print(f"  CW generation: chunk={_bs}, ~{_est_chunk:.0f}s per chunk, "
-                  f"~{_est_per_img * len(X_pixel_np) / 60:.0f} min total", flush=True)
+            print(f"  CW generation: engine={cw_engine}, chunk={_bs}, "
+                  f"optimistic lower-bound ~{_est_chunk:.0f}s per chunk, "
+                  f"~{_est_per_img * len(X_pixel_np) / 60:.0f} min total. "
+                  "Actual timing is printed after every chunk.", flush=True)
         print(f"  Generating {len(sample_idx)} adversarial examples "
               f"(chunk={_bs})...", flush=True)
         X_adv_np = np.zeros_like(X_pixel_np)
         _t_gen0 = time.perf_counter()
-        try:
-            for _c_start in range(0, len(X_pixel_np), _bs):
-                _c_end = min(_c_start + _bs, len(X_pixel_np))
-                X_adv_np[_c_start:_c_end] = attack.generate(X_pixel_np[_c_start:_c_end])
-                _dt = time.perf_counter() - _t_gen0
-                _per = _dt / max(_c_end, 1)
-                _eta = _per * (len(X_pixel_np) - _c_end)
-                print(f"    [gen] {_c_end}/{len(X_pixel_np)} "
-                      f"elapsed={_dt:.1f}s  rate={_per:.2f}s/img  eta={_eta:.1f}s",
-                      flush=True)
-        except Exception as e:
-            print(f"  Chunked generation failed ({e}), "
-                  f"falling back to per-sample...", flush=True)
-            for idx_i, x_np_i in enumerate(tqdm(X_pixel_np, desc="  fallback")):
-                try:
-                    X_adv_np[idx_i] = attack.generate(x_np_i[np.newaxis])[0]
-                except Exception as e2:
-                    X_adv_np[idx_i] = x_np_i
-                    print(f"    Sample {idx_i} failed: {e2}", flush=True)
+        cw_success_total = 0
+        cw_l2_success = []
+        cw_chunk_timings = []
+        cw_success_mask_parts = []
+        if use_torch_cw and device.type == 'cuda':
+            torch.cuda.reset_peak_memory_stats(device)
+        _c_start = 0
+        _cur_bs = max(1, int(_bs))
+        while _c_start < len(X_pixel_np):
+            _c_end = min(_c_start + _cur_bs, len(X_pixel_np))
+            _chunk_t0 = time.perf_counter()
+            try:
+                if use_torch_cw:
+                    x_chunk = torch.tensor(
+                        X_pixel_np[_c_start:_c_end], device=device, dtype=torch.float32
+                    )
+                    adv_chunk, cw_stats = _cw_l2_attack_torch(
+                        norm_model,
+                        x_chunk,
+                        device,
+                        max_iter=cw_max_iter,
+                        binary_search_steps=cw_bss,
+                        learning_rate=0.01,
+                        confidence=0.0,
+                    )
+                    X_adv_np[_c_start:_c_end] = adv_chunk.cpu().numpy()
+                    cw_success_total += int(cw_stats['attack_success'])
+                    cw_success_mask_parts.append(cw_stats['success_mask'])
+                    if len(cw_stats['success_l2']) > 0:
+                        cw_l2_success.extend(float(v) for v in cw_stats['success_l2'])
+                else:
+                    X_adv_np[_c_start:_c_end] = attack.generate(X_pixel_np[_c_start:_c_end])
+
+            except RuntimeError as e:
+                if (
+                    use_torch_cw
+                    and device.type == 'cuda'
+                    and 'out of memory' in str(e).lower()
+                    and _cur_bs > 1
+                ):
+                    if 'x_chunk' in locals():
+                        del x_chunk
+                    torch.cuda.empty_cache()
+                    _new_bs = max(1, _cur_bs // 2)
+                    print(f"    [gen] CUDA OOM at chunk={_cur_bs}; "
+                          f"retrying from {_c_start} with chunk={_new_bs}",
+                          flush=True)
+                    _cur_bs = _new_bs
+                    continue
+                raise
+
+            _dt = time.perf_counter() - _t_gen0
+            _chunk_dt = time.perf_counter() - _chunk_t0
+            _per = _dt / max(_c_end, 1)
+            _eta = _per * (len(X_pixel_np) - _c_end)
+            extra = ""
+            if use_torch_cw:
+                extra = f"  base_attack_success={cw_success_total}/{_c_end}"
+                cw_chunk_timings.append({
+                    'start': int(_c_start),
+                    'end': int(_c_end),
+                    'chunk_size': int(_c_end - _c_start),
+                    'elapsed_s': round(float(_chunk_dt), 2),
+                    'cumulative_elapsed_s': round(float(_dt), 2),
+                    'rate_s_per_img': round(float(_chunk_dt / max(_c_end - _c_start, 1)), 4),
+                    'base_attack_success_cumulative': int(cw_success_total),
+                })
+            print(f"    [gen] {_c_end}/{len(X_pixel_np)} "
+                  f"elapsed={_dt:.1f}s  rate={_per:.2f}s/img  eta={_eta:.1f}s"
+                  f"{extra}", flush=True)
+            _c_start = _c_end
+
+        if use_torch_cw:
+            cw_success_mask_np = (
+                np.concatenate(cw_success_mask_parts).astype(bool)
+                if cw_success_mask_parts else np.zeros(len(X_pixel_np), dtype=bool)
+            )
+            cw_l2_arr = np.array(cw_l2_success, dtype=np.float32)
+            cuda_peak_mb = None
+            if device.type == 'cuda':
+                cuda_peak_mb = round(
+                    float(torch.cuda.max_memory_allocated(device) / (1024 ** 2)), 2
+                )
+            cw_generation_stats = {
+                'engine': 'torch',
+                'base_attack_success': cw_success_total,
+                'base_attack_success_rate': round(
+                    cw_success_total / max(len(X_pixel_np), 1), 4
+                ),
+                'mean_success_l2': (
+                    round(float(cw_l2_arr.mean()), 6) if cw_l2_arr.size else None
+                ),
+                'max_success_l2': (
+                    round(float(cw_l2_arr.max()), 6) if cw_l2_arr.size else None
+                ),
+                'chunk_timings': cw_chunk_timings,
+                'initial_chunk': int(_bs),
+                'final_chunk': int(_cur_bs),
+                'max_iter': cw_max_iter,
+                'binary_search_steps': cw_bss,
+                'confidence': 0.0,
+                'learning_rate': 0.01,
+                'cuda_peak_memory_mb': cuda_peak_mb,
+            }
 
         # ── Evaluate clean + adversarial through PRISM ────────────────────────
+        cw_base_success_tp = 0
+        cw_base_success_fn = 0
         for j, img_pixel in enumerate(tqdm(all_imgs_pixel)):
             x = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
 
@@ -424,8 +661,12 @@ def run_evaluation_full(
             level_adv[lv_adv] = level_adv.get(lv_adv, 0) + 1
             if lv_adv != 'PASS':
                 tp += 1
+                if cw_success_mask_np is not None and cw_success_mask_np[j]:
+                    cw_base_success_tp += 1
             else:
                 fn += 1
+                if cw_success_mask_np is not None and cw_success_mask_np[j]:
+                    cw_base_success_fn += 1
 
             if (j + 1) % checkpoint_interval == 0:
                 _n_adv = tp + fn
@@ -467,6 +708,20 @@ def run_evaluation_full(
             'clean_level_distribution': level_clean,
             'adversarial_level_distribution': level_adv,
         }
+        if cw_generation_stats is not None:
+            _cw_success_n = cw_base_success_tp + cw_base_success_fn
+            _cw_success_tpr = cw_base_success_tp / max(_cw_success_n, 1)
+            cw_generation_stats['detector_TPR_on_base_success'] = round(_cw_success_tpr, 4)
+            cw_generation_stats['detector_TPR_on_base_success_CI_95'] = [
+                round(v, 4) for v in wilson_ci(cw_base_success_tp, _cw_success_n)
+            ]
+            cw_generation_stats['detected_base_success'] = int(cw_base_success_tp)
+            cw_generation_stats['missed_base_success'] = int(cw_base_success_fn)
+            results[attack_name]['attack_generation'] = cw_generation_stats
+            results[attack_name]['detector_TPR_on_base_success'] = round(_cw_success_tpr, 4)
+            results[attack_name]['base_attack_success_rate'] = (
+                cw_generation_stats['base_attack_success_rate']
+            )
 
         print(f"\n  TPR  = {tpr:.4f}  95% CI [{tpr_ci[0]:.4f}, {tpr_ci[1]:.4f}]"
               f"  {'✅' if tpr >= 0.90 else '❌' if tpr < 0.70 else '⚠'}")
@@ -508,8 +763,10 @@ def run_evaluation_full(
         'eps_note':     '8/255 = standard RobustBench/AutoAttack convention',
         'attacks':      attacks_to_run,
         'latency':      latency,
+        'latency_skipped': bool(skip_latency),
         'device':       str(device),
         'ensemble':     _ens_meta,
+        'cw_engine':    cw_engine,
     }
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -627,6 +884,9 @@ def run_evaluation_multiseed(
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
+    cw_engine: str = 'torch',
+    skip_latency: bool = False,
+    allow_cpu_cw: bool = False,
 ):
     """
     Run run_evaluation_full() over multiple seeds and aggregate statistics.
@@ -672,10 +932,11 @@ def run_evaluation_multiseed(
         print(f"Running seed={seed}")
         print(f"{'─'*65}")
         # Each seed writes its own checkpoint file; we collect the return value.
-        seed_out = os.path.join(
-            os.path.dirname(output_path),
-            f"results_paper_seed{seed}.json",
-        )
+        out_dir = os.path.dirname(output_path)
+        out_base = os.path.basename(output_path)
+        out_stem, out_ext = os.path.splitext(out_base)
+        out_ext = out_ext or '.json'
+        seed_out = os.path.join(out_dir, f"{out_stem}_seed{seed}{out_ext}")
         result = run_evaluation_full(
             n_test=n_test,
             data_root=data_root,
@@ -691,6 +952,9 @@ def run_evaluation_multiseed(
             aa_version=aa_version,
             cw_max_iter=cw_max_iter,
             cw_bss=cw_bss,
+            cw_engine=cw_engine,
+            skip_latency=skip_latency,
+            allow_cpu_cw=allow_cpu_cw,
         )
         per_seed_results[str(seed)] = result
 
@@ -699,6 +963,9 @@ def run_evaluation_multiseed(
     for atk in attacks_to_run:
         tprs, fprs, f1s = [], [], []
         pool_tp = pool_fp = pool_fn = pool_tn = 0
+        pool_base_success = 0
+        pool_detected_base_success = 0
+        pool_missed_base_success = 0
 
         for seed_str, seed_res in per_seed_results.items():
             # run_evaluation_full() returns attack results at top level keyed by attack name
@@ -712,6 +979,10 @@ def run_evaluation_multiseed(
             pool_fp += atk_res.get('FP', 0)
             pool_fn += atk_res.get('FN', 0)
             pool_tn += atk_res.get('TN', 0)
+            gen = atk_res.get('attack_generation', {})
+            pool_base_success += int(gen.get('base_attack_success', 0) or 0)
+            pool_detected_base_success += int(gen.get('detected_base_success', 0) or 0)
+            pool_missed_base_success += int(gen.get('missed_base_success', 0) or 0)
 
         if not tprs:
             continue
@@ -731,6 +1002,20 @@ def run_evaluation_multiseed(
             'pool_TP': pool_tp, 'pool_FP': pool_fp,
             'pool_FN': pool_fn, 'pool_TN': pool_tn,
         }
+        if pool_base_success > 0:
+            aggregate[atk]['base_attack_success_rate'] = round(
+                pool_base_success / max(pool_n_adv, 1), 4
+            )
+            aggregate[atk]['detector_TPR_on_base_success'] = round(
+                pool_detected_base_success / max(pool_base_success, 1), 4
+            )
+            aggregate[atk]['detector_TPR_on_base_success_CI_95'] = [
+                round(v, 4)
+                for v in wilson_ci(pool_detected_base_success, pool_base_success)
+            ]
+            aggregate[atk]['pool_base_attack_success'] = pool_base_success
+            aggregate[atk]['pool_detected_base_success'] = pool_detected_base_success
+            aggregate[atk]['pool_missed_base_success'] = pool_missed_base_success
 
     multi_seed_output = {
         'seeds':     seeds,
@@ -742,6 +1027,8 @@ def run_evaluation_multiseed(
             'eps_255':     round(EPS_LINF_STANDARD * 255, 2),
             'eval_split':  list(EVAL_IDX),
             'attacks':     attacks_to_run,
+            'cw_engine':   cw_engine,
+            'latency_skipped': bool(skip_latency),
         },
     }
 
@@ -758,6 +1045,10 @@ def run_evaluation_multiseed(
         print(f"{atk:10} {ag['TPR_mean']:.4f}±{ag['TPR_std']:.4f}"
               f"  {ag['FPR_mean']:.4f}±{ag['FPR_std']:.4f}"
               f"  {ag['F1_mean']:.4f}±{ag['F1_std']:.4f}")
+        if 'base_attack_success_rate' in ag:
+            print(f"{'':10} base-ASR={ag['base_attack_success_rate']:.4f}"
+                  f"  detector-TPR-on-base-success="
+                  f"{ag['detector_TPR_on_base_success']:.4f}")
     print(f"{'='*65}")
 
     # ── Target metric gate ────────────────────────────────────────────────────
@@ -887,9 +1178,45 @@ if __name__ == '__main__':
                         help='Gen chunk size for CW attack. Default 128 per P0.1 '
                              'to pair with batch_size=256 for full GPU occupancy '
                              'on 5090-class cards. Lower to 64 on smaller GPUs.')
+    parser.add_argument('--cw-engine', choices=['torch', 'art'], default='torch',
+                        help='CW-L2 implementation. torch keeps the full C&W '
+                             'optimisation on GPU and is the default for '
+                             'publishable runs; art preserves the legacy ART '
+                             'CarliniL2Method path for comparison.')
+    parser.add_argument('--skip-latency', action='store_true',
+                        help='Skip PRISM latency benchmark. Use this for '
+                             'parallel attack jobs so timing is measured in a '
+                             'standalone, uncontended process.')
+    parser.add_argument('--latency-only', action='store_true',
+                        help='Run only the PRISM latency benchmark and write '
+                             'metadata to --output.')
+    parser.add_argument('--allow-cpu-cw', action='store_true',
+                        help='Allow CW on CPU for smoke/debug runs. Paper '
+                             'runs should use CUDA.')
     args = parser.parse_args()
 
-    if args.multi_seed:
+    if args.latency_only:
+        run_evaluation_full(
+            n_test=args.n_test,
+            data_root=args.data_root,
+            output_path=args.output,
+            attacks_to_run=[],
+            seed=args.seed,
+            checkpoint_interval=args.checkpoint_interval,
+            device_str=args.device,
+            square_max_iter=args.square_max_iter,
+            gen_chunk=args.gen_chunk,
+            cw_chunk=args.cw_chunk,
+            aa_chunk=args.aa_chunk,
+            aa_version=args.aa_version,
+            cw_max_iter=args.cw_max_iter,
+            cw_bss=args.cw_bss,
+            cw_engine=args.cw_engine,
+            skip_latency=False,
+            latency_only=True,
+            allow_cpu_cw=args.allow_cpu_cw,
+        )
+    elif args.multi_seed:
         run_evaluation_multiseed(
             seeds=args.seeds,
             n_test=args.n_test,
@@ -905,6 +1232,9 @@ if __name__ == '__main__':
             aa_version=args.aa_version,
             cw_max_iter=args.cw_max_iter,
             cw_bss=args.cw_bss,
+            cw_engine=args.cw_engine,
+            skip_latency=args.skip_latency,
+            allow_cpu_cw=args.allow_cpu_cw,
         )
     else:
         run_evaluation_full(
@@ -922,4 +1252,7 @@ if __name__ == '__main__':
             aa_version=args.aa_version,
             cw_max_iter=args.cw_max_iter,
             cw_bss=args.cw_bss,
+            cw_engine=args.cw_engine,
+            skip_latency=args.skip_latency,
+            allow_cpu_cw=args.allow_cpu_cw,
         )

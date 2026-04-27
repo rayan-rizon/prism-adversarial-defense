@@ -43,6 +43,7 @@ N_TEST=1000
 CW_MAX_ITER=40
 CW_BSS=5
 CW_CHUNK=128   # bs=256 for research-plan P0.1 (was 64 for bs=128 legacy)
+CW_ENGINE=torch
 
 # Adaptive-PGD expanded sweep (P1.4): λ ∈ {0, 0.5, 1, 2, 5, 10} with 100-step /
 # 10-restart PGD variant. EOT=1 (hash subsample is deterministic; one EOT pass
@@ -346,6 +347,18 @@ print(f'  calibrator.pkl SHA256:      {h(\"models/calibrator.pkl\")}')
 print(f'  reference_profiles.pkl SHA: {h(\"models/reference_profiles.pkl\")}')
 "
 
+# ── Standalone latency benchmark ─────────────────────────────────────────────
+# Attack jobs below run in parallel and intentionally skip latency measurement
+# so wall-clock timings are not contaminated by GPU contention from CW/AA/PGD.
+echo ""
+echo "=== Step 4b: Standalone Latency Benchmark ==="
+python experiments/evaluation/run_evaluation_full.py \
+  --n-test 200 \
+  --latency-only \
+  --output experiments/evaluation/results_latency_standalone.json \
+  2>&1 | tee logs/step4b_latency.log
+echo "Step 4b: DONE"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Steps 5 + 6 + 7: FULL PARALLEL LAUNCH
 # ══════════════════════════════════════════════════════════════════════════════
@@ -389,6 +402,8 @@ python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
   --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
+  --cw-engine $CW_ENGINE \
+  --skip-latency \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_cw_n${N_TEST}_ms5.json \
   2>&1 | tee logs/step5_cw_ms5.log &
@@ -401,6 +416,7 @@ python experiments/evaluation/run_evaluation_full.py \
   --multi-seed --seeds $SEEDS \
   --gen-chunk 128 --square-max-iter 5000 \
   --aa-version standard --aa-chunk 64 \
+  --skip-latency \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_fast_n${N_TEST}_ms5.json \
   2>&1 | tee logs/step5_fast_ms5.log &
@@ -768,10 +784,11 @@ out = {
   'ensemble_sha256_16':        h('models/ensemble_scorer.pkl'),
   'calibrator_sha256_16':      h('models/calibrator.pkl'),
   'reference_profiles_sha256_16': h('models/reference_profiles.pkl'),
+  'latency_result_file':        'experiments/evaluation/results_latency_standalone.json',
   'seeds':                     [42, 123, 456, 789, 999],
   'eval_split':                'CIFAR-10 test idx 8000-9999',
   'eps_linf':                  8.0/255,
-  'cw_eval_params':            {'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'batch_size': 256, 'confidence': 0.0},
+  'cw_eval_params':            {'engine': '$CW_ENGINE', 'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'chunk': $CW_CHUNK, 'confidence': 0.0},
   'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1},
   'fgsm_oversample':           $FGSM_OVERSAMPLE,
   'baselines_methods':         ['lid', 'mahalanobis', 'odin', 'energy'],

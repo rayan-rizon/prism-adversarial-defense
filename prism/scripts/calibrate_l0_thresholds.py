@@ -225,10 +225,16 @@ def calibrate_l0_thresholds(
         [clean_scores[:n_clean_prefix], adv_scores]
     )
 
+    # Expanded grid (210 cells): the prior 48-cell grid (hr ∈ {1/50…1/10},
+    # arp ∈ {0.45…0.75}, ws ∈ {25,35,50}) had every cell exceed the 1% clean
+    # FPR budget — at hr ≥ 1/50 with arp ≤ 0.55, BOCPD fires on ~63% of clean
+    # steps because score variance (std≈0.74) regularly crosses the alert
+    # boundary. The expanded grid adds more conservative values (lower hr,
+    # higher arp, longer warmup) so a feasible cell exists.
     grid = []
-    for hr in (1/50, 1/30, 1/20, 1/10):
-        for arp in (0.45, 0.55, 0.65, 0.75):
-            for ws in (25, 35, 50):
+    for hr in (1/500, 1/200, 1/100, 1/50, 1/30, 1/20, 1/10):
+        for arp in (0.55, 0.65, 0.75, 0.85, 0.95, 0.99):
+            for ws in (35, 50, 75, 100, 150):
                 grid.append({
                     'hazard_rate': hr,
                     'alert_run_prob': arp,
