@@ -166,8 +166,8 @@ if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-fe
     --fgsm-oversample $FGSM_OVERSAMPLE \
     --include-cw \
     --include-autoattack \
-    --cw-max-iter 30 \
-    --cw-bss 3 \
+    --cw-max-iter 40 \
+    --cw-bss 5 \
     --no-tda-features \
     --output models/ensemble_no_tda.pkl \
     > logs/step2c_retrain_no_tda.log 2>&1 &
@@ -200,8 +200,8 @@ python scripts/train_ensemble_scorer.py \
   --fgsm-oversample $FGSM_OVERSAMPLE \
   --include-cw \
   --include-autoattack \
-  --cw-max-iter 30 \
-  --cw-bss 3 \
+  --cw-max-iter 40 \
+  --cw-bss 5 \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/step2_retrain.log)
 STEP2_EXIT=${PIPESTATUS[0]:-$?}
@@ -216,7 +216,7 @@ fi
 
 # ── Step 2b: Post-retrain verification ────────────────────────────────────────
 # Verifies CW and AutoAttack are in the training mix, grad-norm is OFF,
-# and feature dimension is 37 (36 persistence + 1 DCT, no grad-norm).
+# softmax-entropy is ON, and feature dimension is 38 (36 TDA + 1 DCT + 1 softmax-entropy).
 echo ""
 echo "=== Step 2b: Retrain Verification ==="
 python -c "
@@ -230,12 +230,13 @@ if not isinstance(d, dict):
     sys.exit(1)
 ta = list(d.get('training_attacks', []))
 ng = bool(d.get('use_grad_norm', False))
+se = bool(d.get('use_softmax_entropy', False))
 # n_features is now saved explicitly; fall back to computing from flags for
 # any pkl created before this fix was deployed (backward-compatible).
 nf = d.get('n_features')
 if nf is None:
     base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
-    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('use_grad_norm', False))
 errors = []
 if 'CW' not in ta:
     errors.append(f'CW missing from training_attacks: {ta}')
@@ -243,14 +244,16 @@ if 'AutoAttack' not in ta:
     errors.append(f'AutoAttack missing from training_attacks: {ta}')
 if ng:
     errors.append('use_grad_norm=True — grad-norm must be OFF (reverted, see regression_analysis_20260422.md)')
-if nf != 37:
-    errors.append(f'n_features={nf}, expected 37 (36 persistence + 1 DCT)')
+if not se:
+    errors.append('use_softmax_entropy=False — softmax-entropy must be ON for CW-L2 detection')
+if nf != 38:
+    errors.append(f'n_features={nf}, expected 38 (36 TDA + 1 DCT + 1 softmax-entropy)')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
     for err in errors: print(f'  • {err}')
     sys.exit(1)
 print(f'[OK] Retrain verified: training_attacks={ta}')
-print(f'[OK] use_grad_norm={ng}, n_features={nf}')
+print(f'[OK] use_grad_norm={ng}, use_softmax_entropy={se}, n_features={nf}')
 "
 if [ $? -ne 0 ]; then
   echo "ERROR: Post-retrain verification failed. Fix and re-run Step 2."; exit 1
@@ -426,9 +429,10 @@ echo "  Step 5B FGSM+PGD+Square+AA started (PID=$PID_FAST)"
 # ── Step 6: Adaptive PGD — all 5 seeds ───────────────────────────────────────
 # Use indexed arrays (bash 3+ compatible) instead of declare -A (bash 4+ only).
 echo ""
-echo "  Launching Step 6 adaptive PGD seeds..."
+echo "  Launching Step 6 adaptive PGD seeds (max 2 parallel to reduce GPU contention)..."
 STEP6_PIDS=""
 STEP6_SEEDS=""
+count=0
 for s in $SEEDS; do
   # Research-plan P1.4: expanded λ sweep, 100-step × 10-restart PGD, EOT=1 (hash
   # subsample is deterministic; one EOT pass is sufficient to verify).
@@ -449,9 +453,16 @@ for s in $SEEDS; do
       --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
       2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
   fi
-  STEP6_PIDS="$STEP6_PIDS $!"
+  pid=$!
+  STEP6_PIDS="$STEP6_PIDS $pid"
   STEP6_SEEDS="$STEP6_SEEDS $s"
-  echo "  Step 6 seed=$s started (PID=$!)"
+  echo "  Step 6 seed=$s started (PID=$pid)"
+  count=$((count+1))
+
+  # Simple stagger: wait for the second process of the pair before launching the next pair
+  if [ $((count % 2)) -eq 0 ]; then
+    wait $pid
+  fi
 done
 
 # ── Step 7: Ablation ─────────────────────────────────────────────────────────
@@ -460,7 +471,7 @@ echo ""
 python experiments/ablation/run_ablation_paper.py \
   --n $N_TEST \
   --multi-seed --seeds $SEEDS \
-  --attacks FGSM PGD Square \
+  --attacks FGSM PGD Square CW \
   2>&1 | tee logs/step7_ablation.log &
 PID_ABLATION=$!
 echo "  Step 7 ablation started (PID=$PID_ABLATION)"
@@ -780,6 +791,7 @@ out = {
   'ensemble_training_n':       int(e.get('training_n') or 0),
   'ensemble_n_features':       e.get('n_features'),
   'ensemble_use_dct':          e.get('use_dct'),
+  'ensemble_use_softmax_entropy': e.get('use_softmax_entropy'),
   'ensemble_use_grad_norm':    e.get('use_grad_norm'),
   'ensemble_sha256_16':        h('models/ensemble_scorer.pkl'),
   'calibrator_sha256_16':      h('models/calibrator.pkl'),

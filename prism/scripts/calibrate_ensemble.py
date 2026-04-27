@@ -105,6 +105,7 @@ def calibrate_ensemble(
     def get_ensemble_scores(idx_range, label):
         scores = []
         _use_dct = getattr(ensemble, 'use_dct', False)
+        _use_se  = getattr(ensemble, 'use_softmax_entropy', False)
         for i in tqdm(range(idx_range[0], idx_range[1]), desc=f"Scoring {label}"):
             img, _ = dataset[i]
             x = img.unsqueeze(0).to(device)
@@ -114,7 +115,13 @@ def calibrate_ensemble(
                 act_np = acts[layer].squeeze(0).cpu().numpy()
                 dgms[layer] = profiler.compute_diagram(act_np)
             img_np = img.numpy() if _use_dct else None
-            s = ensemble.score(dgms, image=img_np)
+            # Compute model logits for softmax-entropy feature (CW-L2 detection).
+            logits_np = None
+            if _use_se:
+                with torch.no_grad():
+                    logits_out = model(x)
+                logits_np = logits_out.squeeze(0).cpu().numpy()
+            s = ensemble.score(dgms, image=img_np, logits=logits_np)
             scores.append(s)
         return np.array(scores, dtype=np.float32)
 

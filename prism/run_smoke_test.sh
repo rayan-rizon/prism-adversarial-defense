@@ -3,7 +3,8 @@
 # PRISM — Local Smoke Test (CPU, n≈300-500)
 # =============================================================================
 # Purpose: Validate that the FGSM/Square TPR fix (fgsm-oversample=2.5, no
-#          grad-norm, 37 features) works before spending GPU hours on Vast.ai.
+#          grad-norm, 38 features incl. softmax-entropy) works before spending
+#          GPU hours on Vast.ai.
 #
 # PARITY TABLE — every param must match run_vastai_full.sh unless marked LOCAL:
 # ┌───────────────────────────────┬──────────────┬──────────────┬───────┐
@@ -15,8 +16,8 @@
 # │ include-cw (train)            │ YES           │ NO  (slow)   │ LOCAL │
 # │ include-autoattack (train)    │ YES           │ NO  (missing)│ LOCAL │
 # │ n-train                       │ 4000          │ 500          │ LOCAL │
-# │ cw-max-iter (train)           │ 30            │ —            │ LOCAL │
-# │ cw-bss (train)                │ 3             │ —            │ LOCAL │
+# │ cw-max-iter (train)           │ 40            │ —            │ LOCAL │
+# │ cw-bss (train)                │ 5             │ —            │ LOCAL │
 # │ TIER_CAL_ALPHA_FACTORS        │ L1=0.7,L2=0.7,L3=0.5 (config.py) │ SAME │ ✅ │
 # │ CONFORMAL_ALPHAS              │ L1=0.1,L2=0.03,L3=0.005 (config.py) │ SAME │ ✅ │
 # │ EPS_LINF                      │ 8/255         │ 8/255        │  ✅   │
@@ -193,8 +194,8 @@ if 'FGSM' not in ta:
 # Grad-norm must be OFF (same as Vast.ai post-regression-fix)
 if ng:
     errors.append('use_grad_norm=True — must be OFF (see regression_analysis_20260422.md)')
-if nf is not None and nf != 37:
-    errors.append(f'n_features={nf}, expected 37')
+if nf is not None and nf != 38:
+    errors.append(f'n_features={nf}, expected 38')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
     for err in errors: print(f'  • {err}')

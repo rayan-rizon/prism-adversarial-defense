@@ -160,13 +160,15 @@ class _APGDGenerator:
 
 def _extract_features(dataset_indices, dataset, model, extractor, profiler,
                       scorer, ref_profiles, device, art_attack=None,
-                      label='clean', n_max=None, use_grad_norm=False):
+                      label='clean', n_max=None, use_grad_norm=False,
+                      use_softmax_entropy=False):
     """
     Extract feature vectors AND base Wasserstein scores.
 
     Feature dimension:
-      37 = 36 persistence + 1 DCT energy (use_grad_norm=False)
-      38 = 36 persistence + 1 DCT + 1 grad_norm (use_grad_norm=True)
+      37 = 36 persistence + 1 DCT energy (use_grad_norm=False, use_softmax_entropy=False)
+      38 = 36 persistence + 1 DCT + 1 softmax_entropy (use_softmax_entropy=True)
+      39 = 36 persistence + 1 DCT + 1 softmax_entropy + 1 grad_norm (both True)
 
     Returns:
         features: (N, d) float32 feature matrix
@@ -203,10 +205,18 @@ def _extract_features(dataset_indices, dataset, model, extractor, profiler,
 
         gn = compute_input_grad_norm(model, x, device) if use_grad_norm else None
 
+        # Compute model logits for softmax-entropy feature (CW-L2 detection).
+        logits_np = None
+        if use_softmax_entropy:
+            with torch.no_grad():
+                logits_out = model(x)
+            logits_np = logits_out.squeeze(0).cpu().numpy()
+
         feat = extract_feature_vector(
             dgms, ref_profiles, LAYER_NAMES, list(DIMS),
             image=img_for_dct.numpy() if hasattr(img_for_dct, 'numpy') else img_for_dct,
             grad_norm=gn,
+            logits=logits_np,
         )
         w_score = scorer.score(dgms)
 
@@ -215,7 +225,12 @@ def _extract_features(dataset_indices, dataset, model, extractor, profiler,
 
     if features:
         return np.stack(features, axis=0), np.array(w_scores, dtype=np.float32)
-    n_feat = 38 if use_grad_norm else 37
+    # Dynamic feature count based on active flags
+    n_feat = 36 + 1  # base TDA + DCT (always on)
+    if use_softmax_entropy:
+        n_feat += 1
+    if use_grad_norm:
+        n_feat += 1
     return np.zeros((0, n_feat), dtype=np.float32), np.zeros(0, dtype=np.float32)
 
 
@@ -224,6 +239,7 @@ def train_ensemble_scorer(
     fgsm_eps: float = EPS_LINF_STANDARD,
     fgsm_oversample: float = 1.0,
     use_grad_norm: bool = False,
+    use_softmax_entropy: bool = True,
     data_root: str = './data',
     output_path: str = 'models/ensemble_scorer.pkl',
     calibrator_path: str = 'models/calibrator.pkl',
@@ -240,8 +256,11 @@ def train_ensemble_scorer(
         fgsm_oversample: Relative weight of FGSM in the adversarial training mix.
             Default 1.0 → equal tri-split (~1/3 each).
             1.5 → FGSM gets 1.5/(1.5+1+1)=37.5% of budget; helps FGSM TPR.
-        use_grad_norm: If True, append input-gradient L2 norm as 38th feature.
+        use_grad_norm: If True, append input-gradient L2 norm as a feature.
             Adds ~5ms latency per inference; requires retraining after change.
+        use_softmax_entropy: If True (default), append softmax entropy of model
+            logits as a feature. Captures CW-L2 decision-boundary proximity.
+            Adds <1ms latency; enabled by default to fix CW detection gap.
     """
     if not ART_AVAILABLE:
         print("ERROR: adversarial-robustness-toolbox not installed.")
@@ -343,6 +362,7 @@ def train_ensemble_scorer(
         clean_idx, pixel_dataset, model, extractor, profiler,
         base_scorer, ref_profiles, device, art_attack=None, label='clean',
         use_grad_norm=use_grad_norm,
+        use_softmax_entropy=use_softmax_entropy,
     )
 
     # Split adversarial budget across all active attacks by their weights.
@@ -376,6 +396,7 @@ def train_ensemble_scorer(
             base_scorer, ref_profiles, device,
             art_attack=attacks[atk_name], label=f'{atk_name} adv',
             use_grad_norm=use_grad_norm,
+            use_softmax_entropy=use_softmax_entropy,
         )
         off += n_atk
         X_adv_parts.append(X_atk)
@@ -420,6 +441,7 @@ def train_ensemble_scorer(
         dims=DIMS,
         alpha=ensemble_alpha,
         use_dct=True,
+        use_softmax_entropy=use_softmax_entropy,
         use_grad_norm=use_grad_norm,
         use_tda=not no_tda_features,
     )
@@ -515,8 +537,12 @@ if __name__ == '__main__':
                              'marginal contribution of TAMM (C1). Saves to a '
                              'separate output pkl so the main ensemble is unaffected.')
     parser.add_argument('--use-grad-norm', action='store_true',
-                        help='Append input-gradient L2 norm as 38th feature. '
+                        help='Append input-gradient L2 norm as a feature. '
                              'Improves FGSM discrimination; adds ~5ms latency.')
+    parser.add_argument('--no-softmax-entropy', action='store_true',
+                        help='Disable softmax-entropy feature (default: enabled). '
+                             'Softmax entropy captures CW-L2 decision-boundary '
+                             'proximity; disabling it regresses CW detection.')
     parser.add_argument('--data-root', default='./data')
     parser.add_argument('--output',    default=PATHS['ensemble_scorer'])
     parser.add_argument('--profile',   default=PATHS['reference_profiles'])
@@ -524,10 +550,10 @@ if __name__ == '__main__':
                         help='Add CW-L2 to training attack mix. Improves CW TPR at eval.')
     parser.add_argument('--include-autoattack', action='store_true',
                         help='Add AutoAttack-APGD-CE slice to training mix.')
-    parser.add_argument('--cw-max-iter', type=int, default=30,
-                        help='CW max_iter for training (default 30; eval uses 50).')
-    parser.add_argument('--cw-bss', type=int, default=3,
-                        help='CW binary_search_steps for training (default 3; eval uses 5).')
+    parser.add_argument('--cw-max-iter', type=int, default=40,
+                        help='CW max_iter for training (default 40, matches eval).')
+    parser.add_argument('--cw-bss', type=int, default=5,
+                        help='CW binary_search_steps for training (default 5, matches eval).')
     parser.add_argument('--fast',      action='store_true',
                         help='Quick smoke-test: n_train=150')
     args = parser.parse_args()
@@ -548,6 +574,7 @@ if __name__ == '__main__':
         fgsm_eps=args.fgsm_eps,
         fgsm_oversample=args.fgsm_oversample,
         use_grad_norm=args.use_grad_norm,
+        use_softmax_entropy=not args.no_softmax_entropy,
         data_root=args.data_root,
         output_path=args.output,
         profile_path=args.profile,

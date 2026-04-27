@@ -9,14 +9,17 @@ Feature vector: 6 stats × 2 dims (H0, H1) × 3 layers = 36 features.
   Per (layer, dim): [wasserstein_dist, total_persistence, max_persistence,
                      n_features, entropy, mean_persistence]
 Optional 37th feature: log high-frequency DCT energy (use_dct=True).
-Optional 38th feature: input-gradient L2 norm (use_grad_norm=True).
+Optional 38th feature: softmax entropy of model logits (use_softmax_entropy=True).
+Optional 39th feature: input-gradient L2 norm (use_grad_norm=True).
 
 Architecture:
-  score = α * wasserstein_score + (1-α) * logistic_score_scaled
+  score = α * wasserstein_score + (1-α) * logistic_score_centered
 
-The logistic_score_scaled is derived using data-driven normalisation constants
-(logit_shift, w_score_mean) computed from clean training data, making the
-composite score robust to dataset/model distribution shifts.
+The logistic_score_centered is derived using a data-driven shift constant
+(logit_shift) computed from clean training data.  Additive fusion ensures
+that the logistic channel contributes independently even when the
+Wasserstein channel is near-zero (e.g. CW-L2 attacks produce minimal
+activation-space distortion).
 
 Usage:
   See scripts/train_ensemble_scorer.py for offline training.
@@ -48,14 +51,18 @@ class PersistenceEnsembleScorer:
     (total_persistence, entropy, n_features, etc.) that distinguish
     adversarially-perturbed activations from clean ones at small epsilon.
 
-    Composite score formula (data-derived, no magic numbers):
+    Composite score formula (additive, data-derived):
       logit_centered = raw_logit - logit_shift   (centred on clean mean)
-      w_norm         = w_score / w_score_mean     (normalised by clean mean)
-      logit_scaled   = logit_centered * (w_norm + 1e-4)
-      score          = alpha * w_score + (1-alpha) * logit_scaled
+      score          = alpha * w_score + (1-alpha) * logit_centered
 
-    logit_shift and w_score_mean are computed from clean TRAINING data
-    and stored in the pkl, ensuring reproducibility.
+    Additive fusion keeps both channels independent: when the Wasserstein
+    channel is near-zero (CW-L2 minimal perturbation), the logistic channel
+    still contributes its full signal. The previous multiplicative coupling
+    (logit_centered * w_norm) would crush the logistic to zero in that
+    regime — the root cause of the CW TPR regression.
+
+    logit_shift is computed from clean TRAINING data and stored in the pkl,
+    ensuring reproducibility.
 
     Design constraints for publishability:
       - Trained supervised on clean vs adversarial features with an INDEPENDENT
@@ -80,6 +87,7 @@ class PersistenceEnsembleScorer:
         training_attacks: Optional[List[str]] = None,
         training_n: Optional[int] = None,
         use_dct: bool = False,
+        use_softmax_entropy: bool = False,
         use_grad_norm: bool = False,
         use_tda: bool = True,
     ):
@@ -98,6 +106,11 @@ class PersistenceEnsembleScorer:
             training_eps: L-inf epsilon used to generate adversarials during training.
             training_attacks: List of attack names used during training.
             training_n: Total number of adversarial samples used in training.
+            use_dct: If True, append DCT high-frequency energy as a feature.
+            use_softmax_entropy: If True, append softmax entropy of model
+                    logits as a feature.  Captures CW-L2 decision-boundary
+                    proximity that TDA features cannot detect.  Adds < 1ms
+                    latency (just a softmax + entropy over existing logits).
             use_grad_norm: If True, input-gradient L2 norm is appended as the final
                            feature. Adds 1 to n_features; grad_norm must be passed to
                            score() and extract_features() at inference.
@@ -123,6 +136,7 @@ class PersistenceEnsembleScorer:
         self.training_attacks = training_attacks or []
         self.training_n = training_n
         self.use_dct = use_dct
+        self.use_softmax_entropy = use_softmax_entropy
         self.use_grad_norm = use_grad_norm
         # P0.6 ablation flag: when False, the 36-dim persistence-statistics block
         # is dropped from extract_features() and alpha is expected to be 0 so
@@ -136,20 +150,25 @@ class PersistenceEnsembleScorer:
         When use_tda=False (P0.6 ablation), the persistence-stats block is
         dropped and only DCT/grad-norm features remain."""
         base = len(self.layer_names) * len(self.dims) * 6 if self.use_tda else 0
-        return base + (1 if self.use_dct else 0) + (1 if self.use_grad_norm else 0)
+        return (base
+                + (1 if self.use_dct else 0)
+                + (1 if self.use_softmax_entropy else 0)
+                + (1 if self.use_grad_norm else 0))
 
     def extract_features(
         self,
         diagrams: Dict[str, List[PersistenceDiagram]],
         image: Optional[np.ndarray] = None,
         grad_norm: Optional[float] = None,
+        logits: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """Extract feature vector. Length depends on use_tda/use_dct/use_grad_norm flags."""
+        """Extract feature vector. Length depends on use_tda/use_dct/use_softmax_entropy/use_grad_norm flags."""
         ref = self.base_scorer.ref_profiles
         full = extract_feature_vector(
             diagrams, ref, self.layer_names, self.dims,
             image=image,
             grad_norm=grad_norm if self.use_grad_norm else None,
+            logits=logits if self.use_softmax_entropy else None,
         )
         if not self.use_tda:
             # P0.6: strip the 36 leading persistence-statistics features.
@@ -176,12 +195,16 @@ class PersistenceEnsembleScorer:
         diagrams: Dict[str, List[PersistenceDiagram]],
         image: Optional[np.ndarray] = None,
         grad_norm: Optional[float] = None,
+        logits: Optional[np.ndarray] = None,
     ) -> float:
         """
         Compute composite anomaly score.
 
-        Uses data-derived normalisation (logit_shift, w_score_mean) instead of
-        hard-coded magic numbers, making the formula robust and reproducible.
+        Uses additive fusion of Wasserstein and logistic channels with a
+        data-derived logit_shift to centre the logistic on clean data.
+
+        Additive fusion ensures the logistic channel contributes its full
+        signal even when the Wasserstein channel is near-zero (CW-L2).
 
         Args:
             diagrams: Persistence diagrams keyed by layer name.
@@ -190,6 +213,9 @@ class PersistenceEnsembleScorer:
                    base Wasserstein score to avoid feature dimension mismatch.
             grad_norm: Optional pre-computed input-gradient L2 norm. Required when
                        use_grad_norm=True; if omitted, falls back to base score.
+            logits: Optional 1-D array of raw model logits (pre-softmax).
+                    Required when use_softmax_entropy=True; if omitted, falls
+                    back to base Wasserstein score.
         Returns:
             Scalar — higher means more likely adversarial.
             Falls back to base Wasserstein score if logistic is not fitted.
@@ -205,7 +231,10 @@ class PersistenceEnsembleScorer:
         if self.use_grad_norm and grad_norm is None:
             return w_score
 
-        feat = self.extract_features(diagrams, image=image, grad_norm=grad_norm)
+        if self.use_softmax_entropy and logits is None:
+            return w_score
+
+        feat = self.extract_features(diagrams, image=image, grad_norm=grad_norm, logits=logits)
         logit_prob = self._logistic_prob(feat)
 
         if not self.use_tda:
@@ -224,14 +253,11 @@ class PersistenceEnsembleScorer:
         # For adversarial inputs: logit_score >> logit_shift → logit_centered > 0
         logit_centered = logit_score - self.logit_shift
 
-        # Normalise Wasserstein by its mean on clean training data
-        w_norm = w_score / max(self.w_score_mean, 1e-4)
-
-        # Multiplicative coupling: both components reinforce each other
-        # when the input is adversarial (both logit and Wasserstein increase)
-        logit_score_scaled = logit_centered * (w_norm + 1e-4)
-
-        return self.alpha * w_score + (1.0 - self.alpha) * logit_score_scaled
+        # Additive fusion: both channels contribute independently.
+        # When both are elevated (adversarial), the sum is high.
+        # When Wasserstein is near-zero (CW-L2), the logistic still
+        # contributes its full signal — fixing the CW detection gap.
+        return self.alpha * w_score + (1.0 - self.alpha) * logit_centered
 
     def score_per_layer(
         self, diagrams: Dict[str, List[PersistenceDiagram]]
@@ -352,9 +378,8 @@ class PersistenceEnsembleScorer:
         if not self.use_tda:
             # P0.6 ablation: pure logistic, alpha must be 0 at inference.
             return logit_centered.astype(np.float32)
-        w_norm = w_scores / max(self.w_score_mean, 1e-4)
-        logit_scaled = logit_centered * (w_norm + 1e-4)
-        return (a * w_scores + (1.0 - a) * logit_scaled).astype(np.float32)
+        # Additive fusion — matches score() formula.
+        return (a * w_scores + (1.0 - a) * logit_centered).astype(np.float32)
 
     def tune_alpha(
         self,
@@ -439,6 +464,7 @@ class PersistenceEnsembleScorer:
             'alpha_tune_summary': getattr(self, 'alpha_tune_summary', None),
             # Feature engineering flags
             'use_dct': self.use_dct,
+            'use_softmax_entropy': self.use_softmax_entropy,
             'use_grad_norm': self.use_grad_norm,
             'use_tda': self.use_tda,   # P0.6 ablation flag
             'n_features': self.n_features,   # @property value; serialised for verification
@@ -468,6 +494,7 @@ class PersistenceEnsembleScorer:
             training_attacks=data.get('training_attacks'),
             training_n=data.get('training_n'),
             use_dct=data.get('use_dct', False),
+            use_softmax_entropy=data.get('use_softmax_entropy', False),
             use_grad_norm=data.get('use_grad_norm', False),
             use_tda=data.get('use_tda', True),
         )

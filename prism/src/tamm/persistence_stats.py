@@ -40,6 +40,38 @@ _ENTROPY_EPS = 1e-10
 _BIRTH_THRESHOLD = 1e-6
 
 
+def compute_softmax_entropy(logits: np.ndarray) -> float:
+    """
+    Compute entropy of the softmax distribution over model logits.
+
+    CW-L2 adversarials push inputs toward the decision boundary, producing
+    higher softmax entropy (less confident predictions) compared to clean
+    inputs.  This feature captures the signal that TDA features cannot see:
+    CW's minimal perturbation is invisible to persistence diagrams but
+    measurably changes the model's confidence distribution.
+
+    L-inf attacks (FGSM, PGD) also tend to elevate entropy, so this feature
+    is monotonically related to adversariality and will not hurt existing
+    attack detection.
+
+    Args:
+        logits: 1-D array of raw model logits (pre-softmax), any length.
+    Returns:
+        H(softmax(logits)) — scalar float >= 0.
+        Returns 0.0 if logits is None or empty.
+    """
+    if logits is None or len(logits) == 0:
+        return 0.0
+    logits = np.asarray(logits, dtype=np.float64)
+    # Numerically stable softmax
+    shifted = logits - np.max(logits)
+    exp_x = np.exp(shifted)
+    probs = exp_x / np.sum(exp_x)
+    # Entropy: -sum(p * log(p)), skipping zero entries
+    ent = -np.sum(probs * np.log(probs + 1e-12))
+    return float(ent)
+
+
 def compute_dct_energy(image: np.ndarray) -> float:
     """
     Compute log high-frequency DCT energy of an image.
@@ -150,17 +182,20 @@ def extract_feature_vector(
     dims: List[int] = (0, 1),
     image: Optional[np.ndarray] = None,
     grad_norm: Optional[float] = None,
+    logits: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
-    Build the 36-, 37-, or 38-dimensional feature vector for one input.
+    Build the feature vector for one input.
     Base: 6 stats × 2 dims × 3 layers = 36 features.
-    Optional 37th: log high-frequency DCT energy when *image* is provided.
-    Optional 38th: input-gradient L2 norm when *grad_norm* is provided.
+    Optional: log high-frequency DCT energy when *image* is provided.
+    Optional: softmax entropy when *logits* is provided.
+    Optional: input-gradient L2 norm when *grad_norm* is provided.
 
     Features ordered: for each layer, for each dim:
       [wasserstein_dist, total_persistence, max_persistence,
        n_features, entropy, mean_persistence]
     Then, if image is not None: [dct_energy].
+    Then, if logits is not None: [softmax_entropy].
     Then, if grad_norm is not None: [grad_norm].
 
     Args:
@@ -169,12 +204,13 @@ def extract_feature_vector(
         layer_names: Ordered list of layers to include.
         dims: Which homology dimensions to include (default [0, 1]).
         image: Optional (C, H, W) float32 image. When provided, appends
-               the DCT high-frequency energy as the 37th feature.
+               the DCT high-frequency energy as a feature.
         grad_norm: Optional pre-computed input-gradient L2 norm. When
-                   provided, appended as the final feature (38th when DCT
-                   is also active, 37th otherwise).
+                   provided, appended as the final feature.
+        logits: Optional 1-D array of raw model logits (pre-softmax).
+                When provided, appends the softmax entropy as a feature.
     Returns:
-        1-D float32 array of length 36, 37, or 38.
+        1-D float32 array.
     """
     features = []
     for layer in layer_names:
@@ -199,6 +235,9 @@ def extract_feature_vector(
 
     if image is not None:
         features.append(compute_dct_energy(image))
+
+    if logits is not None:
+        features.append(compute_softmax_entropy(logits))
 
     if grad_norm is not None:
         features.append(float(grad_norm))

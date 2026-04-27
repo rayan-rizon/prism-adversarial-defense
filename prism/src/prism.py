@@ -219,6 +219,7 @@ class PRISM:
         # --- Step 4: Compute anomaly score ---
         use_dct      = getattr(self.scorer, 'use_dct', False)
         use_grad_norm = getattr(self.scorer, 'use_grad_norm', False)
+        use_softmax_entropy = getattr(self.scorer, 'use_softmax_entropy', False)
 
         img_np   = x.squeeze(0).cpu().numpy() if use_dct else None
         grad_norm = None
@@ -231,7 +232,16 @@ class PRISM:
                 (grad_x,) = torch.autograd.grad(logits_g[0, pred_idx], x_g)
             grad_norm = float(grad_x.norm().item())
 
-        score = self.scorer.score(diagrams, image=img_np, grad_norm=grad_norm)
+        # Compute model logits for softmax-entropy feature (CW-L2 detection).
+        # This forward pass is cheap (~5ms) and captures decision-boundary
+        # proximity that TDA features cannot detect.
+        logits_np = None
+        if use_softmax_entropy:
+            with torch.no_grad():
+                logits_out = self.model(x)
+            logits_np = logits_out.squeeze(0).cpu().numpy()
+
+        score = self.scorer.score(diagrams, image=img_np, grad_norm=grad_norm, logits=logits_np)
         metadata['anomaly_score'] = score
         metadata['per_layer_scores'] = self.scorer.score_per_layer(diagrams)
 

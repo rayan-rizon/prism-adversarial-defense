@@ -67,7 +67,7 @@ python scripts/train_ensemble_scorer.py \
   --config $CONFIG \
   --fgsm-oversample $FGSM_OVERSAMPLE \
   --include-cw --include-autoattack \
-  --cw-max-iter 30 --cw-bss 3 \
+  --cw-max-iter 40 --cw-bss 5 \
   --output models/${TAG}/ensemble_scorer.pkl \
   2>&1 > >(tee logs/${TAG}/step2_retrain.log)
 
@@ -77,7 +77,7 @@ if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-fe
     --config $CONFIG \
     --fgsm-oversample $FGSM_OVERSAMPLE \
     --include-cw --include-autoattack \
-    --cw-max-iter 30 --cw-bss 3 \
+    --cw-max-iter 40 --cw-bss 5 \
     --no-tda-features \
     --output models/${TAG}/ensemble_no_tda.pkl \
     2>&1 > >(tee logs/${TAG}/step2c_no_tda.log) || echo "WARN: no-TDA variant failed"

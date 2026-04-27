@@ -397,7 +397,7 @@ done
 # Step 7: Ablation
 python experiments/ablation/run_ablation_paper.py \
   --n 1000 --multi-seed --seeds 42 123 456 789 999 \
-  --attacks FGSM PGD Square \
+  --attacks FGSM PGD Square CW \
   2>&1 | tee logs/ablation.log &
 PID_ABLATION=$!
 
@@ -419,8 +419,8 @@ done
 wait $PID_ABLATION && echo "Ablation: done" || echo "Ablation: FAILED"
 ```
 
-> **Note:** Ablation uses FGSM/PGD/Square only — the script does not support
-> CW/AutoAttack internally. CW and AutoAttack coverage is in Table 1 (§4.4).
+> **Note:** Ablation uses FGSM/PGD/Square/CW. The script does not support
+> AutoAttack internally. AutoAttack coverage is in Table 1 (§4.4).
 
 ---
 
@@ -670,7 +670,7 @@ PHASE 1 — ATTACKS + L0 CAL (wall-clock ≈ 2 h; CW bottleneck)
  5A.   [BG]  CW-L2 (P0.1)                       run_evaluation_full.py  40 iter×5 bss×bs=256, 5 seeds
  5B.   [BG]  FGSM+PGD+Square+AutoAttack         run_evaluation_full.py  5 seeds
  6.    [BG]  Adaptive PGD × 5 seeds in parallel  run_adaptive_pgd.py     λ sweep, 100 steps×10 restarts
- 7.    [BG]  Ablation (FGSM+PGD+Square)         run_ablation_paper.py   5 seeds
+ 7.    [BG]  Ablation (FGSM+PGD+Square+CW)      run_ablation_paper.py   5 seeds
  6b.   [BG]  L0 threshold calibration (P0.4)    calibrate_l0_thresholds.py
                 Grid-searches (hazard_rate, alert_run_prob, warmup_steps) on real scorer streams.
                 Writes models/l0_thresholds.pkl; CampaignMonitor auto-discovers + overlays it.
