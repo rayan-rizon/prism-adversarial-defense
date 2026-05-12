@@ -106,6 +106,47 @@ assert TIER_CAL_ALPHA_FACTORS.get('L3', CAL_ALPHA_FACTOR) <= 0.55, \
 print('PREFLIGHT PASS: per-tier L3=0.50 confirmed')
 "
 
+# ── Step 0a: Pretrain the CIFAR-10 ResNet-18 backbone ────────────────────────
+# Replaces the prior ImageNet-pretrained ResNet-18. Trains from scratch on
+# the CIFAR-10 training split (50k images) with the standard recipe:
+#   SGD lr=0.1 cosine→0, momentum=0.9, wd=5e-4, nesterov, 200 epochs,
+#   batch=128, augment=RandomCrop(32,pad=4)+HorizontalFlip.
+# Expected clean test accuracy: 94-95%. Wall-clock on RTX 5090: ≈ 50-70 min.
+# Output: models/cifar_resnet18.pt — loaded by every downstream stage via
+# src.models.load_backbone().  Skipped if the checkpoint already exists.
+echo ""
+echo "=== Step 0a: Pretrain CIFAR-10 ResNet-18 backbone ==="
+mkdir -p models logs
+if [ -f models/cifar_resnet18.pt ]; then
+  echo "  Skipped: models/cifar_resnet18.pt already present."
+  python -c "
+import torch
+state = torch.load('models/cifar_resnet18.pt', map_location='cpu')
+if isinstance(state, dict) and 'state_dict' in state: state = state['state_dict']
+n_params = sum(v.numel() for v in state.values())
+print(f'  Backbone parameters: {n_params/1e6:.2f} M  (expected 11.17 M for ResNet-18)')
+"
+else
+  python scripts/pretrain_cifar_backbone.py 2>&1 > >(tee logs/step0a_pretrain_backbone.log)
+  STEP0A_EXIT=${PIPESTATUS[0]:-$?}
+  if [ "$STEP0A_EXIT" -ne 0 ]; then
+    echo "ERROR: Step 0a failed. Check logs/step0a_pretrain_backbone.log"
+    echo "       Likely cause: clean test accuracy fell below the 0.93 gate."
+    echo "       Retry with --epochs 250 or --lr 0.05 if needed."
+    exit 1
+  fi
+fi
+# Post-step verification: checkpoint exists, parses, and matches expected arch.
+python -c "
+import sys, torch
+sys.path.insert(0, '.')
+from src.models import cifar_resnet18
+m = cifar_resnet18(num_classes=10, checkpoint_path='models/cifar_resnet18.pt', map_location='cpu')
+out = m(torch.zeros(1, 3, 32, 32))
+assert out.shape == (1, 10), f'unexpected output shape {out.shape}'
+print('  [OK] Backbone checkpoint loads and produces (1,10) logits.')
+" || { echo "ERROR: backbone verification failed"; exit 1; }
+
 # ── Step 1: Build reference profiles ─────────────────────────────────────────
 echo ""
 echo "=== Step 1: Build Reference Profiles [test 0-4999] ==="

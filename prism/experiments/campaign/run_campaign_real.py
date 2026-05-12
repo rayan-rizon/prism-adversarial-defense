@@ -35,7 +35,6 @@ os.environ.setdefault('SSL_CERT_FILE', certifi.where())
 os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
 ssl._create_default_https_context = ssl.create_default_context
 
-from torchvision.models import ResNet18_Weights
 
 try:
     from art.attacks.evasion import (
@@ -54,12 +53,13 @@ from src.prism import PRISM
 from src.sacd.monitor import CampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
 )
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+_PIXEL = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORM  = T.Normalize(_MEAN, _STD)
 
 
@@ -193,18 +193,18 @@ def run_campaign_real(
     print()
 
     # ── Model ──
-    backbone = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).to(device).eval()
-    wrapped = _NormalizedResNet(backbone).to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    from src.models import load_backbone
+    backbone = load_backbone(device)
+    wrapped = load_backbone(device, wrap=True)
 
     # ── ART Classifier ──
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=wrapped,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )

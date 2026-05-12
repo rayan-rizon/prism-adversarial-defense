@@ -39,7 +39,6 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -55,11 +54,13 @@ from src.cadg.calibrate import ConformalCalibrator
 from src.sacd.monitor import CampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
     CAL_IDX, VAL_IDX, EVAL_IDX,
     N_SUBSAMPLE, MAX_DIM, DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone
 
 try:
     from art.attacks.evasion import ProjectedGradientDescent
@@ -69,19 +70,15 @@ except ImportError:
     sys.exit(1)
 
 
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
-_NORMALIZE       = T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
+_NORMALIZE       = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 
 
-class _NormalizedResNet(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self._model = model
-        self.register_buffer('_mean', torch.tensor(IMAGENET_MEAN).view(3, 1, 1))
-        self.register_buffer('_std',  torch.tensor(IMAGENET_STD).view(3, 1, 1))
-
-    def forward(self, x):
-        return self._model((x - self._mean) / self._std)
+# Backward-compat alias — _NormalizedBackbone in src.models is the same wrapper.
+from src.models import _NormalizedBackbone as _NormalizedResNet
 
 
 def _compute_score_stream(
@@ -167,11 +164,11 @@ def calibrate_l0_thresholds(
           f"use_tda={ensemble.use_tda}).")
 
     # ── Model + attack ───────────────────────────────────────────────────────
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # Same CIFAR-10-trained backbone used by the rest of the pipeline.
+    model = load_backbone(device)
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
-    norm_model = _NormalizedResNet(model).to(device).eval()
+    norm_model = load_backbone(device, wrap=True)
 
     ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
     rng = np.random.RandomState(seed)
@@ -191,7 +188,7 @@ def calibrate_l0_thresholds(
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=norm_model, loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224), nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE), nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0), device_type=device_type,
     )
     attack = ProjectedGradientDescent(

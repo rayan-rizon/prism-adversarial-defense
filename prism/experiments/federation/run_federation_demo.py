@@ -26,7 +26,6 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 
 from src.prism import PRISM
 from src.memory.immune_memory import ImmuneMemory
@@ -38,14 +37,12 @@ from src.tamm.tda import TopologicalProfiler
 _MEAN = [0.485, 0.456, 0.406]
 _STD  = [0.229, 0.224, 0.225]
 _NORM = T.Normalize(_MEAN, _STD)
-_PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
+_PIXEL = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 
 
 def _make_prism(node_id: str, fed_manager: FederationManager) -> PRISM:
     """Instantiate a PRISM node with shared calibration but independent memory."""
-    model = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).eval()
+    model = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     return PRISM.from_saved(
         model=model,
         layer_names=['layer2', 'layer3', 'layer4'],
@@ -114,9 +111,7 @@ def run_federation_demo(
     time.sleep(0.1)
 
     # Create PRISM instances — 0 with fed, 1a without, 1b with
-    model_ref = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).eval()
+    model_ref = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     from src.cadg.calibrate import ConformalCalibrator
     import pickle
@@ -127,19 +122,19 @@ def run_federation_demo(
 
     from src.prism import PRISM as _PRISM
     prism0 = _PRISM(
-        model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
+        model=load_backbone(device).eval(),
         layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem0, federation_manager=fed0,
     )
     prism1_base = _PRISM(
-        model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
+        model=load_backbone(device).eval(),
         layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem1_no_fed,  # no federation
     )
     prism1_fed = _PRISM(
-        model=torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval(),
+        model=load_backbone(device).eval(),
         layer_names=['layer2', 'layer3', 'layer4'],
         calibrator=calibrator, ref_profiles=ref_profiles,
         memory=mem1_with_fed, federation_manager=fed1,
@@ -153,9 +148,7 @@ def run_federation_demo(
 
     # --- Phase 1: node-0 processes attack images, broadcasts signatures ---
     print(f"\n[Phase 1] Node-0 processes {n_attack_queries} FGSM attacks (eps={fgsm_eps})")
-    probe_model = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).eval()
+    probe_model = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     phase1_results = []
     for k, i in enumerate(indices[n_clean:n_clean + n_attack_queries]):

@@ -13,7 +13,6 @@ Key fixes from plan:
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import json
 import os
@@ -48,14 +47,17 @@ except ImportError:
 from src.prism import PRISM
 from src.cadg.calibrate import ConformalCalibrator
 from src.sacd.monitor import NoOpCampaignMonitor
-from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD, PATHS
+from src.config import LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, BACKBONE_MEAN, BACKBONE_STD, PATHS
 
 # Normalization constants from src.config (backed by configs/default.yaml)
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
 
 # Pixel-space transform for ART: [0,1]-valued tensors, clip_values correct
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 # PRISM normalization applied after attack generation
 _NORMALIZE = T.Normalize(mean=_MEAN, std=_STD)
 
@@ -98,8 +100,8 @@ def run_evaluation(
     torch.manual_seed(seed)
 
     # --- Setup model ---
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    model = load_backbone(device)
 
     # Constants from configs/default.yaml via src.config
     layer_names   = LAYER_NAMES
@@ -132,15 +134,15 @@ def run_evaluation(
     # ART operates in pixel [0,1] space; _NormalizedResNet applies normalization
     # internally so the model receives correctly-normalized activations.
     # clip_values=(0.0, 1.0) is valid because inputs are pixel-space.
-    model_art = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device).eval()
+    model_art = load_backbone(device).to(device).eval()
     _wrapped_art = _NormalizedResNet(model_art).to(device).eval()
 
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=_wrapped_art,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,  # ImageNet classes for ResNet-18
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,  # ImageNet classes for ResNet-18
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )

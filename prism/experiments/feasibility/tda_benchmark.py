@@ -12,7 +12,6 @@ Decision matrix:
 """
 import torch
 import torchvision.models as models
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import time
 import sys
@@ -37,8 +36,9 @@ def run_benchmark():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
-    model = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    from src.models import load_backbone
+    model = load_backbone(device)
 
     # 2. Register forward hooks
     activations = {}

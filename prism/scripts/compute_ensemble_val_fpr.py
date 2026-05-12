@@ -1,4 +1,4 @@
-﻿"""
+"""
 Compute Ensemble Val FPR — High-Statistical-Power FPR Report
 
 Scores the validation split (CIFAR-10 test idx 7000-7999, n=1000) through
@@ -19,7 +19,6 @@ USAGE
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import json, os, sys, ssl, certifi, math
 from tqdm import tqdm
@@ -35,14 +34,18 @@ from src import bootstrap  # noqa: F401
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
 from src.config import (
-    IMAGENET_MEAN, IMAGENET_STD, VAL_IDX,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, VAL_IDX,
     LAYER_WEIGHTS, DIM_WEIGHTS, DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 # VAL_IDX imported from src.config (configs/default.yaml splits.val_idx)
 
@@ -72,8 +75,8 @@ def compute_ensemble_val_fpr(
     layer_weights = LAYER_WEIGHTS
     dim_weights   = DIM_WEIGHTS
 
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone — same as profiling/training/calibration.
+    model = load_backbone(device)
 
     cal_p  = PATHS['calibrator']
     prof_p = PATHS['reference_profiles']

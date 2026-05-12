@@ -32,7 +32,6 @@ USAGE
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import pickle
 import os
@@ -50,24 +49,30 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
 from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamm.scorer import TopologicalScorer
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, N_SUBSAMPLE, MAX_DIM,
-    IMAGENET_MEAN, IMAGENET_STD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
     PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX,
     DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone
 # All shared constants imported from src.config (backed by configs/default.yaml).
 # Split indices are the single source of truth -- do not hardcode here.
 
-_TRANSFORM = T.Compose([
-    T.Resize(224),
-    T.ToTensor(),
-    T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-])
+# Native CIFAR-10 32x32 with backbone-correct normalisation. The ImageNet
+# 224x224 path is preserved behind BACKBONE_INPUT_SIZE for the optional
+# ImageNet evaluation arm.
+_norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+if BACKBONE_INPUT_SIZE == 32:
+    _TRANSFORM = T.Compose([T.ToTensor(), _norm])
+else:
+    _TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor(), _norm])
 
 
 def build_profile_testset(
@@ -82,8 +87,10 @@ def build_profile_testset(
     print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
 
     # ── Model ─────────────────────────────────────────────────────────────────
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained ResNet-18. Profiles built on this backbone are the
+    # reference manifold against which all downstream Wasserstein distances
+    # are computed.
+    model = load_backbone(torch.device(device))
 
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)

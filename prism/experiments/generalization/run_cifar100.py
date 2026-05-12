@@ -15,7 +15,6 @@ import torch
 import torchvision
 import torchvision.transforms as T
 import numpy as np
-from torchvision.models import ResNet18_Weights
 
 os.environ.setdefault('SSL_CERT_FILE', certifi.where())
 os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
@@ -24,13 +23,14 @@ ssl._create_default_https_context = ssl.create_default_context
 from src.prism import PRISM
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
 )
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
 
-_PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
+_PIXEL = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORM  = T.Normalize(_MEAN, _STD)
 
 
@@ -55,9 +55,7 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=EPS_LINF_STANDARD, seed=42,
     rng = np.random.RandomState(seed)
 
     # ── Load PRISM (calibrated on CIFAR-10) ───────────────────────────────────
-    backbone = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).eval()
+    backbone = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     prism = PRISM.from_saved(
         model=backbone,
@@ -89,8 +87,8 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=EPS_LINF_STANDARD, seed=42,
         art_clf = PyTorchClassifier(
             model=wrapped,
             loss=torch.nn.CrossEntropyLoss(),
-            input_shape=(3, 224, 224),
-            nb_classes=1000,  # ResNet-18 ImageNet backbone has 1000 output classes
+            input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+            nb_classes=BACKBONE_NUM_CLASSES,  # ResNet-18 ImageNet backbone has 1000 output classes
             clip_values=(0.0, 1.0),
         )
         fgsm = FastGradientMethod(art_clf, eps=eps)

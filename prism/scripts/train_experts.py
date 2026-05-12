@@ -33,7 +33,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import os, sys, ssl, certifi, pickle, argparse
 from tqdm import tqdm
@@ -58,26 +57,24 @@ from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamsh.experts import ExpertSubNetwork, TopologyAwareMoE
 from src.config import (
-    LAYER_NAMES, IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    LAYER_NAMES, BACKBONE_MEAN, BACKBONE_STD,
+    BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
     CAL_IDX, N_SUBSAMPLE, MAX_DIM, DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone, _NormalizedBackbone
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE = T.Normalize(mean=_MEAN, std=_STD)
 
-
-class _NormalizedResNet(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self._model = model
-        self.register_buffer('_mean', torch.tensor(_MEAN).view(3, 1, 1))
-        self.register_buffer('_std',  torch.tensor(_STD).view(3, 1, 1))
-
-    def forward(self, x):
-        return self._model((x - self._mean) / self._std)
+# Backward-compat alias.
+_NormalizedResNet = _NormalizedBackbone
 
 
 def _gen_perturbation(attack_name, pixel_imgs_np, classifier, eps):
@@ -107,13 +104,16 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
     print(f"Device: {device}")
 
     # ── Model + dataset ──
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
-    norm_model = _NormalizedResNet(model).to(device).eval()
+    # Two views of the same CIFAR-10 checkpoint:
+    #   model      — unwrapped, used by ActivationExtractor (named_modules)
+    #   norm_model — wrapped, used by ART (pixel-space attack inputs)
+    model = load_backbone(device)
+    norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=norm_model, loss=nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224), nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0), device_type=device_type,
     )
 

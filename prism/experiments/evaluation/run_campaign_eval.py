@@ -40,7 +40,6 @@ USAGE
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import json, os, sys, ssl, certifi, time, argparse
 from copy import deepcopy
@@ -66,26 +65,23 @@ from src.prism import PRISM
 from src.sacd.monitor import CampaignMonitor, NoOpCampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
     EVAL_IDX, DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 
 
-class _NormalizedResNet(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self._model = model
-        self.register_buffer('_mean', torch.tensor(_MEAN).view(3, 1, 1))
-        self.register_buffer('_std',  torch.tensor(_STD).view(3, 1, 1))
-
-    def forward(self, x):
-        return self._model((x - self._mean) / self._std)
+# Backward-compat alias — _NormalizedBackbone in src.models is the same wrapper.
+from src.models import load_backbone, _NormalizedBackbone as _NormalizedResNet
 
 
 def wilson_ci(k, n, z=1.96):
@@ -254,8 +250,8 @@ def run_campaign_eval(
     torch.manual_seed(seed)
 
     # ── Model ──
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    model = load_backbone(device)
 
     # ── Dataset (dispatches on DATASET: cifar10 / cifar100) ──
     ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
@@ -271,11 +267,12 @@ def run_campaign_eval(
     adv_src_imgs = [ds[int(i)][0] for i in adv_src_idx]
 
     print(f"\nGenerating adversarial pool (PGD-40) on {len(adv_src_imgs)} images...")
-    norm_model = _NormalizedResNet(model).to(device).eval()
+    norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=norm_model, loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224), nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0), device_type=device_type,
     )
     eps = EPS_LINF_STANDARD

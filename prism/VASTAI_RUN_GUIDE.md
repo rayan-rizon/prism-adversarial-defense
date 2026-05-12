@@ -1,15 +1,28 @@
 # PRISM — Vast.ai RTX 5090 Full Pipeline Guide
 
 > ⚠️ **SOURCE OF TRUTH:** For the NeurIPS/ICLR/ICML research-plan campaign,
-> **follow Appendix §A1 only** (14-step pipeline). The 7-step body below is
-> historical and retained for forensic continuity. Where body and appendix
-> conflict, **Appendix wins**. All pre-research-plan result JSONs have been
-> archived under `prism_results/archive_pre_research_plan/` — do not reference
-> them.
+> **follow Appendix §A1 only** (now 15 steps including the new Step 0a
+> backbone pretrain). The 7-step body below is historical and retained for
+> forensic continuity. Where body and appendix conflict, **Appendix wins**.
+> All pre-research-plan result JSONs have been archived under
+> `prism_results/archive_pre_research_plan/` — do not reference them.
+
+> **Backbone update (2026-05-12) — research-standard fix.** The pipeline now
+> uses a **CIFAR-10-trained ResNet-18** rather than the prior
+> `IMAGENET1K_V1` ResNet-18. The new pretraining stage (**Step 0a**,
+> ≈ 50–70 min on RTX 5090) is the first thing the orchestration script
+> runs. This resolves the ImageNet→CIFAR-10 distribution mismatch
+> documented in **PRISM Implementation.md §"Backbone selection"**:
+> previously the model produced a 41 % top-1 clean-confidence floor on
+> CIFAR-10 inputs, C&W attacks succeeded at L2 ≈ 0.084 (≈ 6–10× too small
+> vs the research norm), and CW TPR was capped at ~7 % regardless of
+> downstream feature engineering. With the CIFAR-10-trained backbone the
+> model has a real decision surface, C&W must use research-standard
+> perturbations, and the detection features (entropy, DCT, TDA) operate in
+> their designed signal regime.
 
 > **Goal:** Run the complete publishable pipeline from scratch on a single Vast.ai
-> RTX 5090 instance. Retrain → Calibrate → Gate → Evaluate (5 attacks × 5 seeds,
-> parallel) → Adaptive PGD → Ablation → Campaign → Recovery → Baselines → Paper Tables → Download.
+> RTX 5090 instance. Pretrain backbone → Build profiles → Retrain ensemble → Calibrate → Gate → Evaluate (5 attacks × 5 seeds, parallel) → Adaptive PGD → Ablation → Campaign → Recovery → Baselines → Paper Tables → Download.
 >
 > **Every evaluation script now prints a TARGET METRIC GATE** at the end of
 > each multi-seed run — explicit ✅/❌ per metric, so you know immediately
@@ -53,6 +66,12 @@ All TPR/FPR figures reported with Wilson 95 % CIs pooled across 5 seeds.
 ## Pipeline Overview
 
 ```
+PHASE -1 — BACKBONE PRETRAIN (one-time per fresh instance; skipped if checkpoint exists)
+─────────────────────────────────────────────────────────────────────────────
+pretrain_cifar_backbone.py       → models/cifar_resnet18.pt  [Step 0a, ~50-70 min]
+   200-epoch SGD cosine schedule, CIFAR-10 train set (50k images),
+   expected test accuracy ≈ 94-95%.
+
 PHASE 0 — TRAINING (all three launchers start simultaneously after Step 1)
 ─────────────────────────────────────────────────────────────────────────────
 build_profile_testset.py         → reference_profiles.pkl  [Step 1, ~10 min]
@@ -641,13 +660,20 @@ NeurIPS/ICLR/ICML research-standard campaign. The original 7 steps are
 preserved above for reference, but the full submission campaign executes the
 14-step pipeline below. Work items are tagged with their plan IDs (P0.1–P1.4).
 
-## A1. Expanded 14-Step Pipeline
+## A1. Expanded 15-Step Pipeline
 
 Steps marked **[BG]** run as background subshells (parallel). Steps marked **[FG]**
-are foreground and gate the next sequential constraint. Wall-clock: ~2 h 35 min
-total on RTX 5090 with the current parallelism map.
+are foreground and gate the next sequential constraint. Wall-clock with the
+new backbone-pretrain step: ~3 h 25–45 min total on RTX 5090.
 
 ```
+PHASE -1 — BACKBONE PRETRAIN (wall-clock ≈ 50-70 min; one-time per fresh instance)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 0a.   [FG]  CIFAR-10 ResNet-18 from scratch     scripts/pretrain_cifar_backbone.py
+                                                   200 epochs, SGD cosine, expected test acc 94-95%
+                                                   → models/cifar_resnet18.pt (44 MB)
+                                                   Skipped if checkpoint already present.
+
 PHASE 0 — TRAINING (wall-clock ≈ 30 min; was 85 min sequential)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  1.    [FG]  Build reference profiles            scripts/build_profile_testset.py
@@ -712,10 +738,12 @@ PHASE 2 simultaneous launch (after Phase 1 join):
 Peak VRAM on RTX 5090 (32 GB): ~19 GB Phase 0, ~22 GB Phase 1, ~6.5 GB Phase 2.
 Seeds remain serial within each suite to keep logs readable.
 
-All 14 steps must execute against `configs/default.yaml` (CIFAR-10). For
-P1.1, re-run steps 1–13 against `configs/cifar100.yaml` (see §A4 below);
+All 15 steps must execute against `configs/default.yaml` (CIFAR-10). For
+P1.1, re-run steps 0a–13 against `configs/cifar100.yaml` (see §A4 below);
 artifacts land in `models/cifar100/*.pkl` and `prism_results/cifar100/...`
-so the CIFAR-10 run is not clobbered.
+so the CIFAR-10 run is not clobbered. Step 0a for CIFAR-100 produces a
+CIFAR-100-trained backbone (100-class head) — bump `--epochs` to 250 if
+test accuracy floors below 0.75.
 
 ## A2. Locked Attack & Training Configurations
 
@@ -789,14 +817,36 @@ distribution). If cal→val FPR overruns target by >1 pp, tighten
 
 | Phase | Jobs | Wall-clock | vs. old sequential |
 |-------|------|-----------|-------------------|
-| Phase 0 training (2+2c+2d) | 3 parallel | ~30 min | was ~85 min; saves **55 min** |
-| Phase 0 lock (calibrate+gate) | sequential | ~5 min | unchanged |
-| Phase 1 attacks + L0 cal | 5+1 parallel | ~2 h | L0 cal hidden in CW gap; saves **10–15 min** |
-| Phase 2 secondary eval | 3 parallel | ~1 h | saves **40–50 % of phase** |
-| **Total** | | **~2 h 35 min** | was ~3 h 45 min; **~30 % faster** |
+| Phase -1 backbone pretrain (Step 0a) | foreground | ~30-45 min | new step; one-time per fresh instance |
+| Phase 0 training (2+2c+2d) | 3 parallel | ~20-25 min | was ~30 min; CIFAR 32x32 cuts attack-gen time |
+| Phase 0 lock (calibrate+gate) | sequential | ~2-3 min | was 5 min |
+| Phase 1 attacks + L0 cal | 5+1 parallel | ~50-70 min | was ~2 h; CW at chunk=512 instead of 128 |
+| Phase 2 secondary eval | 3 parallel | ~30-45 min | was ~1 h |
+| **Total** | | **~2 h 30 min** | comparable to old ImageNet pipeline despite adding Step 0a |
 
-**Serial wall-clock for the full CIFAR-10 campaign (Vast.ai):** ~2.5–3 h.
-**With CIFAR-100 repeat (P1.1):** add ~5–7 GPU-days.
+**Performance optimisations baked into the new pipeline:**
+
+| Optimisation | Where | Speedup |
+|---|---|---|
+| `cudnn.benchmark = True` | `src/perf.py` (called by every entry point) | +5-25 % on convolutions |
+| TF32 matmul/conv (Ampere+) | `src/perf.py` | +15-30 % |
+| AMP / FP16 autocast in backbone pretrain | `pretrain_cifar_backbone.py` | ~2× pretrain |
+| Pretrain `batch_size` 128→256 | `pretrain_cifar_backbone.py` | -25 % pretrain wall-clock |
+| Pretrain `num_workers` 4→8 + persistent + prefetch | `pretrain_cifar_backbone.py` | hides data-load latency |
+| CW eval `cw_chunk` 128→512 | `run_evaluation_full.py` | ~3-4× CW gen |
+| AutoAttack `aa_chunk` 8→64 | `run_evaluation_full.py` | ~4-8× AA gen |
+| Ensemble train `gen_chunk` 128→512 | `train_ensemble_scorer.py` | ~3-4× attack gen |
+| Square training `batch_size` 64→256 | `train_ensemble_scorer.py` | ~4× Square gen |
+
+The compute saving comes from CIFAR-10 inputs being 49× smaller than the
+prior 224×224 ImageNet pipeline; batch sizes scale up while staying
+inside the 32 GB VRAM budget. OOM-detection logic in `run_evaluation_full`
+auto-halves the chunk if a chosen value exceeds available VRAM.
+
+**Serial wall-clock for the full CIFAR-10 campaign (Vast.ai):** ~2 h 30 min
+(was ~3 h 45 min sequential on the old pipeline; the new Step 0a adds
+~30-45 min but the resolution-driven speedups elsewhere more than offset
+it). **With CIFAR-100 repeat (P1.1):** add ~5-7 GPU-days.
 All scripts respect the `&` launch pattern and screen-session logging convention documented in §4.
 
 ## A7. Reproducibility Endpoint

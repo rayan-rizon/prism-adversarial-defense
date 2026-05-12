@@ -48,7 +48,6 @@ import torch
 import time
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import pickle
 import os, sys, ssl, certifi
@@ -62,6 +61,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
 from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
 
 try:
     from art.attacks.evasion import (
@@ -87,32 +88,29 @@ from src.tamm.scorer import TopologicalScorer
 from src.tamm.persistence_stats import extract_feature_vector
 from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
 from src.config import (
-    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, IMAGENET_MEAN, IMAGENET_STD,
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
     EPS_LINF_STANDARD, N_SUBSAMPLE, MAX_DIM,
     DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
 from src.attacks.cw_torch import TorchCWGenerator
+from src.models import load_backbone, _NormalizedBackbone
 
 # All shared constants are imported from src.config (backed by default.yaml).
 
 DIMS = (0, 1)  # homology dimensions; matches DIM_WEIGHTS length from src.config
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 
-
-class _NormalizedResNet(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self._model = model
-        self.register_buffer('_mean', torch.tensor(_MEAN).view(3, 1, 1))
-        self.register_buffer('_std',  torch.tensor(_STD).view(3, 1, 1))
-
-    def forward(self, x):
-        return self._model((x - self._mean) / self._std)
+# Backward-compat alias — _NormalizedBackbone is the same wrapper shape.
+_NormalizedResNet = _NormalizedBackbone
 
 
 def compute_input_grad_norm(model: torch.nn.Module,
@@ -161,7 +159,7 @@ class _APGDGenerator:
 
 
 def _batch_generate_adversarials(art_attack, dataset, indices, label,
-                                  gen_chunk=128):
+                                  gen_chunk=512):
     """Pre-generate all adversarial examples in GPU-batched chunks.
 
     Returns an np.ndarray of shape (N, C, H, W) in pixel [0,1] space,
@@ -307,6 +305,7 @@ def train_ensemble_scorer(
     include_autoattack: bool = False,
     cw_max_iter: int = 30,
     cw_bss: int = 3,
+    cw_oversample: float = 1.0,
     no_tda_features: bool = False,
 ):
     """
@@ -319,6 +318,14 @@ def train_ensemble_scorer(
         use_softmax_entropy: If True (default), append softmax entropy of model
             logits as a feature. Captures CW-L2 decision-boundary proximity.
             Adds <1ms latency; enabled by default to fix CW detection gap.
+        cw_oversample: Relative weight of CW in the adversarial training mix.
+            Default 1.0 → equal share with PGD/Square. Only active when
+            --include-cw is set. Reserved as the conditional secondary
+            intervention for the CW TPR gap (see plan §"Conditional secondary
+            intervention"): activate ONLY if the primary softmax-entropy fix
+            produces pooled CW TPR in [0.75, 0.85). Raising this above 1.0
+            takes share from PGD/Square — verify ±1pp regression gate holds
+            for FGSM/PGD/Square before adopting a non-default value.
     """
     if not ART_AVAILABLE:
         print("ERROR: adversarial-robustness-toolbox not installed.")
@@ -331,9 +338,10 @@ def train_ensemble_scorer(
 
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Dynamic attack mix. FGSM uses fgsm_oversample weight; others weight=1.
+    # Dynamic attack mix. FGSM uses fgsm_oversample weight; CW uses
+    # cw_oversample (default 1.0); others weight=1.
     weights = {'FGSM': fgsm_oversample, 'PGD': 1.0, 'Square': 1.0}
-    if include_cw:          weights['CW']         = 1.0
+    if include_cw:          weights['CW']         = cw_oversample
     if include_autoattack:  weights['AutoAttack'] = 1.0
     total_weight = sum(weights.values())
 
@@ -352,8 +360,10 @@ def train_ensemble_scorer(
         ref_profiles = pickle.load(f)
 
     # -- Setup model -------------------------------------------------------------
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained ResNet-18, wrapped with pixel-space normalisation. The
+    # `model.layer2 / layer3 / layer4` hooks used by the extractor are
+    # transparently forwarded to the inner CIFARResNet18.
+    model = load_backbone(device)
 
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
@@ -377,15 +387,14 @@ def train_ensemble_scorer(
     # Pre-allocate a 3x budget pool; actual slices are taken per attack below
     adv_pool  = all_idx[n_train: n_train + 3 * n_train]
 
-    # ART classifier for attack generation (normalisation wrapped inside model)
-    norm_model = _NormalizedResNet(
-        torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).eval()
-    ).to(device)
+    # ART classifier for attack generation. Same CIFAR-trained backbone as
+    # feature extraction, this time wrapped for pixel-space attack inputs.
+    norm_model = load_backbone(device, wrap=True)
     art_clf = PyTorchClassifier(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type='gpu' if device == 'cuda' else 'cpu',
     )
@@ -398,7 +407,7 @@ def train_ensemble_scorer(
         # Square: gradient-free black-box; 1000 queries is enough for training
         # signal (eval uses 5000). Lower budget keeps training time reasonable.
         'Square': SquareAttack(
-            art_clf, eps=fgsm_eps, max_iter=1000, batch_size=64, verbose=False),
+            art_clf, eps=fgsm_eps, max_iter=1000, batch_size=256, verbose=False),
     }
     if include_cw:
         # Native PyTorch CW — ~24x faster than ART's CarliniL2Method.
@@ -452,14 +461,17 @@ def train_ensemble_scorer(
         atk_indices = adv_pool[off: off + n_atk]
 
         # Phase 1: Batch-generate all adversarials on GPU in chunks.
-        # CW with batch_size=1 at 10.7s/img × 615 images = ~1.8h per-sample.
-        # Batched at gen_chunk=128: ~30-60s total. Same math, just parallelized.
+        # CIFAR 32x32 inputs are 49x smaller than ImageNet 224x224 — chunk
+        # raised from 128 to 512 to keep the RTX 5090 fully occupied
+        # (typical CW VRAM at chunk=512 on CIFAR ≈ 12-16 GB, comfortably
+        # under the 32 GB budget). The native PyTorch CW handles this
+        # batch size efficiently.
         print(f"\nBatch-generating {n_atk} {atk_name} adversarials "
               f"(eps={fgsm_eps:.6f})...", flush=True)
         adv_cache = _batch_generate_adversarials(
             attacks[atk_name], pixel_dataset, atk_indices,
             label=f'{atk_name} adv',
-            gen_chunk=128,  # torch CW handles large batches efficiently
+            gen_chunk=512,
         )
 
         # Phase 2: Extract TDA features from pre-generated adversarials.
@@ -628,6 +640,15 @@ if __name__ == '__main__':
                         help='CW max_iter for training (default 40, matches eval).')
     parser.add_argument('--cw-bss', type=int, default=5,
                         help='CW binary_search_steps for training (default 5, matches eval).')
+    parser.add_argument('--cw-oversample', type=float, default=1.0,
+                        help='Relative CW weight in the training mix (only active '
+                             'with --include-cw). Default 1.0 = equal share with '
+                             'PGD/Square. Conditional secondary intervention for '
+                             'the CW TPR gap: set to 2.0 ONLY if pooled CW TPR is '
+                             'in [0.75, 0.85) on the 5-seed vast.ai run after the '
+                             'primary softmax-entropy fix. Raising above 1.0 takes '
+                             'share from PGD/Square — verify ±1pp regression gate '
+                             'on FGSM/PGD/Square before adopting non-default value.')
     parser.add_argument('--fast',      action='store_true',
                         help='Quick smoke-test: n_train=150')
     args = parser.parse_args()
@@ -656,5 +677,6 @@ if __name__ == '__main__':
         include_autoattack=args.include_autoattack,
         cw_max_iter=args.cw_max_iter,
         cw_bss=args.cw_bss,
+        cw_oversample=args.cw_oversample,
         no_tda_features=args.no_tda_features,
     )

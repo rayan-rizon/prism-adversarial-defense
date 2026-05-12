@@ -2,8 +2,21 @@
 # Default configuration
 
 model:
-  name: resnet18
-  weights: IMAGENET1K_V1
+  # Backbone is a CIFAR-10-adapted ResNet-18, trained from scratch by
+  # scripts/pretrain_cifar_backbone.py (200 epochs, SGD+cosine, standard
+  # CIFAR augmentation). Expected clean test accuracy ≈ 94-95 %. Replaces
+  # the prior IMAGENET1K_V1 ResNet-18, which had a 41 % top-1 clean-data
+  # confidence floor on CIFAR-10 (model trained for 1000-class ImageNet,
+  # evaluated on 10-class CIFAR-10 — label-space and distribution
+  # mismatch). The mismatch made C&W L2 perturbations succeed at tiny
+  # L2≈0.084 and produced a CW TPR ceiling of ~7 % regardless of feature
+  # engineering. With a CIFAR-trained backbone the model has a real
+  # decision surface, C&W must use larger perturbations, and the
+  # detection features (entropy, DCT, TDA) operate in-distribution.
+  # See PRISM Implementation.md §"Backbone selection".
+  name: cifar_resnet18
+  backbone_checkpoint: models/cifar_resnet18.pt
+  num_classes: 10
   layer_names:
     - layer2
     - layer3
@@ -69,9 +82,9 @@ memory:
 
 data:
   dataset: cifar10
-  image_size: 224
-  mean: [0.485, 0.456, 0.406]
-  std: [0.229, 0.224, 0.225]
+  image_size: 32                                # CIFAR-10 native resolution
+  mean: [0.4914, 0.4822, 0.4465]                # CIFAR-10 channel means
+  std:  [0.2470, 0.2435, 0.2616]                # CIFAR-10 channel stds
   data_root: ./data
 
 profiling:

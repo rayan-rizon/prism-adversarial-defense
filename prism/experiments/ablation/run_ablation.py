@@ -46,7 +46,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 
 from src.prism import PRISM
 from src.cadg.calibrate import ConformalCalibrator
@@ -66,7 +65,10 @@ _MEAN = [0.485, 0.456, 0.406]
 _STD  = [0.229, 0.224, 0.225]
 
 # Pixel-space transform: [0, 1]-valued tensors for ART
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 # Normalization applied AFTER attack (to get PRISM-ready tensors)
 _NORMALIZE = T.Normalize(mean=_MEAN, std=_STD)
 
@@ -116,8 +118,8 @@ def make_art_classifier(model: torch.nn.Module) -> 'PyTorchClassifier':
     return PyTorchClassifier(
         model=wrapped,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,       # ImageNet classes
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,       # ImageNet classes
         clip_values=(0.0, 1.0),
     )
 
@@ -335,7 +337,7 @@ def main():
 
     # ── Shared model + ART classifier ────────────────────────────────────
     print("Loading ResNet-18...")
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+    model = load_backbone(device)
     model.eval()
     art_classifier = make_art_classifier(model)
 

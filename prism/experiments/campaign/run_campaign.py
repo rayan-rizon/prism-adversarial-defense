@@ -13,7 +13,6 @@ import torchvision.transforms as T
 import numpy as np
 import json
 
-from torchvision.models import ResNet18_Weights
 from art.attacks.evasion import FastGradientMethod
 from art.estimators.classification import PyTorchClassifier
 
@@ -22,12 +21,13 @@ from src.tamsh.experts import TopologyAwareMoE
 from src.sacd.monitor import CampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
 )
 
 # ── Transforms ─────────────────────────────────────────────────────────────────
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
 
 class _NormalizedResNet(torch.nn.Module):
     def __init__(self, backbone):
@@ -38,7 +38,7 @@ class _NormalizedResNet(torch.nn.Module):
     def forward(self, x):
         return self.backbone((x - self.mean) / self.std)
 
-_PIXEL = T.Compose([T.Resize(224), T.ToTensor()])
+_PIXEL = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORM  = T.Normalize(_MEAN, _STD)
 
 
@@ -49,10 +49,10 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=EPS_LINF_STANDARD, seed=4
     rng = np.random.RandomState(seed)
 
     # ── Load PRISM ────────────────────────────────────────────────────────────
-    backbone = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).eval()
-    wrapped = _NormalizedResNet(backbone).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    from src.models import load_backbone
+    backbone = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+    wrapped = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"), wrap=True)
 
     prism = PRISM.from_saved(
         model=backbone,
@@ -85,8 +85,8 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=EPS_LINF_STANDARD, seed=4
     art_clf = PyTorchClassifier(
         model=wrapped,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,  # ResNet-18 ImageNet backbone has 1000 output classes
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,  # ResNet-18 ImageNet backbone has 1000 output classes
         clip_values=(0.0, 1.0),
     )
     fgsm = FastGradientMethod(art_clf, eps=eps)

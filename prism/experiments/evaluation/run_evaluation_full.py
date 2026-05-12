@@ -48,7 +48,6 @@ USAGE
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import json, os, sys, ssl, certifi, time
 from tqdm import tqdm
@@ -72,6 +71,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
 from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
 
 try:
     from art.attacks.evasion import (
@@ -97,29 +98,31 @@ from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
+    EPS_LINF_STANDARD,
     EVAL_IDX,   # single source of truth -- do not redeclare below
     DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone, _NormalizedBackbone
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+# Mean/std/resolution are sourced from configs/default.yaml via src.config.
+# With the CIFAR-10-trained backbone (default), images are consumed at native
+# 32x32 with CIFAR-10 channel statistics. The ImageNet 224x224 track is kept
+# behind BACKBONE_INPUT_SIZE for the optional ImageNet evaluation arm.
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 # EVAL_IDX is imported from src.config (configs/default.yaml splits.eval_idx).
 
-
-class _NormalizedResNet(torch.nn.Module):
-    def __init__(self, model: torch.nn.Module):
-        super().__init__()
-        self._model = model
-        self.register_buffer('_mean', torch.tensor(_MEAN).view(3, 1, 1))
-        self.register_buffer('_std',  torch.tensor(_STD).view(3, 1, 1))
-
-    def forward(self, x):
-        return self._model((x - self._mean) / self._std)
+# Module-level alias so existing references to _NormalizedResNet keep working.
+# The wrapper logic is identical; the class lives in src.models.backbone.
+_NormalizedResNet = _NormalizedBackbone
 
 
 def _atanh_stable(x: torch.Tensor) -> torch.Tensor:
@@ -206,8 +209,8 @@ def run_evaluation_full(
     device_str: str = None,
     square_max_iter: int = 5000,
     gen_chunk: int = None,
-    cw_chunk: int = 128,
-    aa_chunk: int = 8,
+    cw_chunk: int = 512,   # CIFAR 32x32 is 49x smaller than 224x224
+    aa_chunk: int = 64,    # ImageNet-era default was 8; raised for CIFAR throughput
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
@@ -232,9 +235,14 @@ def run_evaluation_full(
     torch.manual_seed(seed)
 
     # ── Model ──────────────────────────────────────────────────────────────────
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
-
+    # Load the CIFAR-10-trained ResNet-18 backbone. The returned object is a
+    # `_NormalizedBackbone` wrapping the raw CIFARResNet18 — it accepts
+    # pixel-space [0, 1] tensors and applies (x - mean) / std internally.
+    # The unwrapped backbone is available as `model._model` if downstream
+    # code needs the raw forward (it currently does not).
+    model = load_backbone(device)
+    # PRISM hooks `model.layer2 / layer3 / layer4`; the wrapper forwards
+    # these attribute lookups to the inner CIFARResNet18.
     layer_names   = LAYER_NAMES
     layer_weights = LAYER_WEIGHTS
     dim_weights   = DIM_WEIGHTS
@@ -278,14 +286,16 @@ def run_evaluation_full(
     # NOTE: must be on the same device as the main model so CW / PGD
     # gradient computations run on GPU (not CPU) — this is the critical fix
     # that reduces CW from ~285s/sample (CPU) to ~3s/sample (A100 GPU).
-    art_model  = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device).eval()
-    norm_model = _NormalizedResNet(art_model).to(device).eval()
+    # ART classifier uses the same CIFAR-10 backbone as the PRISM defense,
+    # this time wrapped with pixel-space normalisation so ART/AutoAttack
+    # can compute perturbations in pixel space [0, 1].
+    norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,        # ImageNet classes for ResNet-18 backbone
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=10,          # CIFAR-10 classes — backbone was retrained from scratch
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
@@ -373,8 +383,10 @@ def run_evaluation_full(
     for i in sample_idx:
         img_pixel, _ = pixel_dataset[int(i)]
         all_imgs_pixel.append(img_pixel)
-    # Stack: (N, 3, 224, 224) numpy array for ART batch generation
-    X_pixel_np = torch.stack(all_imgs_pixel).numpy()   # shape (N,3,224,224)
+    # Stack: (N, 3, H, W) numpy array for ART batch generation; native
+    # resolution comes from BACKBONE_INPUT_SIZE (32 for CIFAR-10, 224 for
+    # ImageNet track).
+    X_pixel_np = torch.stack(all_imgs_pixel).numpy()
     print(f"Pre-loaded {len(all_imgs_pixel)} images ✓")
 
     for attack_name in attacks_to_run:
@@ -677,25 +689,21 @@ def run_evaluation_full(
 
 
 def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
-                    aa_chunk: int = 8, aa_version: str = 'standard'):
+                    aa_chunk: int = 64, aa_version: str = 'standard'):
     """Run AutoAttack and evaluate each example through PRISM.
 
-    Two bug fixes vs. original:
-      1. The backbone is ImageNet-1000; CIFAR labels (0-9) are NOT valid ground
-         truth for it. We use the model's clean predictions as the attack
-         reference (standard practice when evaluating on a mismatched dataset).
-      2. `run_standard_evaluation(X, y, bs=32)` produced zero log output for
-         the entire (slow) AutoAttack run. We now chunk by `aa_chunk` and
-         print per-chunk timing + PRISM evaluation, so log tails advance.
+    The backbone is now CIFAR-10-trained, so attack labels are the true CIFAR-10
+    ground truth (the prior label-space mismatch — ImageNet 1000-class backbone
+    on CIFAR-10 — has been eliminated). `run_standard_evaluation(X, y, bs=32)`
+    produced zero log output for the entire (slow) AutoAttack run, so we chunk
+    by `aa_chunk` and print per-chunk timing + PRISM evaluation, so log tails
+    advance.
     """
     if not AA_AVAILABLE:
         return {'error': 'autoattack not installed'}
 
-    from torchvision.models import ResNet18_Weights
-    import torchvision
-
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1).to(device).eval()
-    norm_model = _NormalizedResNet(model).to(device).eval()
+    # AutoAttack expects a model that maps pixel-space images to logits.
+    norm_model = load_backbone(device, wrap=True)
 
     adversary = _AA(norm_model, norm='Linf', eps=eps, version=aa_version, device=device)
 
@@ -707,10 +715,13 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
         img, _ = pixel_dataset[int(i)]
         imgs_pixel.append(img)
 
-    X = torch.stack(imgs_pixel).to(device)     # (N, 3, 224, 224) in [0,1]
+    X = torch.stack(imgs_pixel).to(device)     # (N, 3, H, W) in [0,1]
 
-    # Use the backbone's own clean predictions as attack targets (label space
-    # is ImageNet-1000; CIFAR ints 0-9 would be arbitrary class ids here).
+    # CIFAR-trained backbone — labels 0-9 are valid. We still use the
+    # model's clean predictions as the attack reference so AutoAttack's
+    # "success" criterion is consistent across seeds (a few % of clean
+    # inputs are misclassified by the backbone; using its own predictions
+    # makes the attack target the actual decision boundary the model uses).
     with torch.no_grad():
         y = norm_model(X).argmax(dim=1)         # (N,) ImageNet class ids
 
@@ -778,8 +789,8 @@ def run_evaluation_multiseed(
     device_str: str = None,
     square_max_iter: int = 5000,
     gen_chunk: int = None,
-    cw_chunk: int = 128,
-    aa_chunk: int = 8,
+    cw_chunk: int = 512,   # CIFAR 32x32 is 49x smaller than 224x224
+    aa_chunk: int = 64,    # ImageNet-era default was 8; raised for CIFAR throughput
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
@@ -1052,9 +1063,10 @@ if __name__ == '__main__':
                         help='Chunk size for adversarial generation. '
                              'Smaller = more frequent progress lines in log. '
                              'Default: use attack batch_size.')
-    parser.add_argument('--aa-chunk', type=int, default=8,
-                        help='Batch size for AutoAttack (default 8; lower for '
-                             '6GB GPUs, raise to 16-32 on A100).')
+    parser.add_argument('--aa-chunk', type=int, default=64,
+                        help='Batch size for AutoAttack. Default 64 for the '
+                             'CIFAR-10 32x32 pipeline on RTX 5090; lower to '
+                             '16 on smaller GPUs.')
     parser.add_argument('--aa-version', type=str, default='standard',
                         choices=['standard', 'plus', 'rand'],
                         help='AutoAttack version: standard (full ensemble) | '
@@ -1073,10 +1085,12 @@ if __name__ == '__main__':
     parser.add_argument('--cw-bss', type=int, default=5,
                         help='CW-L2 binary_search_steps. Default 5 per P0.1; '
                              'paper-canonical 9 available for full runs.')
-    parser.add_argument('--cw-chunk', type=int, default=128,
-                        help='Gen chunk size for CW attack. Default 128 per P0.1 '
-                             'to pair with batch_size=256 for full GPU occupancy '
-                             'on 5090-class cards. Lower to 64 on smaller GPUs.')
+    parser.add_argument('--cw-chunk', type=int, default=512,
+                        help='Gen chunk size for CW attack. Default 512 for the '
+                             'CIFAR-10 32x32 pipeline (49x smaller activations '
+                             'than 224x224; fits comfortably in 32 GB VRAM with '
+                             'the native PyTorch CW engine). OOM-detection logic '
+                             'auto-halves on failure.')
     parser.add_argument('--cw-engine', choices=['torch', 'art'], default='torch',
                         help='CW-L2 implementation. torch keeps the full C&W '
                              'optimisation on GPU and is the default for '

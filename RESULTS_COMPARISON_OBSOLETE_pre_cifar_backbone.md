@@ -1,3 +1,19 @@
+# ⚠️ OBSOLETE — superseded by the CIFAR-10-backbone re-run
+
+> **Deprecation notice (2026-05-12).** The numbers in this file were
+> produced against the prior `ImageNet1K_V1` ResNet-18 applied to CIFAR-10
+> (the configuration whose distribution mismatch caused the headline
+> CW = 7.36 % TPR result documented below). That configuration has been
+> replaced; the pipeline now uses a CIFAR-10-trained ResNet-18 — see
+> **PRISM Implementation.md §0.5 "Backbone selection"** for the full
+> rationale. None of the metrics in this file are valid for the current
+> codebase; do **not** quote them in the paper. The file is preserved
+> only as forensic record of the failure mode. Re-run
+> `bash run_vastai_full.sh` on a fresh Vast.ai instance to produce
+> publishable replacement numbers.
+
+---
+
 # PRISM Pipeline Results Comparison
 
 **Test Date:** April 27, 2026

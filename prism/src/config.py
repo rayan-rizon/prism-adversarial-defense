@@ -98,8 +98,28 @@ LAYER_WEIGHTS: Dict[str, float]   = _CFG['model']['layer_weights']
 DIM_WEIGHTS:   List[float]        = _CFG['tda']['dim_weights']
 N_SUBSAMPLE:   int                = _CFG['tda']['n_subsample']
 MAX_DIM:       int                = _CFG['tda']['max_dim']
-IMAGENET_MEAN: List[float]        = _CFG['data']['mean']
-IMAGENET_STD:  List[float]        = _CFG['data']['std']
+# Backbone-input normalisation. Values come from the active config — for the
+# default CIFAR-10 setup these are the CIFAR-10 channel statistics. Names
+# kept as `IMAGENET_MEAN/STD` for backward-compat with the existing 18+
+# import sites; the values themselves are dataset-correct.
+BACKBONE_MEAN: List[float]        = _CFG['data']['mean']
+BACKBONE_STD:  List[float]        = _CFG['data']['std']
+# Backward-compat aliases. Will be removed once all import sites migrate
+# to the BACKBONE_* names. New code MUST use BACKBONE_MEAN/BACKBONE_STD.
+IMAGENET_MEAN: List[float]        = BACKBONE_MEAN
+IMAGENET_STD:  List[float]        = BACKBONE_STD
+
+# Backbone input size. The CIFAR-10 ResNet-18 expects 32x32 RGB; the prior
+# ImageNet pipeline up-sampled to 224x224. Loaders / transforms read this
+# constant rather than hardcoding either resolution.
+BACKBONE_INPUT_SIZE: int          = _CFG['data'].get('image_size', 32)
+
+# Path to the CIFAR-10-pretrained backbone checkpoint produced by
+# scripts/pretrain_cifar_backbone.py. Consumed by src.models.load_backbone().
+BACKBONE_CHECKPOINT_PATH: str     = _CFG.get('model', {}).get(
+    'backbone_checkpoint', 'models/cifar_resnet18.pt'
+)
+BACKBONE_NUM_CLASSES: int         = int(_CFG.get('model', {}).get('num_classes', 10))
 EPS_LINF_STANDARD: float          = 8 / 255  # standard CIFAR-10 evaluation budget
 CONFORMAL_ALPHAS: Dict[str, float] = _CFG['conformal']['alphas']
 

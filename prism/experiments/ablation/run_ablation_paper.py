@@ -35,7 +35,6 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 from tqdm import tqdm
 
 os.environ.setdefault('SSL_CERT_FILE', certifi.where())
@@ -63,15 +62,19 @@ from src.sacd.monitor import NoOpCampaignMonitor, CampaignMonitor
 from src.tamsh.experts import TopologyAwareMoE, ExpertSubNetwork
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD, EPS_LINF_STANDARD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
+    EPS_LINF_STANDARD,
     DATASET, PATHS, EVAL_IDX,
 )
 from src.data_loader import load_test_dataset
 from src.attacks.cw_torch import TorchCWGenerator
 
-_MEAN = IMAGENET_MEAN
-_STD  = IMAGENET_STD
-_PIXEL_TRANSFORM = T.Compose([T.Resize(224), T.ToTensor()])
+_MEAN = BACKBONE_MEAN
+_STD  = BACKBONE_STD
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 EPS              = EPS_LINF_STANDARD  # 8/255
 
@@ -144,11 +147,11 @@ def build_prism(cfg, model, device):
 def batch_generate_adversarials(attacks, all_imgs_pixel, gen_chunk=128):
     """Pre-generate all adversarial examples in GPU-batched chunks.
 
-    Returns dict mapping attack_name → np.ndarray of shape (N, 3, 224, 224).
+    Returns dict mapping attack_name → np.ndarray of shape (N, 3, H, W) where (H,W)=BACKBONE_INPUT_SIZE.
     The adversarials are identical regardless of the PRISM config, so they
     can be shared across all ablation configs within a single seed.
     """
-    X_pixel_np = torch.stack(all_imgs_pixel).numpy()  # (N, 3, 224, 224)
+    X_pixel_np = torch.stack(all_imgs_pixel).numpy()  # (N, 3, H, W)
     adv_cache = {}
 
     for attack_name, attack in attacks.items():
@@ -326,22 +329,19 @@ def run_ablation_multiseed(
     print(f"n={n}, attacks={attacks_to_run}, device={device}")
     print(f"{'='*65}\n")
 
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    model = load_backbone(device)
 
     # ART classifier on GPU — matches run_evaluation_full.py pattern.
     # Previous code ran on CPU (variable was 'norm_cpu', no .to(device),
     # no device_type='gpu'), causing PGD to be ~60x slower.
-    art_model = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).to(device).eval()
-    norm_model = _NormalizedResNet(art_model).to(device).eval()
+    norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     art_clf = PyTorchClassifier(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,   # ResNet-18 ImageNet backbone
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,   # ResNet-18 ImageNet backbone
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
@@ -600,20 +600,17 @@ def main():
     print(f"Device: {device}")
     print(f"Ablation: n={n} per config, attacks={args.attacks}, ε=8/255")
 
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    model = load_backbone(device)
 
     # ART classifier on GPU — matches run_evaluation_full.py pattern.
-    art_model = torchvision.models.resnet18(
-        weights=ResNet18_Weights.IMAGENET1K_V1
-    ).to(device).eval()
-    norm_model = _NormalizedResNet(art_model).to(device).eval()
+    norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     art_clf = PyTorchClassifier(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
-        input_shape=(3, 224, 224),
-        nb_classes=1000,
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )

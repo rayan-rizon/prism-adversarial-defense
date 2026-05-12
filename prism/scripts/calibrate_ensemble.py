@@ -21,7 +21,6 @@ USAGE:
 import torch
 import torchvision
 import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
 import numpy as np
 import pickle
 import os, sys
@@ -31,6 +30,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
 from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
@@ -39,19 +40,20 @@ from src.cadg.calibrate import ConformalCalibrator
 # Do not re-introduce hardcoded copies — silent drift caused results failures.
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
-    IMAGENET_MEAN, IMAGENET_STD,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
     CAL_IDX, VAL_IDX, CONFORMAL_ALPHAS, CAL_ALPHA_FACTOR,
     TIER_CAL_ALPHA_FACTORS,
     N_SUBSAMPLE, MAX_DIM,
     DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
+from src.models import load_backbone
 
-_TRANSFORM = T.Compose([
-    T.Resize(224),
-    T.ToTensor(),
-    T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-])
+_norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+if BACKBONE_INPUT_SIZE == 32:
+    _TRANSFORM = T.Compose([T.ToTensor(), _norm])
+else:
+    _TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor(), _norm])
 
 
 def calibrate_ensemble(
@@ -94,8 +96,9 @@ def calibrate_ensemble(
     print("Loaded PersistenceEnsembleScorer.")
 
     # --- Setup model ---
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    model = model.to(device).eval()
+    # CIFAR-10-trained backbone — identical to what was used to build profiles
+    # and train the ensemble. Any drift here invalidates the calibrator.
+    model = load_backbone(torch.device(device))
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
