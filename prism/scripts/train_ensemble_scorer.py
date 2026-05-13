@@ -549,12 +549,51 @@ def train_ensemble_scorer(
     y_val = np.array(
         [0] * len(X_clean[n_clean_train:]) + [1] * len(X_adv[n_adv_train:])
     )
+    auc = None
     if len(X_val) > 0:
         probs = np.array([ensemble._logistic_prob(x) for x in X_val])
         auc   = roc_auc_score(y_val, probs)
         preds = (probs > 0.5).astype(int)
         print(f"\nHeld-out validation AUC (logistic component): {auc:.4f}")
         print(classification_report(y_val, preds, target_names=['clean', 'adv']))
+
+    # -- Discriminative-power gate --------------------------------------------
+    # An AUC ≈ 0.5 means the features cannot separate clean from adversarial,
+    # which almost always traces back to an undertrained backbone. Refusing to
+    # save here stops a poisoned `ensemble_scorer.pkl` from contaminating the
+    # calibration and evaluation steps, where the failure resurfaces as a
+    # silent TPR ≈ FPR collapse. The 0.85 floor is well above the chance line
+    # (0.50) and below the production target (≥ 0.92 on properly-trained
+    # backbones) — see fix/backbone-acc-gate plan §"Acceptance criteria".
+    AUC_FLOOR = 0.85
+    if auc is not None and auc < AUC_FLOOR:
+        # Surface backbone provenance in the error message so the diagnosis
+        # is one terminal line away from the failure.
+        backbone_acc_msg = ""
+        try:
+            import json as _json
+            from src.config import BACKBONE_CHECKPOINT_PATH as _bcp
+            from pathlib import Path as _Path
+            sidecar = _Path(_bcp).with_suffix('.acc.json')
+            if sidecar.exists():
+                _meta = _json.loads(sidecar.read_text())
+                backbone_acc_msg = (
+                    f" Backbone provenance: test_acc={_meta.get('test_acc', '?')}, "
+                    f"epochs={_meta.get('epochs', '?')}, "
+                    f"sha256_first16={_meta.get('sha256_first16', '?')}."
+                )
+            else:
+                backbone_acc_msg = f" No sidecar at {sidecar} — backbone provenance unknown."
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Held-out logistic AUC {auc:.4f} < {AUC_FLOOR:.2f} floor. The "
+            f"TDA + entropy + DCT features cannot separate clean from "
+            f"adversarial inputs, so the downstream conformal calibration "
+            f"will give TPR ≈ FPR ≈ {1 - auc:.0%}.{backbone_acc_msg} "
+            f"Verify models/cifar_resnet18.acc.json reports test_acc ≥ 0.93 "
+            f"and re-run scripts/pretrain_cifar_backbone.py if not."
+        )
 
     # -- Tune α on the held-out 20% (P0.6 lever) -------------------------------
     # The α=0.4/0.5 default is a guess; grid-search on the same held-out slice

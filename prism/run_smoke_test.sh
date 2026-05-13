@@ -147,6 +147,43 @@ print('Step 0: PASS')
 "
 echo ""
 
+# ── Step 0b: Backbone accuracy gate ─────────────────────────────────────────
+# Hard precondition for the entire detector pipeline. An undertrained
+# backbone produces noisy decision boundaries; attacks computed against it
+# do not yield meaningfully adversarial activations, so the TDA + entropy
+# features can't separate clean from adv and the detector collapses to
+# TPR ≈ FPR ≈ random. This gate makes that failure mode unreachable.
+#
+# The 0.93 floor matches the publishable Madry-recipe target (94-95% acc);
+# below it the FGSM/Square TPR gate downstream is statistically meaningless.
+echo "=== Step 0b: Backbone Accuracy Gate ==="
+if [ ! -f models/cifar_resnet18.pt ] || [ ! -f models/cifar_resnet18.acc.json ]; then
+  echo "❌ Backbone checkpoint missing:"
+  [ -f models/cifar_resnet18.pt ]         || echo "     - models/cifar_resnet18.pt not found"
+  [ -f models/cifar_resnet18.acc.json ]   || echo "     - models/cifar_resnet18.acc.json not found"
+  echo ""
+  echo "  This smoke pipeline cannot validate detection quality without a"
+  echo "  properly-trained CIFAR-10 backbone (≥ 93% test acc, ~200 epochs)."
+  echo ""
+  echo "  Fix on a GPU box (~50-70 min on RTX 5090):"
+  echo "    python3 scripts/pretrain_cifar_backbone.py"
+  echo ""
+  echo "  Then scp models/cifar_resnet18.pt and models/cifar_resnet18.acc.json"
+  echo "  back to this machine and re-run the smoke pipeline."
+  exit 2
+fi
+python3 scripts/verify_backbone_acc.py \
+  --checkpoint models/cifar_resnet18.pt \
+  --sidecar    models/cifar_resnet18.acc.json \
+  --min-acc 0.93 --n 1000 \
+  2>&1 | tee logs/smoke_step0b_backbone_gate.log
+if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
+  echo "❌ Backbone failed accuracy gate. Refusing to run downstream stages."
+  echo "  (A poisoned pipeline produces silent TPR collapse — see plan §root-cause.)"
+  exit 2
+fi
+echo ""
+
 # ── Step 1: Build reference profiles (IDENTICAL to Vast.ai) ──────────────────
 echo "=== Step 1: Build Reference Profiles [CIFAR-10 test 0-4999] ==="
 echo "  (Same script + same PROFILE_IDX as Vast.ai — full 5000 images required)"

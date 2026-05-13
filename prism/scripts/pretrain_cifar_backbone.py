@@ -29,11 +29,27 @@ Usage
     python scripts/pretrain_cifar_backbone.py
     python scripts/pretrain_cifar_backbone.py --dataset cifar100 --num-classes 100 \\
         --output models/cifar100/cifar_resnet18_c100.pt --min-test-acc 0.73
-    python scripts/pretrain_cifar_backbone.py --fast
+
+Provenance
+==========
+On a successful save, a sidecar JSON is written next to the checkpoint
+(e.g. ``models/cifar_resnet18.acc.json``) recording the final test
+accuracy, training schedule, seed, dataset, and a sha256 prefix of the
+saved file. Every downstream stage (``scripts/verify_backbone_acc.py``,
+``run_smoke_test.sh`` Step 0, ``run_vastai_full.sh`` Step 0a) verifies
+this sidecar before doing any work. A missing or mismatched sidecar is
+treated as a stale-cache event and forces a fresh training run.
+
+The previous ``--fast`` shortcut (5 epochs, gate disabled) was removed:
+it produced a 51%-acc backbone that silently passed the prior shape-only
+check and poisoned every downstream artifact, collapsing detector TPR to
+the FPR baseline (see logs/smoke/step0_backbone.log circa 2026-05-13).
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import random
 import sys
@@ -204,24 +220,31 @@ def main() -> int:
     parser.add_argument('--output',       default=None,
                         help='Output state_dict path. Default: config-driven.')
     parser.add_argument('--min-test-acc', type=float, default=None,
-                        help='Refuse to save if final test acc is below this '
-                             'floor. Default: 0.93 for CIFAR-10, 0.73 for '
-                             'CIFAR-100.')
-    parser.add_argument('--fast', action='store_true',
-                        help='Smoke: 5 epochs, gate disabled.')
+                        help='Hard floor on final test accuracy. Refuses to '
+                             'save below this. Default: 0.93 for CIFAR-10, '
+                             '0.73 for CIFAR-100. Cannot be lowered below '
+                             'these floors — the downstream detector pipeline '
+                             'is statistically vacuous below them.')
     args = parser.parse_args()
 
     if args.num_classes is None:
         args.num_classes = 100 if args.dataset == 'cifar100' else 10
     if args.output is None:
         args.output = BACKBONE_CHECKPOINT_PATH
+    _MIN_FLOOR = 0.73 if args.dataset == 'cifar100' else 0.93
     if args.min_test_acc is None:
-        args.min_test_acc = 0.73 if args.dataset == 'cifar100' else 0.93
-
-    if args.fast:
-        args.epochs = 5
-        args.min_test_acc = 0.0
-        print('[FAST MODE] epochs=5, min-test-acc gate disabled')
+        args.min_test_acc = _MIN_FLOOR
+    if args.min_test_acc < _MIN_FLOOR:
+        # We deliberately do not allow loosening below the publishable floor.
+        # An undertrained backbone makes attacks ill-defined and collapses
+        # detector TPR to the FPR baseline — see plan §"Why this collapses
+        # TPR — and not FPR".
+        print(
+            f'ERROR: --min-test-acc {args.min_test_acc:.4f} is below the '
+            f'publishable floor {_MIN_FLOOR:.4f} for {args.dataset}. '
+            f'Refusing to weaken the gate.', flush=True,
+        )
+        return 2
 
     stats = _DATASET_STATS[args.dataset]
     _set_seed(args.seed)
@@ -282,7 +305,8 @@ def main() -> int:
         print(
             f'\nREFUSING TO SAVE: final test accuracy {test_acc:.4f} < '
             f'gate {args.min_test_acc:.4f}. Inspect the training curve and '
-            f'increase --epochs or --lr-tuning if needed.'
+            f'increase --epochs or --lr-tuning if needed.',
+            flush=True,
         )
         return 1
 
@@ -293,6 +317,36 @@ def main() -> int:
     size_mb = output_path.stat().st_size / 1024 / 1024
     print(f'\n[OK] Saved backbone -> {output_path}  ({size_mb:.1f} MB)')
     print(f'     final test accuracy: {test_acc:.4f}')
+
+    # Provenance sidecar — required by every downstream gate. Hashing the
+    # written file (rather than the state_dict bytes) means a hand-edited or
+    # truncated checkpoint produces a SHA mismatch and the gate fails closed.
+    h = hashlib.sha256()
+    with open(output_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    sidecar_path = output_path.with_suffix('.acc.json')
+    sidecar = {
+        'test_acc':         round(float(test_acc), 6),
+        'best_test_acc':    round(float(best_acc), 6),
+        'epochs':           int(args.epochs),
+        'batch_size':       int(args.batch_size),
+        'lr':               float(args.lr),
+        'momentum':         float(args.momentum),
+        'weight_decay':     float(args.weight_decay),
+        'seed':             int(args.seed),
+        'dataset':          args.dataset,
+        'num_classes':      int(args.num_classes),
+        'min_test_acc_gate': float(args.min_test_acc),
+        'sha256_first16':   h.hexdigest()[:16],
+        'checkpoint':       str(output_path),
+        'recipe_version':   'madry2018-cifar-resnet18-v1',
+    }
+    with open(sidecar_path, 'w') as f:
+        json.dump(sidecar, f, indent=2, sort_keys=True)
+    print(f'[OK] Wrote provenance sidecar -> {sidecar_path}')
+    print(f'     sha256_first16={sidecar["sha256_first16"]}  '
+          f'recipe={sidecar["recipe_version"]}')
     print(f'\nNext step: python scripts/build_profile_testset.py')
     return 0
 

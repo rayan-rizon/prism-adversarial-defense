@@ -85,6 +85,25 @@ def build_profile_testset(
     print(f"Building topological profile from {DATASET.upper()} TEST set...")
     print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
 
+    # ── Backbone accuracy precondition ────────────────────────────────────────
+    # Profiles built on an undertrained backbone are statistically vacuous:
+    # the reference manifold itself becomes noise, so every downstream
+    # Wasserstein distance is meaningless. Catch this at script entry rather
+    # than letting it propagate silently to the eval gate.
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+    from verify_backbone_acc import verify_backbone_acc as _vba  # noqa: E402
+    from src.config import BACKBONE_CHECKPOINT_PATH as _BCP
+    _PROFILE_MIN_ACC = 0.90
+    _acc, _n = _vba(_BCP, n=200, device=device, data_root=data_root)
+    print(f"  Backbone test acc: {_acc:.4f} (n={_n}, gate ≥ {_PROFILE_MIN_ACC:.2f})")
+    if _acc < _PROFILE_MIN_ACC:
+        raise RuntimeError(
+            f"Backbone at {_BCP} has test acc {_acc:.4f} < {_PROFILE_MIN_ACC:.2f}. "
+            f"Refusing to build reference profiles on an undertrained backbone — "
+            f"the resulting TDA manifold would not represent the clean-data "
+            f"distribution. Run scripts/pretrain_cifar_backbone.py first."
+        )
+
     # ── Model ─────────────────────────────────────────────────────────────────
     # Active CIFAR-trained ResNet-18. Profiles built on this backbone are the
     # reference manifold against which all downstream Wasserstein distances

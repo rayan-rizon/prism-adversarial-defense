@@ -157,16 +157,27 @@ print('PREFLIGHT PASS: per-tier L3=0.50 confirmed')
 echo ""
 echo "=== Step 0a: Pretrain CIFAR-10 ResNet-18 backbone ==="
 mkdir -p models logs
-if [ -f models/cifar_resnet18.pt ]; then
-  echo "  Skipped: models/cifar_resnet18.pt already present."
-  python -c "
-import torch
-state = torch.load('models/cifar_resnet18.pt', map_location='cpu')
-if isinstance(state, dict) and 'state_dict' in state: state = state['state_dict']
-n_params = sum(v.numel() for v in state.values())
-print(f'  Backbone parameters: {n_params/1e6:.2f} M  (expected 11.17 M for ResNet-18)')
-"
-else
+# Reuse the prior checkpoint only if BOTH:
+#   1. its provenance sidecar exists with a matching sha256 prefix, AND
+#   2. its empirical test accuracy on 1000 test images is >= 0.90.
+# The 0.90 floor leaves ~3pp slack below the 0.93 training gate to absorb
+# non-deterministic AMP / cuDNN variance. The shape-only check that used
+# to live here let a 51%-acc 3-epoch checkpoint pass silently and poison
+# the entire detector pipeline — see fix/backbone-acc-gate commit notes.
+REUSE_BACKBONE=0
+if [ -f models/cifar_resnet18.pt ] && [ -f models/cifar_resnet18.acc.json ]; then
+  if python scripts/verify_backbone_acc.py \
+       --checkpoint models/cifar_resnet18.pt \
+       --sidecar    models/cifar_resnet18.acc.json \
+       --min-acc 0.90 --n 1000 \
+       2>&1 | tee logs/step0a_verify_backbone.log; then
+    REUSE_BACKBONE=1
+  else
+    echo "  Existing backbone failed the accuracy gate — deleting and retraining."
+    rm -f models/cifar_resnet18.pt models/cifar_resnet18.acc.json
+  fi
+fi
+if [ "$REUSE_BACKBONE" -eq 0 ]; then
   python scripts/pretrain_cifar_backbone.py 2>&1 > >(tee logs/step0a_pretrain_backbone.log)
   STEP0A_EXIT=${PIPESTATUS[0]:-$?}
   if [ "$STEP0A_EXIT" -ne 0 ]; then
@@ -175,17 +186,13 @@ else
     echo "       Retry with --epochs 250 or --lr 0.05 if needed."
     exit 1
   fi
+  # Post-train verification: must satisfy the same gate the smoke pipeline uses.
+  python scripts/verify_backbone_acc.py \
+    --checkpoint models/cifar_resnet18.pt \
+    --sidecar    models/cifar_resnet18.acc.json \
+    --min-acc 0.90 --n 1000 \
+    || { echo "ERROR: post-train backbone verification failed"; exit 1; }
 fi
-# Post-step verification: checkpoint exists, parses, and matches expected arch.
-python -c "
-import sys, torch
-sys.path.insert(0, '.')
-from src.models import cifar_resnet18
-m = cifar_resnet18(num_classes=10, checkpoint_path='models/cifar_resnet18.pt', map_location='cpu')
-out = m(torch.zeros(1, 3, 32, 32))
-assert out.shape == (1, 10), f'unexpected output shape {out.shape}'
-print('  [OK] Backbone checkpoint loads and produces (1,10) logits.')
-" || { echo "ERROR: backbone verification failed"; exit 1; }
 
 # ── Step 1: Build reference profiles ─────────────────────────────────────────
 echo ""

@@ -1,6 +1,17 @@
 model:
   name: cifar_resnet18
-  backbone_checkpoint: models/smoke_test/cifar_resnet18_smoke.pt
+  # Smoke and Vast.ai exercise the SAME backbone artifact — the smoke pipeline
+  # validates the same model that will be published. The prior smoke-specific
+  # path (models/smoke_test/cifar_resnet18_smoke.pt) hosted a 3-epoch 51%-acc
+  # backbone which silently poisoned every downstream artifact; that pathway
+  # has been removed and the smoke pipeline now refuses to run unless this
+  # production backbone meets the accuracy gate below.
+  backbone_checkpoint: models/cifar_resnet18.pt
+  # Hard floor on backbone clean test accuracy. Enforced by
+  # scripts/verify_backbone_acc.py at the entry of run_smoke_test.sh,
+  # run_vastai_full.sh, and scripts/build_profile_testset.py. Below this
+  # floor the detector pipeline is statistically vacuous (TPR ≈ FPR).
+  min_test_acc: 0.93
   num_classes: 10
   layer_names:
   - layer2
