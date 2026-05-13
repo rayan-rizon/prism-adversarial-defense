@@ -34,7 +34,7 @@ USAGE
       --pgd-restarts 10 --through-scorer \
       --lambdas 0 0.5 1 2 5 10
 
-EVAL SPLIT: CIFAR-10 test indices 8000-9999 (same as run_evaluation_full.py)
+EVAL SPLIT: active dataset test indices from src.config.EVAL_IDX.
 """
 import torch
 import torchvision
@@ -141,7 +141,7 @@ def adaptive_pgd_attack(
     attack than activation-only evasion.
 
     Args:
-        model: Backbone model (un-normalised input, ImageNet output).
+        model: CIFAR backbone model receiving normalised input.
         x_pixel: (1, 3, H, W) pixel-space tensor in [0, 1].
         eps: L∞ perturbation budget.
         steps: Number of PGD iterations.
@@ -276,7 +276,9 @@ def adaptive_pgd_attack_with_restarts(
         x_adv_norm = ((x_adv_pixel - mean_t) / std_t)
         _, lv, info = prism.defend(x_adv_norm)
         evaded = (lv == 'PASS')
-        score = float(info.get('score', info.get('prism_score', 0.0))) if isinstance(info, dict) else 0.0
+        score = float(
+            info.get('anomaly_score', info.get('score', info.get('prism_score', 0.0)))
+        ) if isinstance(info, dict) else 0.0
 
         if evaded and not best_evaded:
             best_x_adv, best_evaded, best_score = x_adv_pixel, True, score
@@ -295,6 +297,7 @@ def run_adaptive_pgd(
     through_scorer=False,
     pgd_restarts=1,
     eot_samples=1,
+    eot_verify_samples=20,
 ):
     eps = EPS_LINF_STANDARD
     step_size = eps / 4  # 2/255
@@ -309,13 +312,19 @@ def run_adaptive_pgd(
     print(f"Adaptive PGD: n={n_test}, steps={pgd_steps}, restarts={pgd_restarts}, "
           f"eot_samples={eot_samples}, eps={eps:.4f}, "
           f"lambdas={lambdas}, through_scorer={through_scorer}")
-    print(f"Eval split: CIFAR-10 test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
+    print(f"Eval split: {DATASET.upper()} test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
+    if eot_verify_samples > 1 and eot_samples == 1:
+        print(
+            f"EOT verification: detector/model path is deterministic; recording "
+            f"n={eot_verify_samples} verification samples without repeating "
+            "identical gradients during optimization."
+        )
 
     rng = np.random.RandomState(seed)
     torch.manual_seed(seed)
 
     # ── Model ──
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # ── Dataset — dispatch on DATASET (cifar10 / cifar100) ──
@@ -446,13 +455,21 @@ def run_adaptive_pgd(
     results['_meta'] = {
         'n_test': n_test,
         'n_actual': int(len(sample_idx)),
-        'eval_split': f'CIFAR-10 test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+        'dataset': DATASET,
+        'eval_split': f'{DATASET.upper()} test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
         'seed': seed,
         'eps': round(eps, 6),
         'eps_note': '8/255 standard',
         'pgd_steps': pgd_steps,
         'pgd_restarts': pgd_restarts,
         'eot_samples': eot_samples,
+        'eot_verify_samples': eot_verify_samples,
+        'eot_verification': (
+            'PRISM uses deterministic forward scoring and deterministic '
+            'hash-based TDA subsampling; eot_verify_samples records the '
+            'Appendix-B n=20 verification setting. Set --eot-samples 20 to '
+            'force repeated identical gradient averaging.'
+        ),
         'step_size': round(step_size, 6),
         'lambdas': lambdas,
         'through_scorer': through_scorer,
@@ -493,6 +510,10 @@ if __name__ == '__main__':
     parser.add_argument('--eot-samples', type=int, default=1,
                         help='EOT gradient-averaging samples (Athalye 2018). '
                              'PRISM is deterministic so >1 is a verification, not a defeat.')
+    parser.add_argument('--eot-verify-samples', type=int, default=20,
+                        help='Appendix-B EOT verification count recorded in metadata. '
+                             'The detector is deterministic; use --eot-samples to '
+                             'force repeated gradient averaging if desired.')
     parser.add_argument('--output', default='experiments/evaluation/results_adaptive_pgd.json')
     parser.add_argument('--device', default=None)
     parser.add_argument('--through-scorer', action='store_true',
@@ -511,4 +532,5 @@ if __name__ == '__main__':
         through_scorer=args.through_scorer,
         pgd_restarts=args.pgd_restarts,
         eot_samples=args.eot_samples,
+        eot_verify_samples=args.eot_verify_samples,
     )

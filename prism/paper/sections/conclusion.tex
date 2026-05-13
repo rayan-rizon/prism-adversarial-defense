@@ -5,18 +5,15 @@ We presented \prism, a multi-layer runtime defense that combines
 persistent homology, conformal prediction, Bayesian changepoint detection, 
 and a topology-aware mixture-of-experts to detect adversarial inputs 
 with distribution-free FPR guarantees.
-Our experiments on CIFAR-10 demonstrate 100\% TPR against PGD-40,
-93\% against Square Attack ($\varepsilon{=}8/255$), and $87\%$ against FGSM ($\varepsilon{=}8/255$)
-at FPR$=7.9\%$ ($n=5{,}000$, pooled over 5 seeds), within the conformal guarantee of $\leq10\%$.
-The BOCPD campaign detector identifies sustained attacks within 2 adversarial
-queries with no false alarm on preceding clean traffic.
-The MoE self-healing layer eliminates prediction unavailability for all
-L3-triggered adversarials (Recovery$=100\%$ with topology-matched experts).
+The final empirical claims are generated from the locked CIFAR-10 and
+CIFAR-100 Vast.ai pipelines, with attack detection, adaptive attacks,
+matched-FPR baselines, campaign streams, recovery, and ablation tables all
+derived from result JSONs rather than manually transcribed values.
 
 \paragraph{Limitations.}
 The primary limitation is computational: persistent homology over 
 high-dimensional activation tensors requires subsampling 
-(200 points per layer), which may weaken detection for attacks 
+(150 points per layer in the current configuration), which may weaken detection for attacks
 that specifically preserve local topology while altering global structure.
 Runtime overhead on CPU is approximately 120\,ms per image (3-layer monitoring);
 GPU deployment reduces this to $\sim15$\,ms.
@@ -40,10 +37,8 @@ as a secondary optimization objective;
 (5) online recalibration to handle distribution shift.
 
 \paragraph{CIFAR-100 generalization.}
-Preliminary results find clean FPR$\approx15\%$ on CIFAR-100
-(vs. $9\%$ on CIFAR-10), confirming partial generalization of topological
-features to fine-grained OOD distributions.
-Full cross-dataset evaluation with $n=500$ is planned for the GPU run.
+CIFAR-100 is evaluated as a first-class second dataset with its own backbone,
+profiles, ensemble, calibrators, experts, and tagged result files.
 
 \paragraph{Broader impact.}
 \prism is a defensive tool designed to improve the reliability 

@@ -150,7 +150,7 @@ print('PREFLIGHT PASS: per-tier L3=0.50 confirmed')
 # Replaces the prior ImageNet-pretrained ResNet-18. Trains from scratch on
 # the CIFAR-10 training split (50k images) with the standard recipe:
 #   SGD lr=0.1 cosine→0, momentum=0.9, wd=5e-4, nesterov, 200 epochs,
-#   batch=128, augment=RandomCrop(32,pad=4)+HorizontalFlip.
+#   batch=256, augment=RandomCrop(32,pad=4)+HorizontalFlip.
 # Expected clean test accuracy: 94-95%. Wall-clock on RTX 5090: ≈ 50-70 min.
 # Output: models/cifar_resnet18.pt — loaded by every downstream stage via
 # src.models.load_backbone().  Skipped if the checkpoint already exists.
@@ -215,9 +215,7 @@ fi
 #   1. Wait Step 2 first → Step 2b verification gates Step 3
 #   2. Run Step 2b (verification)
 #   3. Continue Step 3, 4 (these only need ensemble_scorer.pkl, not 2c/2d)
-#   4. Wait Step 2c + 2d before Phase 1 LOCK announcement (purely cosmetic —
-#      Step 2c output is consumed by no current pipeline step; Step 2d output
-#      is consumed by Phase 2 Step 7b which is ~2h after this point).
+#   4. Wait Step 2c + 2d before no-TDA calibration and Phase 1 LOCK.
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
@@ -394,16 +392,16 @@ fi
 # ── Join Steps 2c, 2d (background trainers) before LOCK ──────────────────────
 # By this point Steps 2/2b/3/4 have run sequentially in foreground (~40 min)
 # while Steps 2c/2d ran in background (~25-30 min each). Both should already
-# be done, but we join properly to surface any errors. Failures are warned
-# but do NOT abort the run — Step 2c output is currently unused; Step 2d
-# failure means recovery eval falls back to whatever experts.pkl exists.
+# be done, but we join properly to surface any errors. Both artifacts are
+# required: Step 2c for C1/no-TDA calibration and Step 2d for C4 recovery.
 echo ""
 echo "=== Join Steps 2c, 2d (background trainers) ==="
 STEP2C_EXIT=0; STEP2D_EXIT=0
 if [ -n "$PID_2C" ]; then
   wait $PID_2C || STEP2C_EXIT=$?
   if [ $STEP2C_EXIT -ne 0 ]; then
-    echo "  WARN: Step 2c (ensemble-no-TDA) failed (exit $STEP2C_EXIT). Check logs/step2c_retrain_no_tda.log"
+    echo "  ERROR: Step 2c (ensemble-no-TDA) failed (exit $STEP2C_EXIT). Check logs/step2c_retrain_no_tda.log"
+    exit 1
   else
     echo "  Step 2c: DONE → models/ensemble_no_tda.pkl"
   fi
@@ -411,11 +409,35 @@ fi
 if [ -n "$PID_2D" ]; then
   wait $PID_2D || STEP2D_EXIT=$?
   if [ $STEP2D_EXIT -ne 0 ]; then
-    echo "  WARN: Step 2d (experts) failed (exit $STEP2D_EXIT). Recovery eval may produce trivial results."
+    echo "  ERROR: Step 2d (experts) failed (exit $STEP2D_EXIT). Recovery eval cannot satisfy C4."
+    exit 1
   else
     echo "  Step 2d: DONE → models/experts.pkl"
   fi
 fi
+
+echo ""
+echo "=== Step 3b: Calibrate Ensemble-no-TDA Arm [C1] ==="
+python scripts/calibrate_ensemble.py \
+  --ensemble-path models/ensemble_no_tda.pkl \
+  --output models/calibrator_no_tda.pkl \
+  2>&1 > >(tee logs/step3b_calibrate_no_tda.log)
+STEP3B_EXIT=${PIPESTATUS[0]:-$?}
+if [ "$STEP3B_EXIT" -ne 0 ]; then
+  echo "ERROR: Step 3b failed. Check logs/step3b_calibrate_no_tda.log"; exit 1
+fi
+
+python -c "
+import pickle, sys
+exp = pickle.load(open('models/experts.pkl', 'rb'))
+if not isinstance(exp, dict):
+    sys.exit('experts.pkl must be a dict artifact')
+if int(exp.get('output_dim', -1)) != 10:
+    sys.exit(f'experts output_dim={exp.get(\"output_dim\")}, expected 10 for CIFAR-10')
+for p in ['models/calibrator_base.pkl', 'models/calibrator_no_tda.pkl', 'models/ensemble_no_tda.pkl']:
+    open(p, 'rb').close()
+print('[OK] C1/C4 artifacts verified: base calibrator, no-TDA calibrator, no-TDA ensemble, CIFAR-10 experts')
+"
 
 # ── LOCK: ensemble_scorer.pkl + calibrator.pkl are now frozen ────────────────
 echo ""
@@ -510,13 +532,14 @@ echo "  Step 5B FGSM+PGD+Square+AA started (PID=$PID_FAST)"
 # ── Step 6: Adaptive PGD — all 5 seeds ───────────────────────────────────────
 # Use indexed arrays (bash 3+ compatible) instead of declare -A (bash 4+ only).
 echo ""
-echo "  Launching Step 6 adaptive PGD seeds (max 2 parallel to reduce GPU contention)..."
+echo "  Launching Step 6 adaptive PGD seeds..."
 STEP6_PIDS=""
 STEP6_SEEDS=""
 count=0
 for s in $SEEDS; do
-  # Research-plan P1.4: expanded λ sweep, 100-step × 10-restart PGD, EOT=1 (hash
-  # subsample is deterministic; one EOT pass is sufficient to verify).
+  # Research-plan P1.4: expanded λ sweep, 100-step × 10-restart PGD.
+  # Runtime optimization uses EOT=1 because PRISM's scoring path is
+  # deterministic; --eot-verify-samples records the Appendix-B n=20 check.
   # Flags --pgd-restarts, --eot-samples, --lambdas are gated on the P1.4 branch
   # being merged — if argparse rejects them, fall back to the defaults.
   if python experiments/evaluation/run_adaptive_pgd.py --help 2>&1 | grep -q -- '--pgd-restarts'; then
@@ -526,6 +549,7 @@ for s in $SEEDS; do
       --pgd-steps $ADAPTIVE_STEPS \
       --pgd-restarts $ADAPTIVE_RESTARTS \
       --eot-samples 1 \
+      --eot-verify-samples 20 \
       --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
       2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
   else
@@ -540,10 +564,6 @@ for s in $SEEDS; do
   echo "  Step 6 seed=$s started (PID=$pid)"
   count=$((count+1))
 
-  # Simple stagger: wait for the second process of the pair before launching the next pair
-  if [ $((count % 2)) -eq 0 ]; then
-    wait $pid
-  fi
 done
 
 # ── Step 7: Ablation ─────────────────────────────────────────────────────────
@@ -553,6 +573,7 @@ python experiments/ablation/run_ablation_paper.py \
   --n $N_TEST \
   --multi-seed --seeds $SEEDS \
   --attacks FGSM PGD Square CW \
+  --output experiments/ablation/results_ablation_multiseed.json \
   2>&1 | tee logs/step7_ablation.log &
 PID_ABLATION=$!
 echo "  Step 7 ablation started (PID=$PID_ABLATION)"
@@ -876,14 +897,18 @@ out = {
   'ensemble_use_softmax_entropy': e.get('use_softmax_entropy'),
   'ensemble_use_grad_norm':    e.get('use_grad_norm'),
   'ensemble_sha256_16':        h('models/ensemble_scorer.pkl'),
+  'ensemble_no_tda_sha256_16': h('models/ensemble_no_tda.pkl'),
   'calibrator_sha256_16':      h('models/calibrator.pkl'),
+  'calibrator_base_sha256_16': h('models/calibrator_base.pkl'),
+  'calibrator_no_tda_sha256_16': h('models/calibrator_no_tda.pkl'),
+  'experts_sha256_16':         h('models/experts.pkl'),
   'reference_profiles_sha256_16': h('models/reference_profiles.pkl'),
   'latency_result_file':        'experiments/evaluation/results_latency_standalone.json',
   'seeds':                     [42, 123, 456, 789, 999],
   'eval_split':                'CIFAR-10 test idx 8000-9999',
   'eps_linf':                  8.0/255,
   'cw_eval_params':            {'engine': '$CW_ENGINE', 'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'chunk': $CW_CHUNK, 'confidence': 0.0},
-  'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1},
+  'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1, 'eot_verify_samples': 20},
   'fgsm_oversample':           $FGSM_OVERSAMPLE,
   'baselines_methods':         ['lid', 'mahalanobis', 'odin', 'energy'],
   'campaign_scenarios':        ['clean_only', 'sustained_rho050', 'sustained_rho080', 'sustained_rho100', 'burst', 'low_rate'],

@@ -82,20 +82,43 @@ from src.models import _NormalizedBackbone as _NormalizedResNet
 
 
 def _compute_score_stream(
-    imgs_pixel, profiler, extractor, ensemble, device, label,
+    imgs_pixel, profiler, extractor, ensemble, model, device, label,
 ):
-    """Return (N,) scorer outputs for a list of pixel-space tensors."""
+    """Return (N,) scorer outputs matching PRISM.defend's runtime inputs."""
     scores = np.empty(len(imgs_pixel), dtype=np.float32)
     use_dct = getattr(ensemble, 'use_dct', False)
+    use_grad_norm = getattr(ensemble, 'use_grad_norm', False)
+    use_softmax_entropy = getattr(ensemble, 'use_softmax_entropy', False)
     for i, img_pixel in enumerate(tqdm(imgs_pixel, desc=f"  score[{label}]")):
         x_norm = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
         acts = extractor.extract(x_norm)
         dgms = {
-            L: profiler.compute_diagram(acts[L].squeeze(0).cpu().numpy())
-            for L in LAYER_NAMES
+                L: profiler.compute_diagram(acts[L].squeeze(0).cpu().numpy())
+                for L in LAYER_NAMES
         }
-        img_np = img_pixel.numpy() if use_dct else None
-        scores[i] = ensemble.score(dgms, image=img_np)
+        img_np = x_norm.squeeze(0).detach().cpu().numpy() if use_dct else None
+
+        grad_norm = None
+        if use_grad_norm:
+            x_g = x_norm.detach().clone().requires_grad_(True)
+            with torch.enable_grad():
+                logits_g = model(x_g)
+                pred_idx = int(logits_g.argmax(1).item())
+                (grad_x,) = torch.autograd.grad(logits_g[0, pred_idx], x_g)
+            grad_norm = float(grad_x.norm().item())
+
+        logits_np = None
+        if use_softmax_entropy:
+            with torch.no_grad():
+                logits = model(x_norm)
+            logits_np = logits.squeeze(0).detach().cpu().numpy()
+
+        scores[i] = ensemble.score(
+            dgms,
+            image=img_np,
+            grad_norm=grad_norm,
+            logits=logits_np,
+        )
     return scores
 
 
@@ -164,7 +187,7 @@ def calibrate_l0_thresholds(
           f"use_tda={ensemble.use_tda}).")
 
     # ── Model + attack ───────────────────────────────────────────────────────
-    # Same CIFAR-10-trained backbone used by the rest of the pipeline.
+    # Same active CIFAR-trained backbone used by the rest of the pipeline.
     model = load_backbone(device)
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
@@ -203,9 +226,9 @@ def calibrate_l0_thresholds(
         return
 
     clean_scores = _compute_score_stream(
-        clean_pixel, profiler, extractor, ensemble, device, label='clean')
+        clean_pixel, profiler, extractor, ensemble, model, device, label='clean')
     adv_scores = _compute_score_stream(
-        adv_pixel, profiler, extractor, ensemble, device, label='adv')
+        adv_pixel, profiler, extractor, ensemble, model, device, label='adv')
     extractor.cleanup()
 
     print(f"clean_scores: mean={clean_scores.mean():.4f} std={clean_scores.std():.4f} "

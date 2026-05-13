@@ -9,7 +9,8 @@ DESIGN FOR PUBLISHABILITY
 1. Uses a DEDICATED training split, fully separate from:
    - The conformal calibration/validation split (test idx 5000-7999)
    - The final evaluation set (test idx 8000-9999)
-   Training data: CIFAR-10 TRAINING set (50,000 images).
+   Training data: active CIFAR TRAINING set (50,000 images for CIFAR-10;
+   50,000 images for CIFAR-100).
 
 2. Adversarial training mix -- default tri-split (~34% FGSM / 33% PGD / 33% Square),
    optionally extended with CW-L2 and/or AutoAttack-APGD-CE:
@@ -138,9 +139,9 @@ class _APGDGenerator:
     """Wrap AutoAttack's APGDAttack so it exposes ART's .generate(x_np) API.
 
     The training extraction loop calls ``art_attack.generate(x_np)``; APGD's
-    native interface is ``.perturb(x, y)``. Labels come from the backbone's own
-    clean predictions (ImageNet-1000 space), not CIFAR-10, for the same reason
-    we fixed the _run_autoattack label bug in the evaluation script.
+    native interface is ``.perturb(x, y)``. Labels come from the active CIFAR
+    backbone's own clean predictions so training remains self-consistent for
+    CIFAR-10 and CIFAR-100.
     """
     def __init__(self, norm_model, eps, device, n_iter=40):
         self._attack = APGDAttack(
@@ -360,7 +361,7 @@ def train_ensemble_scorer(
         ref_profiles = pickle.load(f)
 
     # -- Setup model -------------------------------------------------------------
-    # CIFAR-10-trained ResNet-18, wrapped with pixel-space normalisation. The
+    # Active CIFAR-trained ResNet-18, wrapped with pixel-space normalisation. The
     # `model.layer2 / layer3 / layer4` hooks used by the extractor are
     # transparently forwarded to the inner CIFARResNet18.
     model = load_backbone(device)
@@ -593,7 +594,7 @@ def train_ensemble_scorer(
     print(f"   training_attacks={attack_names}")
     print(f"   fgsm_oversample={fgsm_oversample:.2f}, n_features={ensemble.n_features}")
     print(f"   use_grad_norm={use_grad_norm}")
-    print(f"   Trained on CIFAR-10 TRAINING set (no test-set leakage)")
+    print(f"   Trained on {DATASET.upper()} TRAINING set (no test-set leakage)")
     print(f"   logit_shift={ensemble.logit_shift:.4f}, w_score_mean={ensemble.w_score_mean:.4f}")
     print(f"\nNext step: python scripts/calibrate_ensemble.py")
     return ensemble

@@ -81,7 +81,7 @@ def compute_dct_energy(image: np.ndarray) -> float:
     space, supplementing the 36 persistence statistics.
 
     Args:
-        image: (C, H, W) float32 array (ImageNet-normalised or [0, 1]).
+        image: (C, H, W) float32 array (normalised or [0, 1]).
     Returns:
         log(\u03a3 high_freq_coeff\u00b2 + 1e-8) \u2014 scalar float.
         Returns 0.0 if scipy is unavailable or image is None.

@@ -18,14 +18,13 @@ This guide answers three questions after your code is written:
 | --- | --- | --- | --- |
 | CIFAR-10 | Main dev + calibration | Standard 10-class, fast iteration, widely used in adversarial robustness papers | `torchvision.datasets.CIFAR10` |
 | CIFAR-100 | Generalization test | Harder classification — confirms PRISM isn't overfit to CIFAR-10 topology | `torchvision.datasets.CIFAR100` |
-| ImageNet (subset) | Scale test | Larger images → bigger activation maps → stress-tests TDA speed | RobustBench provides pre-curated 5000-image subsets |
-| RobustBench test sets | Standardized evaluation | Pre-generated adversarial examples under AutoAttack — used by all SOTA papers | `robustbench.data` |
+| RobustBench-style attacks | Standardized evaluation | AutoAttack-style stress tests on the same CIFAR-native backbone | `autoattack`, `robustbench` utilities |
 
 ### Data Split Strategy
 
 ```
-Clean Data — CIFAR-10 test set (10,000 images), partitioned by index range.
-Source of truth: configs/default.yaml::splits + src.config.{PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX}.
+Clean Data — active CIFAR test set (10,000 images), partitioned by index range.
+Source of truth: active YAML config + src.config.{PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX}.
 
 ├── Profile Set     [    0,  5000) — 5,000 images → reference-profile medoids (TAMM)
 ├── Calibration Set [5000,  7000) — 2,000 images → conformal thresholds (CADG)
@@ -98,74 +97,30 @@ assert fpr_actual <= 0.10 + 0.02, "Conformal guarantee violated!"
 
 ### 2.3 SACD — BOCPD Campaign Monitor
 
-**What "training" means here:** Setting the hyperparameters (`hazard_rate`, `cp_threshold`). No gradient updates. Tune on a synthetic simulation.
+**What "training" means here:** Fitting BOCPD/L0 hyperparameters on real clean
+and PGD score streams from the validation split. No gradient updates.
 
-```python
-# Tune via simulation:
-from src.sacd.monitor import CampaignMonitor
-import numpy as np
-
-# Grid search over hazard rates
-for hazard in [1/50, 1/100, 1/200, 1/500]:
-    monitor = CampaignMonitor(hazard_rate=hazard, cp_threshold=0.3)
-    # Simulate: 100 clean queries, then 20 probe queries
-    clean = np.random.normal(0.1, 0.02, 100)
-    probes = np.random.normal(0.3, 0.05, 20)
-    scores = np.concatenate([clean, probes])
-    
-    detected_at = None
-    for t, s in enumerate(scores):
-        state = monitor.process_score(s, timestamp=t)
-        if state['l0_active'] and detected_at is None:
-            detected_at = t
-    
-    print(f"hazard=1/{int(1/hazard)}: detected at t={detected_at}")
-    # Target: detected_at between t=100 and t=120 (within 20 probe queries)
+```bash
+python scripts/calibrate_l0_thresholds.py
+# CIFAR-100:
+PRISM_CONFIG=configs/cifar100.yaml python scripts/calibrate_l0_thresholds.py --config configs/cifar100.yaml
 ```
 
-**Pick the hazard rate that detects within 20 probe queries with the fewest false positives.**
+**Selection rule:** maximize sustained-stream ASR reduction subject to
+clean-only `l0_active_frac <= 0.01`.
 
 ### 2.4 TAMSH — Expert Sub-Networks
 
-**What "training" means here:** Actual PyTorch training. Each expert MLP is trained to replicate the function of a backbone sub-span on a cluster of clean inputs.
-
-```python
-# scripts/train_experts.py
-import torch, torch.nn as nn
-from src.tamsh.experts import ExpertSubNetwork
-
-# For each cluster k of clean activations:
-for k in range(K):  # K=4 experts
-    expert = ExpertSubNetwork(
-        input_dim=cluster_input_dims[k],
-        output_dim=cluster_output_dims[k],
-    ).cuda()
-    
-    optimizer = torch.optim.Adam(expert.parameters(), lr=1e-3)
-    criterion = nn.MSELoss()  # Reconstruct target activations
-    
-    for epoch in range(50):
-        for x_in, x_target in cluster_loaders[k]:
-            pred = expert(x_in.cuda())
-            loss = criterion(pred, x_target.cuda())
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        
-        print(f"Expert {k}, Epoch {epoch}: loss={loss.item():.4f}")
-    
-    torch.save(expert.state_dict(), f'models/expert_{k}.pt')
-```
+**What "training" means here:** Actual PyTorch training. Each expert MLP maps
+the final monitored layer activation to the active dataset's class logits.
+The four experts are trained on clean, FGSM, PGD, and mixed perturbation pools.
 
 **Validation check:**
 
-```python
-# Check expert reconstruction quality on held-out clean activations
-for k in range(K):
-    expert.load_state_dict(torch.load(f'models/expert_{k}.pt'))
-    val_loss = evaluate_expert(expert, val_loader_k)
-    print(f"Expert {k} val MSE: {val_loss:.4f}")
-    # Target: < 0.05 MSE (adjust based on activation scale)
+```bash
+python scripts/train_experts.py
+python experiments/evaluation/run_recovery_eval.py --n-test 1000
+# Gate: recovery_accuracy(tamsh) - recovery_accuracy(passthrough) >= 15pp
 ```
 
 ---
@@ -249,19 +204,23 @@ pytest tests/ -v
 
 ```python
 # tests/test_integration.py
-import torch, torchvision
+import torch
 from src.prism import PRISM
+from src.models import load_backbone
+from src.config import BACKBONE_INPUT_SIZE, LAYER_NAMES, PATHS
 
-model = torchvision.models.resnet18(pretrained=True).cuda().eval()
-prism = PRISM(
+device = torch.device('cuda')
+model = load_backbone(device)
+prism = PRISM.from_saved(
     model=model,
-    layer_names=['layer1','layer2','layer3','layer4'],
-    calibrator_path='models/calibrator.pkl',
-    profile_path='models/reference_profiles.pkl',
+    layer_names=LAYER_NAMES,
+    calibrator_path=PATHS['calibrator'],
+    profile_path=PATHS['reference_profiles'],
+    ensemble_path=PATHS['ensemble_scorer'],
 )
 
 # Test 1: Clean image should PASS
-x_clean = torch.randn(1, 3, 224, 224).cuda()
+x_clean = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE).to(device)
 _, level, meta = prism.defend(x_clean)
 print(f"Clean input → level: {level} (expected: PASS or L1)")
 
@@ -269,8 +228,8 @@ print(f"Clean input → level: {level} (expected: PASS or L1)")
 x_adv = x_clean + torch.randn_like(x_clean) * 0.5
 _, level_adv, meta_adv = prism.defend(x_adv)
 print(f"Perturbed input → level: {level_adv} (expected: L2 or L3)")
-print(f"Score delta: clean={meta['score']:.4f}, adv={meta_adv['score']:.4f}")
-assert meta_adv['score'] > meta['score'], "Adversarial score must be higher!"
+print(f"Score delta: clean={meta['anomaly_score']:.4f}, adv={meta_adv['anomaly_score']:.4f}")
+assert meta_adv['anomaly_score'] > meta['anomaly_score'], "Adversarial score must be higher!"
 ```
 
 ### 3.3 Quantitative Evaluation — The Core Metrics
@@ -283,61 +242,33 @@ These are the numbers your paper reports. Run the full evaluation script from Ph
 | False Positive Rate (FPR) | Flagged clean inputs / Total clean inputs | < 10% (L1), < 3% (L2), < 0.5% (L3) | > 15% |
 | Campaign Detection Lag | Probe queries until L0 activates | < 20 queries | > 50 queries |
 | Latency overhead | PRISM defend() time vs. bare model | < 100ms per image | > 500ms |
-| Expert val MSE | Reconstruction loss on clean held-out set | < 0.05 | > 0.20 |
+| TAMSH recovery gap | Recovery accuracy(tamsh) - passthrough on L3 adversarials | > 15pp | < 5pp |
 
 ### 3.4 Sanity Checks — Quick Smoke Tests
 
 Run these after each major phase is complete:
 
-```python
-# sanity_checks.py
-import numpy as np, pickle, torch
-
-# Check 1: Reference profiles exist and have content
-profiles = pickle.load(open('models/reference_profiles.pkl','rb'))
-for layer, dgms in profiles.items():
-    assert len(dgms) > 1000, f"{layer} profile too small: {len(dgms)}"
-    print(f"✅ {layer}: {len(dgms)} diagrams")
-
-# Check 2: Calibrator thresholds are ordered correctly
-cal = pickle.load(open('models/calibrator.pkl','rb'))
-assert cal.thresholds['L1'] < cal.thresholds['L2'] < cal.thresholds['L3'], \
-    "Thresholds out of order!"
-print(f"✅ Thresholds: L1={cal.thresholds['L1']:.4f}, "
-      f"L2={cal.thresholds['L2']:.4f}, L3={cal.thresholds['L3']:.4f}")
-
-# Check 3: Score distribution is sensible
-clean_scores = np.load('experiments/calibration/clean_scores.npy')
-print(f"✅ Clean score stats: mean={clean_scores.mean():.4f}, "
-      f"std={clean_scores.std():.4f}")
-# If mean is > 0.5, something is wrong (clean inputs shouldn't be flagged)
-assert clean_scores.mean() < 0.5, "Clean score mean too high — check profiler"
+```bash
+python sanity_checks.py
+PRISM_CONFIG=configs/cifar100.yaml python sanity_checks.py
 ```
 
 ### 3.5 Ablation Tests — Prove Each Component Contributes
 
 For the paper, you must show that each module adds value. Test four configurations:
 
-| **Configuration** | **TAMM** | **CADG** | **SACD (L0)** | **TAMSH** | **Expected TPR** |
+| **Configuration** | **TAMM** | **Ensemble** | **TDA features** | **TAMSH** | **Purpose** |
 | --- | --- | --- | --- | --- | --- |
-| Full PRISM | ✅ | ✅ | ✅ | ✅ | Highest |
-| No L0 | ✅ | ✅ | ❌ | ✅ | Lower on campaign attacks |
-| No MoE | ✅ | ✅ | ✅ | ❌ | Lower on L3 recovery |
-| TDA only (no conformal) | ✅ | ❌ | ❌ | ❌ | No FPR guarantee |
+| Full PRISM | yes | yes | yes | yes | Reference |
+| No MoE | yes | yes | yes | no | Recovery-only effect |
+| Ensemble-no-TDA | no | yes | no | yes | C1 marginal topology gate |
+| TDA only | yes | no | yes | no | Base topology baseline |
 
-```python
-# experiments/ablation/run_ablation.py
-configurations = {
-    'Full PRISM':        dict(use_l0=True,  use_moe=True,  use_conformal=True),
-    'No L0':             dict(use_l0=False, use_moe=True,  use_conformal=True),
-    'No MoE':            dict(use_l0=True,  use_moe=False, use_conformal=True),
-    'TDA only':          dict(use_l0=False, use_moe=False, use_conformal=False),
-}
-
-for name, config in configurations.items():
-    prism = build_prism(**config)
-    tpr, fpr = evaluate(prism, test_loader, attack='PGD')
-    print(f"{name}: TPR={tpr:.3f}, FPR={fpr:.3f}")
+```bash
+python experiments/ablation/run_ablation_paper.py \
+  --n 1000 --multi-seed --seeds 42 123 456 789 999 \
+  --attacks FGSM PGD Square CW \
+  --output experiments/ablation/results_ablation_multiseed.json
 ```
 
 ---

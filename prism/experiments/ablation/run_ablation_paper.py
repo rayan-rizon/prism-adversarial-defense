@@ -20,10 +20,12 @@ The ablation uses a NoOpCampaignMonitor for TAMM+CADG metrics (as in full eval),
 then a SEPARATE campaign-aware run to measure the L0 contribution.
 
 Configurations:
-  Full PRISM    — TAMM + CADG + SACD(L0) + TAMSH(MoE)
-  No L0         — TAMM + CADG             + TAMSH(MoE)
-  No MoE        — TAMM + CADG + SACD(L0)
-  TDA only      — TAMM (raw Wasserstein, no conformal)
+  Full PRISM       — ensemble scorer + conformal CADG + TAMSH
+  No MoE           — ensemble scorer + conformal CADG, no TAMSH routing
+  Ensemble-no-TDA  — same non-topological ensemble features, no persistence stats
+  TDA only         — raw Wasserstein scorer with its own conformal calibrator
+
+L0/SACD is measured in campaign-stream evaluation, not this IID ablation.
 
 USAGE
 -----
@@ -80,6 +82,57 @@ _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 EPS              = EPS_LINF_STANDARD  # 8/255
 
 
+def _artifact_sibling(path: str, name: str) -> str:
+    return os.path.join(os.path.dirname(path) or '.', name)
+
+
+def _no_tda_ensemble_path() -> str:
+    return _artifact_sibling(PATHS['ensemble_scorer'], 'ensemble_no_tda.pkl')
+
+
+def _no_tda_calibrator_path() -> str:
+    return _artifact_sibling(PATHS['calibrator'], 'calibrator_no_tda.pkl')
+
+
+def _base_calibrator_path() -> str:
+    return _artifact_sibling(PATHS['calibrator'], 'calibrator_base.pkl')
+
+
+def _load_moe(required: bool):
+    experts_path = PATHS['experts']
+    if not os.path.exists(experts_path):
+        if required:
+            raise FileNotFoundError(
+                f"{experts_path} not found. Run scripts/train_experts.py before "
+                "Full PRISM / Ensemble-no-TDA ablation arms."
+            )
+        return None
+    data = PRISM._load_pickle(experts_path)
+    if isinstance(data, TopologyAwareMoE):
+        return data
+    if isinstance(data, dict) and 'experts' in data:
+        if int(data.get('output_dim', -1)) != BACKBONE_NUM_CLASSES:
+            raise ValueError(
+                f"{experts_path}: expert output_dim={data.get('output_dim')} "
+                f"does not match active BACKBONE_NUM_CLASSES={BACKBONE_NUM_CLASSES}"
+            )
+        rebuilt = []
+        for sd in data['experts']:
+            net = ExpertSubNetwork(
+                input_dim=data['input_dim'],
+                output_dim=data['output_dim'],
+                hidden_dim=data.get('hidden_dim', 256),
+            )
+            net.load_state_dict(sd)
+            net.eval()
+            rebuilt.append(net)
+        return TopologyAwareMoE(
+            experts=rebuilt,
+            expert_ref_diagrams=data['medoid_diagrams'],
+        )
+    raise TypeError(f"{experts_path}: unsupported experts artifact type {type(data).__name__}")
+
+
 class _NormalizedResNet(torch.nn.Module):
     def __init__(self, m):
         super().__init__()
@@ -101,31 +154,36 @@ def wilson_ci(k, n, z=1.96):
 
 def build_prism(cfg, model, device):
     """Construct PRISM with components enabled/disabled per ablation config."""
-    # TDA-only uses the BASE Wasserstein calibrator (calibrator_base.pkl).
-    # This was saved by calibrate_testset.py and is NOT overwritten by
-    # calibrate_ensemble.py (which writes to calibrator.pkl only).
+    # TDA-only uses the BASE Wasserstein calibrator (calibrator_base.pkl),
+    # saved by calibrate_ensemble.py alongside the ensemble calibrator.
     # This gives a fair, non-degenerate comparison: TDA-only uses proper
     # conformal thresholds calibrated on raw Wasserstein scores.
-    # calibrator_base lives next to the ensemble calibrator (same dir as PATHS['calibrator']).
-    _cal_dir = os.path.dirname(PATHS['calibrator']) or 'models'
-    _cal_base_path = os.path.join(_cal_dir, 'calibrator_base.pkl')
     if cfg.get('tda_only', False):
-        cal_path = _cal_base_path
+        cal_path = _base_calibrator_path()
         ens_path = None   # no ensemble scorer
+    elif cfg.get('ensemble_no_tda', False):
+        cal_path = _no_tda_calibrator_path()
+        ens_path = _no_tda_ensemble_path()
     else:
         cal_path = PATHS['calibrator']
         ens_path = PATHS['ensemble_scorer'] if cfg.get('use_ensemble', True) else None
 
     prof_path = PATHS['reference_profiles']
 
-    # Verify calibrator_base.pkl exists for TDA-only
+    # Verify required artifact exists for this ablation arm.
     if not os.path.exists(cal_path):
-        if cfg.get('tda_only', False):
-            print(f"WARNING: {cal_path} not found. Falling back to {PATHS['calibrator']}.")
-            print("  Re-run 'python run_pipeline.py --phases 2' to regenerate calibrator_base.pkl.")
-            cal_path = PATHS['calibrator']
-        else:
-            raise FileNotFoundError(f"{cal_path} not found.")
+        raise FileNotFoundError(
+            f"{cal_path} not found for ablation config {cfg}. "
+            "Run scripts/calibrate_ensemble.py for the main ensemble and "
+            "scripts/calibrate_ensemble.py --ensemble-path "
+            f"{_no_tda_ensemble_path()} --output {_no_tda_calibrator_path()} "
+            "for the Ensemble-no-TDA arm."
+        )
+    if ens_path is not None and not os.path.exists(ens_path):
+        raise FileNotFoundError(
+            f"{ens_path} not found for ablation config {cfg}. "
+            "Run scripts/train_ensemble_scorer.py --no-tda-features first."
+        )
 
     prism = PRISM.from_saved(
         model=model,
@@ -138,7 +196,9 @@ def build_prism(cfg, model, device):
         campaign_monitor=NoOpCampaignMonitor(),  # L0 measured separately
     )
 
-    if not cfg.get('use_moe', True):
+    if cfg.get('use_moe', True):
+        prism.moe = _load_moe(required=True)
+    else:
         prism.moe = None
 
     return prism
@@ -286,6 +346,7 @@ def run_ablation_multiseed(
     attacks_to_run: list = None,
     data_root: str = './data',
     output_dir: str = None,
+    output_path: str = None,
 ):
     """
     Run the full ablation over multiple random seeds and aggregate with
@@ -318,10 +379,10 @@ def run_ablation_multiseed(
         output_dir = os.path.dirname(os.path.abspath(__file__))
 
     configs = {
-        'Full PRISM': {'use_ensemble': True,  'use_l0': True,  'use_moe': True,  'tda_only': False},
-        'No L0':      {'use_ensemble': True,  'use_l0': False, 'use_moe': True,  'tda_only': False},
-        'No MoE':     {'use_ensemble': True,  'use_l0': True,  'use_moe': False, 'tda_only': False},
-        'TDA only':   {'use_ensemble': False, 'use_l0': False, 'use_moe': False, 'tda_only': True},
+        'Full PRISM':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
+        'No MoE':          {'use_ensemble': True,  'use_moe': False, 'tda_only': False},
+        'Ensemble-no-TDA': {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
+        'TDA only':        {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -330,7 +391,7 @@ def run_ablation_multiseed(
     print(f"n={n}, attacks={attacks_to_run}, device={device}")
     print(f"{'='*65}\n")
 
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # ART classifier on GPU — matches run_evaluation_full.py pattern.
@@ -342,7 +403,7 @@ def run_ablation_multiseed(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
-        nb_classes=BACKBONE_NUM_CLASSES,   # ResNet-18 ImageNet backbone
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
@@ -450,9 +511,13 @@ def run_ablation_multiseed(
             cmp_arr = np.array(cmp_tprs[:n_pairs])
             diffs = ref_arr - cmp_arr  # positive = Full PRISM better
 
-            t_stat, p_value = _stats.ttest_rel(ref_arr, cmp_arr)
+            if np.allclose(diffs, 0.0):
+                t_stat, p_value = 0.0, 1.0
+            else:
+                t_stat, p_value = _stats.ttest_rel(ref_arr, cmp_arr)
             # Paired Cohen's d = mean(diff) / std(diff, ddof=1)
-            cohens_d = float(np.mean(diffs) / np.std(diffs, ddof=1)) if np.std(diffs, ddof=1) > 0 else 0.0
+            diff_std = float(np.std(diffs, ddof=1))
+            cohens_d = float(np.mean(diffs) / diff_std) if diff_std > 0 else 0.0
 
             statistical_tests[config_name][atk] = {
                 't_stat':      round(float(t_stat), 4),
@@ -477,16 +542,19 @@ def run_ablation_multiseed(
             'attacks':     attacks_to_run,
             'eps':         round(EPS, 6),
             'eps_255':     round(EPS * 255, 2),
-            'eval_split':  [8000, 10000],
+            'dataset':     DATASET,
+            'eval_split':  list(EVAL_IDX),
             'reference':   ref_config,
+            'c1_gate':     'TPR(Full PRISM) - TPR(Ensemble-no-TDA) >= 0.03',
             'test':        'paired two-tailed t-test (scipy.stats.ttest_rel)',
             'effect_size': "Cohen's d (paired)",
         },
     }
 
-    json_path = os.path.join(output_dir, 'results_ablation_multiseed.json')
-    md_path   = os.path.join(output_dir, 'results_ablation_multiseed.md')
+    json_path = output_path or os.path.join(output_dir, 'results_ablation_multiseed.json')
+    md_path   = os.path.splitext(json_path)[0] + '.md'
 
+    os.makedirs(os.path.dirname(json_path) or '.', exist_ok=True)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, indent=2)
     print(f"\nJSON saved → {json_path}")
@@ -581,18 +649,24 @@ def main():
                         help='Run over 5 seeds and report mean±std + paired t-test (paper mode)')
     parser.add_argument('--seeds', nargs='+', type=int, default=[42, 123, 456, 789, 999],
                         help='Seeds to use with --multi-seed')
+    parser.add_argument('--output', default=None,
+                        help='Output JSON path. Default: results_ablation_*.json next to this script.')
     args = parser.parse_args()
 
     n = 50 if args.fast else args.n
 
     if args.multi_seed:
-        out_dir = os.path.dirname(os.path.abspath(__file__))
+        out_dir = (
+            os.path.dirname(os.path.abspath(args.output))
+            if args.output else os.path.dirname(os.path.abspath(__file__))
+        )
         run_ablation_multiseed(
             seeds=args.seeds,
             n=n,
             attacks_to_run=args.attacks,
             data_root=args.data_root,
             output_dir=out_dir,
+            output_path=args.output,
         )
         return
 
@@ -601,7 +675,7 @@ def main():
     print(f"Device: {device}")
     print(f"Ablation: n={n} per config, attacks={args.attacks}, ε=8/255")
 
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # ART classifier on GPU — matches run_evaluation_full.py pattern.
@@ -638,7 +712,7 @@ def main():
         root=args.data_root, download=True, transform=_PIXEL_TRANSFORM,
     )
     rng = np.random.RandomState(42)
-    eval_pool = list(range(8000, 10000))
+    eval_pool = list(range(*EVAL_IDX))
     sample_idx = rng.choice(eval_pool, min(n, len(eval_pool)), replace=False)
 
     # Pre-load images and batch-generate adversarials once
@@ -648,10 +722,10 @@ def main():
 
     # ── Configurations ────────────────────────────────────────────────────────
     configs = {
-        'Full PRISM': {'use_ensemble': True,  'use_l0': True,  'use_moe': True,  'tda_only': False},
-        'No L0':      {'use_ensemble': True,  'use_l0': False, 'use_moe': True,  'tda_only': False},
-        'No MoE':     {'use_ensemble': True,  'use_l0': True,  'use_moe': False, 'tda_only': False},
-        'TDA only':   {'use_ensemble': False, 'use_l0': False, 'use_moe': False, 'tda_only': True},
+        'Full PRISM':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
+        'No MoE':          {'use_ensemble': True,  'use_moe': False, 'tda_only': False},
+        'Ensemble-no-TDA': {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
+        'TDA only':        {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
     }
 
     # ── Run ablation ──────────────────────────────────────────────────────────
@@ -664,10 +738,14 @@ def main():
         )
 
     # ── Save ─────────────────────────────────────────────────────────────────
-    out_dir = os.path.dirname(os.path.abspath(__file__))
-    json_path = os.path.join(out_dir, 'results_ablation_paper.json')
-    md_path   = os.path.join(out_dir, 'results_ablation_paper.md')
+    out_dir = (
+        os.path.dirname(os.path.abspath(args.output))
+        if args.output else os.path.dirname(os.path.abspath(__file__))
+    )
+    json_path = args.output or os.path.join(out_dir, 'results_ablation_paper.json')
+    md_path   = os.path.splitext(json_path)[0] + '.md'
 
+    os.makedirs(os.path.dirname(json_path) or '.', exist_ok=True)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2)
     print(f"\nJSON saved → {json_path}")

@@ -36,9 +36,9 @@ USAGE
   python experiments/evaluation/run_baselines.py --n-test 1000 --attacks FGSM PGD Square
   python experiments/evaluation/run_baselines.py --methods lid mahalanobis odin energy
 
-EVAL SPLIT:   CIFAR-10 test indices 8000-9999 (same held-out split as PRISM evaluation)
-REF SPLIT:    CIFAR-10 test indices 5000-5999 (k-NN reference / Gaussian fitting)
-THRESH SPLIT: CIFAR-10 test indices 6000-6999 (threshold calibration; disjoint from reference)
+EVAL SPLIT:   active dataset test indices 8000-9999 (same held-out split as PRISM evaluation)
+REF SPLIT:    active dataset test indices 5000-5999 (k-NN reference / Gaussian fitting)
+THRESH SPLIT: active dataset test indices 6000-6999 (threshold calibration; disjoint from reference)
 """
 import torch
 import torchvision
@@ -186,7 +186,7 @@ def fit_mahalanobis_params(model, dataset, cal_indices, layer_names, device,
 
     Uses dataset ground-truth labels (CIFAR-10: 0-9; CIFAR-100: 0-99) by
     default for stable per-class estimates. Set use_true_labels=False to
-    fall back to ImageNet backbone argmax pseudo-labels.
+    fall back to active-backbone argmax pseudo-labels.
     """
     mean_t = torch.tensor(_MEAN, device=device).view(1, 3, 1, 1)
     std_t  = torch.tensor(_STD, device=device).view(1, 3, 1, 1)
@@ -384,7 +384,7 @@ def run_baselines(
     torch.manual_seed(seed)
 
     # ── Model ──
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     layer_names = LAYER_NAMES

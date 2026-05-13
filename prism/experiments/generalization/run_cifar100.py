@@ -88,7 +88,7 @@ def run_cifar100_test(n_clean=200, n_adv=200, eps=EPS_LINF_STANDARD, seed=42,
             model=wrapped,
             loss=torch.nn.CrossEntropyLoss(),
             input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
-            nb_classes=BACKBONE_NUM_CLASSES,  # ResNet-18 ImageNet backbone has 1000 output classes
+            nb_classes=BACKBONE_NUM_CLASSES,
             clip_values=(0.0, 1.0),
         )
         fgsm = FastGradientMethod(art_clf, eps=eps)

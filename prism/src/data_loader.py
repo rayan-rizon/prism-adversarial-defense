@@ -5,10 +5,9 @@ from the active config (default.yaml → cifar10, cifar100.yaml → cifar100).
 Scripts should replace direct calls like `datasets.CIFAR10(...)` with
 `load_test_dataset(...)` so a single --config flip switches datasets.
 
-The default transforms match the CIFAR-10-trained backbone (32x32 native,
-CIFAR-10 channel statistics). The legacy 224x224 ImageNet path is kept
-behind the `BACKBONE_INPUT_SIZE` config knob for the rare case where the
-ImageNet evaluation track is rerun.
+The default transforms match the active CIFAR-trained backbone (32x32 native,
+dataset-specific channel statistics). Non-32x32 configs can still request
+resizing through the `BACKBONE_INPUT_SIZE` config knob.
 """
 from typing import Optional
 
@@ -40,7 +39,7 @@ def _build_test_transforms():
     space, not in pre-normalised space).
     """
     if BACKBONE_INPUT_SIZE != 32:
-        # ImageNet-style track — resize first.
+        # Non-native-size config — resize first.
         return (
             transforms.Compose([
                 transforms.Resize(BACKBONE_INPUT_SIZE),

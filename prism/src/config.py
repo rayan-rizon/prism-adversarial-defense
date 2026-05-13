@@ -109,9 +109,8 @@ BACKBONE_STD:  List[float]        = _CFG['data']['std']
 IMAGENET_MEAN: List[float]        = BACKBONE_MEAN
 IMAGENET_STD:  List[float]        = BACKBONE_STD
 
-# Backbone input size. The CIFAR-10 ResNet-18 expects 32x32 RGB; the prior
-# ImageNet pipeline up-sampled to 224x224. Loaders / transforms read this
-# constant rather than hardcoding either resolution.
+# Backbone input size. Active CIFAR configs expect 32x32 RGB. Loaders /
+# transforms read this constant rather than hardcoding a resolution.
 BACKBONE_INPUT_SIZE: int          = _CFG['data'].get('image_size', 32)
 
 # Path to the CIFAR-10-pretrained backbone checkpoint produced by
@@ -139,7 +138,7 @@ TIER_CAL_ALPHA_FACTORS: Dict[str, float] = _CFG.get('conformal', {}).get(
     {'L1': CAL_ALPHA_FACTOR, 'L2': CAL_ALPHA_FACTOR, 'L3': CAL_ALPHA_FACTOR},
 )
 
-# CIFAR-10 test-set split indices -- single source of truth.
+# Active dataset test-set split indices -- single source of truth.
 # ANY script referencing split ranges must import from here, never hardcode.
 _splits = _CFG.get('splits', {
     'profile_idx': [0,    5000],

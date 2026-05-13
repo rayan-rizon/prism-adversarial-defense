@@ -31,10 +31,10 @@ We make four contributions:
 \begin{enumerate}[leftmargin=*, label=\textbf{C\arabic*}]
 
 \item \textbf{Topological activation profiler (\tamm).}
-We compute per-layer Wasserstein distances between input persistence diagrams 
-and a reference medoid profile built from clean training data.
-This \emph{architecture-agnostic} signature is robust to diverse attack types 
-and does not require access to adversarial examples during calibration.
+We compute per-layer persistence features relative to a clean medoid profile
+and combine them with DCT and softmax-entropy features in a calibrated
+ensemble. The ensemble-no-TDA ablation measures the marginal value of the
+topological channel.
 
 \item \textbf{Conformal detection guarantee (\cadg).}
 We apply split conformal prediction to the anomaly score stream, obtaining 
@@ -57,16 +57,15 @@ rather than issuing a blanket rejection.
 
 \end{enumerate}
 
-Empirically, \prism achieves competitive detection performance against 
-FGSM, PGD, C\&W L$_2$, and SquareAttack on CIFAR-10, 
-with a 100\% recovery rate for MoE-tier detections.
-Our ablation study confirms the contribution of each component.
+Empirically, we report CIFAR-10 and CIFAR-100 results from a locked
+multi-seed artifact pipeline covering detection, adaptive attacks, reproduced
+baselines, campaign streams, recovery, and ablations.
 
 \textbf{Scope and limitations.}
 \prism is a \emph{runtime monitor}, not an adversarial trainer; 
 it complements (but does not replace) robust training.
-Detection latency scales with the number of monitored layers 
-(approximately 0.3\,s per image at 4 layers on CPU); 
-GPU deployment reduces this to $<$10\,ms.
+Detection latency scales with the number of monitored layers and the TDA
+subsample size; the submitted results report measured GPU latency from the
+same artifact pipeline used for detection.
 Like all detectors, \prism does not provide a guarantee against 
 adaptive adversaries who are aware of the topological scoring mechanism.

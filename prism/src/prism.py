@@ -9,9 +9,11 @@ Key fixes from plan:
 1. Reference profiles are stored as medoid diagrams per layer (not raw 10K lists)
 2. Scorer module handles multi-layer, multi-dimension aggregation properly
 3. Transform consistency enforced between profiling and inference
-4. Pickle loading is restricted to known paths (not arbitrary deserialization)
+4. Runtime artifact loading is restricted to local project artifacts rather
+   than arbitrary filesystem paths.
 """
 import torch
+import torch.nn.functional as F
 import numpy as np
 import pickle
 import logging
@@ -166,11 +168,21 @@ class PRISM:
 
     @staticmethod
     def _load_pickle(path: str):
-        """Load a pickle file. Validates path exists first."""
+        """Load a local PRISM artifact pickle after path validation."""
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"Pickle file not found: {path}")
-        with open(p, 'rb') as f:
+        resolved = p.resolve()
+        project_root = Path(__file__).resolve().parents[1]
+        cwd = Path.cwd().resolve()
+        if not (
+            resolved.is_relative_to(project_root)
+            or resolved.is_relative_to(cwd)
+        ):
+            raise ValueError(
+                f"Refusing to load pickle outside trusted project paths: {resolved}"
+            )
+        with open(resolved, 'rb') as f:
             return pickle.load(f)
 
     def defend(self, x: torch.Tensor) -> Tuple[Optional[torch.Tensor], str, Dict[str, Any]]:
@@ -306,9 +318,12 @@ class PRISM:
                 # Route through topology-aware expert
                 last_layer = self.layer_names[-1]
                 idx, expert, w_dist = self.moe.select_expert(diagrams[last_layer])
-                # Use second-to-last layer activation as expert input
-                input_layer = self.layer_names[-2] if len(self.layer_names) > 1 else self.layer_names[0]
-                expert_input = acts[input_layer]
+                # Experts are trained on the final monitored layer activation.
+                expert_input = acts[last_layer]
+                if expert_input.dim() > 2:
+                    expert_input = F.adaptive_avg_pool2d(expert_input, 1).view(
+                        expert_input.size(0), -1
+                    )
                 expert.eval()
                 with torch.no_grad():
                     pred = expert(expert_input)

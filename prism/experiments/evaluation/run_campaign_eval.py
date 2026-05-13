@@ -250,7 +250,7 @@ def run_campaign_eval(
     torch.manual_seed(seed)
 
     # ── Model ──
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # ── Dataset (dispatches on DATASET: cifar10 / cifar100) ──

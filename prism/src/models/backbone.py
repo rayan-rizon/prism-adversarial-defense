@@ -8,9 +8,9 @@ of constructing its own ResNet. Guarantees architecture / normalisation /
 weights parity across profiling, training, calibration, and evaluation.
 
 The loader follows three rules:
-  1. The backbone is CIFAR-10-trained — uses `cifar_resnet18` with the
-     checkpoint at `BACKBONE_CHECKPOINT_PATH` (default
-     `models/cifar_resnet18.pt`). If the checkpoint is missing it raises
+  1. The backbone is trained for the active CIFAR dataset — uses
+     `cifar_resnet18(num_classes=BACKBONE_NUM_CLASSES)` with the checkpoint at
+     `BACKBONE_CHECKPOINT_PATH`. If the checkpoint is missing it raises
      a hard error pointing at `scripts/pretrain_cifar_backbone.py`.
   2. The returned module is wrapped in `_NormalizedBackbone` which applies
      `(x - mean) / std` internally. Callers pass pixel-space tensors in

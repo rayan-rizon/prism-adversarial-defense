@@ -21,7 +21,7 @@ PersistenceDiagram = np.ndarray
 class TopologicalProfiler:
     """Computes persistence diagrams from activation point clouds."""
 
-    def __init__(self, n_subsample: int = 200, max_dim: int = 1,
+    def __init__(self, n_subsample: int = 150, max_dim: int = 1,
                  random_state: Optional[int] = 42):
         self.n_subsample = n_subsample
         self.max_dim = max_dim

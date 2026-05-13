@@ -210,12 +210,12 @@ regime.
 
 - Optimiser: SGD with Nesterov momentum 0.9, weight decay 5e-4
 - Learning rate: 0.1 with cosine annealing to 0
-- Schedule: 200 epochs, batch size 128
+- Schedule: 200 epochs, batch size 256
 - Augmentation: `RandomCrop(32, padding=4)` + `RandomHorizontalFlip`
 - Seed: 42 (deterministic data shuffling; cudnn determinism is not
   enforced because it doubles training time without changing the
   accuracy distribution by more than ±0.3 pp)
-- Wall-clock on RTX 5090: ≈ 50–70 minutes
+- Wall-clock on RTX 5090: ≈ 30–45 minutes
 - Output: `models/cifar_resnet18.pt` (raw `state_dict`)
 - Acceptance gate: refuses to write the checkpoint if final test accuracy
   is below 0.93; downstream stages fail loudly if the checkpoint is
@@ -240,18 +240,19 @@ comparable to that body of work; the previous configuration was not.
 
 ## Data Splits & Split Hygiene (READ THIS BEFORE ANY RUN)
 
-All splits use a **single source of truth**, CIFAR-10 test indices
-(`torchvision.datasets.CIFAR10(train=False)`). The logistic ensemble scorer
-is the only component trained on CIFAR-10 *train* images — everything
-topological lives on the test split.
+All splits use a **single source of truth** from the active YAML config.
+For the primary run this is `torchvision.datasets.CIFAR10(train=False)`;
+for generalization it is `torchvision.datasets.CIFAR100(train=False)`.
+The logistic ensemble scorer is the only component trained on the dataset
+train split — everything topological lives on the held-out test split.
 
 | Purpose | Source | Index range | Size | Built by |
 | --- | --- | --- | --- | --- |
-| Topological self-profile (medoid per layer) | CIFAR-10 test | 0 – 4 999 | 5 000 | [`scripts/build_profile_testset.py`](prism/scripts/build_profile_testset.py) |
-| Conformal calibration | CIFAR-10 test | 5 000 – 6 999 | 2 000 | [`scripts/calibrate_ensemble.py`](prism/scripts/calibrate_ensemble.py) |
-| FPR verification (sanity gate) | CIFAR-10 test | 7 000 – 7 999 | 1 000 | [`scripts/compute_ensemble_val_fpr.py`](prism/scripts/compute_ensemble_val_fpr.py) |
-| Attack evaluation (paper) | CIFAR-10 test | 8 000 – 9 999 | 2 000 pool | [`experiments/evaluation/run_evaluation_full.py`](prism/experiments/evaluation/run_evaluation_full.py) |
-| Ensemble logistic training | CIFAR-10 **train** | — | up to 50 000 | [`scripts/train_ensemble_scorer.py`](prism/scripts/train_ensemble_scorer.py) |
+| Topological self-profile (medoid per layer) | Active test set | 0 – 4 999 | 5 000 | [`scripts/build_profile_testset.py`](prism/scripts/build_profile_testset.py) |
+| Conformal calibration | Active test set | 5 000 – 6 999 | 2 000 | [`scripts/calibrate_ensemble.py`](prism/scripts/calibrate_ensemble.py) |
+| FPR verification (sanity gate) | Active test set | 7 000 – 7 999 | 1 000 | [`scripts/compute_ensemble_val_fpr.py`](prism/scripts/compute_ensemble_val_fpr.py) |
+| Attack evaluation (paper) | Active test set | 8 000 – 9 999 | 2 000 pool | [`experiments/evaluation/run_evaluation_full.py`](prism/experiments/evaluation/run_evaluation_full.py) |
+| Ensemble logistic training | Active **train** split | — | up to 50 000 | [`scripts/train_ensemble_scorer.py`](prism/scripts/train_ensemble_scorer.py) |
 
 These index ranges **are** the live values in `configs/default.yaml` and
 `src/config.py` (`PROFILE_IDX`, `CAL_IDX`, `VAL_IDX`, `EVAL_IDX`). The 2 000-item
@@ -313,14 +314,14 @@ from each paper above.
 
 Implementation: [`experiments/feasibility/tda_benchmark.py`](prism/experiments/feasibility/tda_benchmark.py) — hooks ResNet-18 layers, sweeps subsample sizes, reports ripser + Wasserstein time.
 
-| TDA time (200 points, one layer) | Action |
+| TDA time (150 points, one layer) | Action |
 | --- | --- |
 | < 10 ms | Proceed as planned |
 | 10–50 ms | Proceed with subsampling strategy |
 | 50–200 ms | Switch to cubical complexes / landmarks |
 | > 200 ms | STOP. Consider `ripser++` (GPU) |
 
-**Observed on RTX / A100 (n_subsample=200, 3 layers):** ~30–40 ms per image.
+**Observed on RTX / A100 (n_subsample=150, 3 layers):** ~30–40 ms per image.
 Proceed with current plan.
 
 ### Step 1.3: Build the Topological Self-Profile (Week 3–5)
@@ -330,9 +331,9 @@ frozen backbone, compute a persistence diagram per layer, save the Wasserstein
 **medoid** per layer as the reference "this is what clean looks like."
 
 - Activation extractor: [`src/tamm/extractor.py`](prism/src/tamm/extractor.py) — `ActivationExtractor` with forward hooks on `layer2/3/4` of ResNet-18. `layer1` is intentionally skipped (too shallow).
-- Persistence computation: [`src/tamm/tda.py`](prism/src/tamm/tda.py) — `TopologicalProfiler` wraps `ripser` (max_dim=1, n_subsample=200) and exposes `compute_diagram`, `compute_reference_medoid`, `anomaly_score`.
-- Per-layer weighted scorer: [`src/tamm/scorer.py`](prism/src/tamm/scorer.py) — `TopologicalScorer` aggregates per-dim Wasserstein distances with layer weights {L2: 0.15, L3: 0.30, L4: 0.55} and dim weights [0.5, 0.5] (H0 + H1).
-- Driver: [`scripts/build_profile_testset.py`](prism/scripts/build_profile_testset.py) — runs the extractor + profiler over CIFAR-10 test idx 0–4999 and saves `models/reference_profiles.pkl` plus precomputed clean scores to `experiments/calibration/clean_scores.npy` for downstream calibration.
+- Persistence computation: [`src/tamm/tda.py`](prism/src/tamm/tda.py) — `TopologicalProfiler` wraps `ripser` (max_dim=1, n_subsample=150) and exposes `compute_diagram`, `compute_reference_medoid`, `anomaly_score`.
+- Per-layer weighted scorer: [`src/tamm/scorer.py`](prism/src/tamm/scorer.py) — `TopologicalScorer` aggregates per-dim Wasserstein distances with layer weights {L2: 0.30, L3: 0.30, L4: 0.40} and dim weights [0.70, 0.30] (H0 emphasis + H1).
+- Driver: [`scripts/build_profile_testset.py`](prism/scripts/build_profile_testset.py) — runs the extractor + profiler over active test idx 0–4999 and saves dataset-routed reference profiles plus precomputed clean scores for downstream calibration.
 
 **Empty-diagram handling.** Shallow layers sometimes return empty H1 diagrams.
 Both `TopologicalProfiler.anomaly_score` and `TopologicalScorer.score` treat
@@ -398,14 +399,14 @@ throughput claims in the paper.
 Implementation: [`src/sacd/monitor.py`](prism/src/sacd/monitor.py) — `CampaignMonitor`:
 
 - Rolling score buffer (`window_size=100`).
-- `hazard_rate=1/200` (expected run length); tune on a synthetic grid.
-- On `cp_prob > cp_threshold` (default 0.3–0.5), sets `l0_active=True`.
+- Live defaults are `hazard_rate=1/30`, `alert_run_length=10`, `alert_run_prob=0.60`, and `warmup_steps=35`; Vast.ai runs additionally fit `models[/cifar100]/l0_thresholds.pkl` on real score streams.
+- When the run-length posterior mass exceeds the alert probability, sets `l0_active=True`.
 - When L0 active, `calibrator.classify` applies `l0_factor=0.8` to tier thresholds — single-input escalation during a detected campaign.
 
-**Hazard tuning protocol.** Simulate 100 clean queries (∼ N(0.1, 0.02)) then 20
-probes (∼ N(0.3, 0.05)); grid-search `hazard ∈ {1/50, 1/100, 1/200, 1/500}`
-and pick the smallest hazard that detects within 20 probe queries with no
-false positives on the clean prefix.
+**Hazard tuning protocol.** `scripts/calibrate_l0_thresholds.py` builds real
+clean and PGD score streams from the validation split, grid-searches monitor
+parameters, and chooses the largest ASR gap subject to clean-only
+`l0_active_frac <= 0.01`.
 
 **Publishable-paper caveat (QUARANTINED).** The existing
 `experiments/campaign/results.json` uses synthetic score streams and **is not
@@ -426,7 +427,7 @@ Gating details: [`src/tamsh/gating.py`](prism/src/tamsh/gating.py) — Wasserste
 
 ### Step 4.2: Training
 
-Driver: [`scripts/train_experts.py`](prism/scripts/train_experts.py) — clusters clean activations (K=4) by Wasserstein distance on persistence diagrams; one expert per cluster, trained to reconstruct the activations of the span it replaces (MSE, Adam 1e-3, 50 epochs). Each expert's "reference diagram" is the cluster medoid.
+Driver: [`scripts/train_experts.py`](prism/scripts/train_experts.py) — trains four differentiated experts on clean, FGSM, PGD, and mixed pools. Each expert maps the final monitored layer's pooled activation to the active dataset's class logits (`BACKBONE_NUM_CLASSES`: 10 for CIFAR-10, 100 for CIFAR-100). Each expert's reference diagram is the medoid of its attack pool.
 
 Validation target: held-out cluster MSE < 0.05 on clean activations (adjust
 for activation scale).
@@ -505,12 +506,12 @@ Driver: [`experiments/campaign/run_campaign.py`](prism/experiments/campaign/run_
 
 Driver: [`experiments/ablation/run_ablation_paper.py`](prism/experiments/ablation/run_ablation_paper.py). Configurations:
 
-| Configuration | TAMM | Ensemble | SACD (L0) | TAMSH | Expected TPR |
+| Configuration | TAMM | Ensemble | TDA features | TAMSH | Expected evidence |
 | --- | --- | --- | --- | --- | --- |
-| Full PRISM | ✅ | ✅ | ✅ | ✅ | Highest |
-| No L0 | ✅ | ✅ | ❌ | ✅ | Lower on campaign attacks |
-| No MoE | ✅ | ✅ | ✅ | ❌ | Lower on L3 recovery |
-| No Ensemble (TDA only) | ✅ | ❌ | ❌ | ❌ | Baseline — exposes ensemble's contribution |
+| Full PRISM | ✅ | ✅ | ✅ | ✅ | Reference |
+| No MoE | ✅ | ✅ | ✅ | ❌ | Recovery-only effect |
+| Ensemble-no-TDA | ❌ | ✅ | ❌ | ✅ | C1 marginal topology gate |
+| TDA only | ✅ | ❌ | ✅ | ❌ | Base topology baseline |
 
 Ablation must run at **n=1000 × 5 seeds** (current file at n=500 has CIs that
 clip the L1 cap).
@@ -715,10 +716,9 @@ next run) is the primary evidence:
 | Configuration | Mean TPR |
 | --- | --- |
 | Full PRISM | TBD |
-| No L0 | TBD |
 | No MoE | TBD |
-| **TDA only (no ensemble)** | **TBD** |
 | Ensemble-no-TDA (P0.6) | TBD |
+| **TDA only (no ensemble)** | **TBD** |
 
 The direction of the Full → TDA-only gap (and the Ensemble-no-TDA control)
 decides whether the paper's framing is "conformal-calibrated ensemble over
@@ -756,11 +756,11 @@ gap without reference to the archived 0.8847 / 0.6213 pair.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| TPR < 50 % on all attacks | Anomaly scores not separating | Check subsample size (n=200); confirm hooks on the right layers |
+| TPR < 50 % on all attacks | Anomaly scores not separating | Check subsample size (n=150); confirm hooks on the right layers |
 | FPR > 30 % on clean | Profile contaminated or cal set too small | Rebuild profile on strictly clean data; cal ≥ 2000 |
 | L0 never triggers | `hazard_rate` too low or `cp_threshold` too high | Lower `cp_threshold` to 0.2; raise `hazard_rate` to 1/50 |
 | TDA > 500 ms / image | Too many subsample points | Reduce n_subsample to 50; switch to ripser++/cubical |
-| Expert val MSE > 0.3 | Too-small expert or under-trained | Increase `hidden_dim` to 512; train 100 epochs; check cluster quality |
+| Expert top-1 recovery gap < 15pp | Experts undertrained or wrong output dimension | Verify `output_dim == BACKBONE_NUM_CLASSES`; retrain `scripts/train_experts.py`; inspect L3-triggered clean-correct subset |
 | Regression after ensemble change | Skipped recalibration | Re-run the full pipeline-gate (§Data Splits) |
 
 ---
@@ -991,4 +991,3 @@ PRISM's L1/L2/L3 output:
 
 Implementation: `prism/experiments/evaluation/run_baselines.py` with
 `--methods lid mahalanobis odin energy`.
-

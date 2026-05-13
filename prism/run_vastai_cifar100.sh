@@ -161,7 +161,7 @@ if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-fe
     --cw-max-iter 40 --cw-bss 5 \
     --no-tda-features \
     --output models/${TAG}/ensemble_no_tda.pkl \
-    2>&1 > >(tee logs/${TAG}/step2c_no_tda.log) || echo "WARN: no-TDA variant failed"
+    2>&1 > >(tee logs/${TAG}/step2c_no_tda.log)
 fi
 
 # Step 2d: differentiated experts (P0.5) — CIFAR-100
@@ -169,7 +169,7 @@ if [ -f scripts/train_experts.py ]; then
   python scripts/train_experts.py \
     --config $CONFIG \
     --output models/${TAG}/experts.pkl \
-    2>&1 > >(tee logs/${TAG}/step2d_experts.log) || echo "WARN: experts failed"
+    2>&1 > >(tee logs/${TAG}/step2d_experts.log)
 fi
 
 # ── Step 3: Calibrate (CIFAR-100) ────────────────────────────────────────────
@@ -177,6 +177,26 @@ echo ""
 echo "=== Step 3: Calibrate Conformal Thresholds [$TAG] ==="
 python scripts/calibrate_ensemble.py --config $CONFIG \
   2>&1 > >(tee logs/${TAG}/step3_calibrate.log)
+
+echo ""
+echo "=== Step 3b: Calibrate Ensemble-no-TDA Arm [$TAG, C1] ==="
+python scripts/calibrate_ensemble.py \
+  --config $CONFIG \
+  --ensemble-path models/${TAG}/ensemble_no_tda.pkl \
+  --output models/${TAG}/calibrator_no_tda.pkl \
+  2>&1 > >(tee logs/${TAG}/step3b_calibrate_no_tda.log)
+
+python -c "
+import pickle, sys
+exp = pickle.load(open('models/${TAG}/experts.pkl', 'rb'))
+if not isinstance(exp, dict):
+    sys.exit('experts.pkl must be a dict artifact')
+if int(exp.get('output_dim', -1)) != 100:
+    sys.exit(f'experts output_dim={exp.get(\"output_dim\")}, expected 100 for CIFAR-100')
+for p in ['models/${TAG}/calibrator_base.pkl', 'models/${TAG}/calibrator_no_tda.pkl', 'models/${TAG}/ensemble_no_tda.pkl']:
+    open(p, 'rb').close()
+print('[OK] C1/C4 CIFAR-100 artifacts verified')
+"
 
 # ── Step 4: FPR gate (CIFAR-100) ─────────────────────────────────────────────
 echo ""
@@ -239,6 +259,7 @@ for s in $SEEDS; do
     --pgd-steps $ADAPTIVE_STEPS \
     --pgd-restarts $ADAPTIVE_RESTARTS \
     --eot-samples 1 \
+    --eot-verify-samples 20 \
     --output experiments/evaluation/results_${TAG}_adaptive_pgd_seed${s}.json \
     2>&1 | tee logs/${TAG}/step6_adaptive_pgd_seed${s}.log &
   STEP6_PIDS="$STEP6_PIDS $!"
@@ -252,9 +273,37 @@ python experiments/ablation/run_ablation_paper.py \
   2>&1 | tee logs/${TAG}/step7_ablation.log &
 PID_ABLATION=$!
 
-wait $PID_CW $PID_FAST
-for pid in $STEP6_PIDS; do wait $pid || true; done
-wait $PID_ABLATION
+STEP5_FAIL=0
+STEP5_CW_EXIT=0;   wait $PID_CW   || STEP5_CW_EXIT=$?
+STEP5_FAST_EXIT=0; wait $PID_FAST || STEP5_FAST_EXIT=$?
+if [ $STEP5_CW_EXIT -ne 0 ]; then
+  echo "ERROR: CIFAR-100 CW eval failed (exit $STEP5_CW_EXIT). Check logs/${TAG}/step5_cw_ms5.log"
+  STEP5_FAIL=1
+fi
+if [ $STEP5_FAST_EXIT -ne 0 ]; then
+  echo "ERROR: CIFAR-100 fast eval failed (exit $STEP5_FAST_EXIT). Check logs/${TAG}/step5_fast_ms5.log"
+  STEP5_FAIL=1
+fi
+
+STEP6_FAIL=0
+for pid in $STEP6_PIDS; do
+  STEP6_EXIT=0
+  wait $pid || STEP6_EXIT=$?
+  if [ $STEP6_EXIT -ne 0 ]; then
+    echo "ERROR: CIFAR-100 adaptive PGD job pid=$pid failed (exit $STEP6_EXIT)."
+    STEP6_FAIL=1
+  fi
+done
+
+STEP7_EXIT=0
+wait $PID_ABLATION || STEP7_EXIT=$?
+if [ $STEP7_EXIT -ne 0 ]; then
+  echo "ERROR: CIFAR-100 ablation failed (exit $STEP7_EXIT). Check logs/${TAG}/step7_ablation.log"
+fi
+
+if [ $STEP5_FAIL -ne 0 ] || [ $STEP6_FAIL -ne 0 ] || [ $STEP7_EXIT -ne 0 ]; then
+  exit 2
+fi
 
 # ── Step 7a: Campaign-stream eval (CIFAR-100) ────────────────────────────────
 echo ""
@@ -299,7 +348,7 @@ echo "=== Step 7d: Rebuild paper tables (combined datasets) ==="
 if [ -f scripts/build_paper_tables.py ]; then
   python scripts/build_paper_tables.py \
     --results-dir experiments \
-    --out paper/tables \
+    --out-dir paper/tables \
     2>&1 | tee logs/${TAG}/step7d_paper_tables.log
 fi
 
@@ -313,7 +362,10 @@ out = {
   'dataset': 'cifar100',
   'config': '$CONFIG',
   'ensemble_sha256_16':    h('models/${TAG}/ensemble_scorer.pkl'),
+  'ensemble_no_tda_sha256_16': h('models/${TAG}/ensemble_no_tda.pkl'),
   'calibrator_sha256_16':  h('models/${TAG}/calibrator.pkl'),
+  'calibrator_base_sha256_16': h('models/${TAG}/calibrator_base.pkl'),
+  'calibrator_no_tda_sha256_16': h('models/${TAG}/calibrator_no_tda.pkl'),
   'reference_sha256_16':   h('models/${TAG}/reference_profiles.pkl'),
   'experts_sha256_16':     h('models/${TAG}/experts.pkl'),
   'seeds':                 [42, 123, 456, 789, 999],

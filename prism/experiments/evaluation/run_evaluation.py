@@ -100,7 +100,7 @@ def run_evaluation(
     torch.manual_seed(seed)
 
     # --- Setup model ---
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # Constants from configs/default.yaml via src.config
@@ -142,7 +142,7 @@ def run_evaluation(
         model=_wrapped_art,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
-        nb_classes=BACKBONE_NUM_CLASSES,  # ImageNet classes for ResNet-18
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
@@ -211,7 +211,7 @@ def run_evaluation(
         for i in tqdm(sample_indices):
             img, label = test_dataset[int(i)]
             # img is in pixel [0,1] space (no normalization)
-            x_pixel = img.unsqueeze(0)  # (1, 3, 224, 224) in [0,1]
+            x_pixel = img.unsqueeze(0)  # (1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
 
             # Normalize for PRISM (same preprocessing as build_profile.py)
             x = _NORMALIZE(img).unsqueeze(0).to(device)

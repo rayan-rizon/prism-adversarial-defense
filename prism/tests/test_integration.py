@@ -11,9 +11,7 @@ The synthetic path is always executed by pytest.
 The from-saved path is gated on model file existence.
 """
 import torch
-import torchvision
-import torchvision.transforms as T
-from torchvision.models import ResNet18_Weights
+import torch.nn as nn
 import numpy as np
 import pytest
 import sys, os, ssl, pickle, tempfile
@@ -29,6 +27,26 @@ from src.tamm.tda import TopologicalProfiler
 from src.tamm.scorer import TopologicalScorer
 from src.cadg.calibrate import ConformalCalibrator
 from src.tamm.extractor import ActivationExtractor
+from src.config import BACKBONE_INPUT_SIZE
+
+
+class TinyCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Conv2d(3, 8, 3, padding=1)
+        self.layer2 = nn.Conv2d(8, 16, 3, padding=1)
+        self.layer3 = nn.Conv2d(16, 32, 3, padding=1)
+        self.layer4 = nn.Conv2d(32, 64, 3, padding=1)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(64, 10)
+
+    def forward(self, x):
+        x = torch.relu(self.layer1(x))
+        x = torch.relu(self.layer2(x))
+        x = torch.relu(self.layer3(x))
+        x = torch.relu(self.layer4(x))
+        x = self.pool(x).view(x.size(0), -1)
+        return self.fc(x)
 
 
 # ---------------------------------------------------------------------------
@@ -37,9 +55,9 @@ from src.tamm.extractor import ActivationExtractor
 
 @pytest.fixture(scope='module')
 def resnet_model():
-    """ResNet-18 in eval mode (cached at module scope)."""
-    model = torchvision.models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-    return model.eval()
+    """Tiny CIFAR-shaped CNN in eval mode (cached at module scope)."""
+    torch.manual_seed(0)
+    return TinyCNN().eval()
 
 
 @pytest.fixture(scope='module')
@@ -53,12 +71,6 @@ def prism_instance(resnet_model):
     profiler = TopologicalProfiler(n_subsample=100, max_dim=1)
     extractor = ActivationExtractor(resnet_model, layer_names)
 
-    transform = T.Compose([
-        T.Resize(224),
-        T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-
     # Collect diagrams from 30 random images
     rng = np.random.RandomState(0)
     all_diagrams = {layer: [] for layer in layer_names}
@@ -66,7 +78,7 @@ def prism_instance(resnet_model):
 
     for _ in range(30):
         x = torch.from_numpy(
-            rng.randn(1, 3, 224, 224).astype(np.float32)
+            rng.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE).astype(np.float32)
         )
         acts = extractor.extract(x)
         per_dgm = {}
@@ -124,7 +136,7 @@ def prism_instance(resnet_model):
 class TestPRISMDefend:
     def test_defend_clean_returns_tuple(self, prism_instance):
         """defend() must return (prediction, level, metadata)."""
-        x = torch.randn(1, 3, 224, 224)
+        x = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         result = prism_instance.defend(x)
         assert isinstance(result, tuple) and len(result) == 3
         pred, level, meta = result
@@ -133,7 +145,7 @@ class TestPRISMDefend:
 
     def test_defend_clean_level_is_valid(self, prism_instance):
         """Response level must be one of the known tiers."""
-        x = torch.randn(1, 3, 224, 224)
+        x = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         _, level, _ = prism_instance.defend(x)
         assert level in {'PASS', 'L1', 'L2', 'L3', 'L3_REJECT'}, (
             f"Unknown response level: {level}"
@@ -141,7 +153,7 @@ class TestPRISMDefend:
 
     def test_defend_meta_has_required_keys(self, prism_instance):
         """metadata dict must contain anomaly_score and response_level."""
-        x = torch.randn(1, 3, 224, 224)
+        x = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         _, _, meta = prism_instance.defend(x)
         assert 'anomaly_score' in meta, "Missing 'anomaly_score' in metadata"
 
@@ -149,10 +161,10 @@ class TestPRISMDefend:
         """
         Guide Section 3.2:
         Heavily perturbed input must have higher anomaly score than clean.
-        meta_adv['score'] > meta['score'].
+        meta_adv['anomaly_score'] > meta_clean['anomaly_score'].
         """
         rng = torch.manual_seed(5)
-        x_clean = torch.randn(1, 3, 224, 224)
+        x_clean = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         x_adv = x_clean + torch.randn_like(x_clean) * 0.5
 
         _, _, meta_clean = prism_instance.defend(x_clean)
@@ -174,7 +186,9 @@ class TestPRISMDefend:
         flagged = 0
         rng = np.random.RandomState(10)
         for seed in range(5):
-            x = torch.from_numpy(rng.randn(1, 3, 224, 224).astype(np.float32)) * 2.0
+            x = torch.from_numpy(
+                rng.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE).astype(np.float32)
+            ) * 2.0
             _, level, _ = prism_instance.defend(x)
             if level != 'PASS':
                 flagged += 1
@@ -184,7 +198,7 @@ class TestPRISMDefend:
 
     def test_per_layer_scores_present(self, prism_instance):
         """Metadata should contain per-layer score breakdown."""
-        x = torch.randn(1, 3, 224, 224)
+        x = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         _, _, meta = prism_instance.defend(x)
         assert 'per_layer_scores' in meta, "Missing per_layer_scores in metadata"
         per = meta['per_layer_scores']
@@ -207,7 +221,7 @@ class TestPRISMDefend:
             calibrator_path=calibrator_path,
             profile_path=profile_path,
         )
-        x = torch.randn(1, 3, 224, 224)
+        x = torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE)
         _, level, meta = prism.defend(x)
         assert level in {'PASS', 'L1', 'L2', 'L3', 'L3_REJECT'}
         assert meta['anomaly_score'] >= 0.0
@@ -216,7 +230,7 @@ class TestPRISMDefend:
 class TestPRISMStatTracking:
     def test_inference_count_increments(self, prism_instance):
         count_before = prism_instance._inference_count
-        prism_instance.defend(torch.randn(1, 3, 224, 224))
+        prism_instance.defend(torch.randn(1, 3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE))
         assert prism_instance._inference_count == count_before + 1
 
 

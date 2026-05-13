@@ -96,7 +96,7 @@ def calibrate_ensemble(
     print("Loaded PersistenceEnsembleScorer.")
 
     # --- Setup model ---
-    # CIFAR-10-trained backbone — identical to what was used to build profiles
+    # Active CIFAR-trained backbone — identical to what was used to build profiles
     # and train the ensemble. Any drift here invalidates the calibrator.
     model = load_backbone(torch.device(device))
     extractor = ActivationExtractor(model, LAYER_NAMES)
@@ -105,8 +105,9 @@ def calibrate_ensemble(
     # Dispatch dataset loader on DATASET (cifar10 / cifar100).
     dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
 
-    def get_ensemble_scores(idx_range, label):
-        scores = []
+    def get_scores(idx_range, label):
+        ensemble_scores = []
+        base_scores = []
         _use_dct = getattr(ensemble, 'use_dct', False)
         _use_se  = getattr(ensemble, 'use_softmax_entropy', False)
         for i in tqdm(range(idx_range[0], idx_range[1]), desc=f"Scoring {label}"):
@@ -124,13 +125,17 @@ def calibrate_ensemble(
                 with torch.no_grad():
                     logits_out = model(x)
                 logits_np = logits_out.squeeze(0).cpu().numpy()
+            base_scores.append(base_scorer.score(dgms))
             s = ensemble.score(dgms, image=img_np, logits=logits_np)
-            scores.append(s)
-        return np.array(scores, dtype=np.float32)
+            ensemble_scores.append(s)
+        return (
+            np.array(ensemble_scores, dtype=np.float32),
+            np.array(base_scores, dtype=np.float32),
+        )
 
     print("\nComputing ensemble scores for calibration and validation splits...")
-    cal_scores = get_ensemble_scores(CAL_IDX, 'calibration')
-    val_scores = get_ensemble_scores(VAL_IDX, 'validation')
+    cal_scores, cal_base_scores = get_scores(CAL_IDX, 'calibration')
+    val_scores, val_base_scores = get_scores(VAL_IDX, 'validation')
 
     # --- Calibrate with per-tier conservative alphas ---
     # Published targets:        L1=10 %,  L2=3 %,   L3=0.5 %
@@ -155,6 +160,9 @@ def calibrate_ensemble(
     calibrator = ConformalCalibrator(alphas=pub_targets)
     # Pass cal_targets explicitly -> stored in calibrator.calibration_alphas
     thresholds = calibrator.calibrate(cal_scores, alphas=cal_targets)
+
+    base_calibrator = ConformalCalibrator(alphas=pub_targets)
+    base_calibrator.calibrate(cal_base_scores, alphas=cal_targets)
 
     print("\n=== Ensemble Conformal Thresholds ===")
     print(f"  [Cal alpha factor: {CAL_ALPHA_FACTOR:.2f} | "
@@ -188,10 +196,27 @@ def calibrate_ensemble(
               "configs/default.yaml by ~0.05 and rerun. Current values: "
               + ", ".join(f"{k}={v:.2f}" for k, v in TIER_CAL_ALPHA_FACTORS.items()))
 
+    print("\n=== Base-TDA Calibrator Verification on Val Split ===")
+    base_report = base_calibrator.get_coverage_report(val_base_scores, tolerance=0.0)
+    for level, info in base_report.items():
+        status = "[PASS]" if info['passed'] else "[FAIL]"
+        print(
+            f"  {level:2s}: empirical FPR={info['empirical_fpr']:.4f}  "
+            f"(pub target<={info['target_alpha']:.4f})  {status}"
+        )
+
     # --- Save ---
     with open(output_path, 'wb') as f:
         pickle.dump(calibrator, f)
     print(f"\nCalibrator (ensemble) saved -> {output_path}")
+
+    base_output_path = os.path.join(
+        os.path.dirname(output_path) or '.',
+        'calibrator_base.pkl',
+    )
+    with open(base_output_path, 'wb') as f:
+        pickle.dump(base_calibrator, f)
+    print(f"Calibrator (base TDA) saved -> {base_output_path}")
 
     extractor.cleanup()
 
@@ -202,5 +227,16 @@ if __name__ == '__main__':
     parser.add_argument('--config', default=None,
                         help='YAML config path (routes via PRISM_CONFIG env var).')
     parser.add_argument('--data-root', default='./data')
+    parser.add_argument('--ensemble-path', default=None,
+                        help='Override ensemble scorer path, e.g. models/ensemble_no_tda.pkl.')
+    parser.add_argument('--profile-path', default=None,
+                        help='Override reference profile path.')
+    parser.add_argument('--output', default=None,
+                        help='Output calibrator path. Default: config PATHS["calibrator"].')
     args = parser.parse_args()
-    calibrate_ensemble(data_root=args.data_root)
+    calibrate_ensemble(
+        data_root=args.data_root,
+        ensemble_path=args.ensemble_path,
+        profile_path=args.profile_path,
+        output_path=args.output,
+    )

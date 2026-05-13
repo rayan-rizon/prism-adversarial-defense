@@ -26,7 +26,8 @@ gives the stated bound.
 \end{proof}
 
 \noindent
-In our calibration, $n=3{,}000$ gives a slack of $\frac{1}{3001} < 0.0004$---negligible.
+In our calibration, the active dataset uses $n=2{,}000$ clean calibration
+examples, giving finite-sample slack below $5\times10^{-4}$.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,8 +37,8 @@ In our calibration, $n=3{,}000$ gives a slack of $\frac{1}{3001} < 0.0004$---neg
 \paragraph{Persistence homology pipeline.}
 For each layer $\ell$, the activation tensor $\phi_\ell(x) \in \mathbb{R}^{d_\ell}$ 
 is downsampled to a point cloud 
-$\mathcal{P} \subset \mathbb{R}^{d_\ell}$ with $|\mathcal{P}| \leq 200$
-via uniform random sampling (with fixed seed).
+$\mathcal{P} \subset \mathbb{R}^{d_\ell}$ with $|\mathcal{P}| \leq 150$
+via deterministic hash-based subsampling.
 We then:
 \begin{enumerate}[noitemsep]
   \item Construct the Vietoris-Rips filtration on $\mathcal{P}$ 
@@ -57,7 +58,7 @@ the medoid is:
 \]
 We compute exact $W_2$ distances via the auction algorithm 
 as implemented in gudhi \cite{gudhi2015}.
-For $N=3{,}000$ diagrams with $\sim 20$ points each, 
+For $N=5{,}000$ profile diagrams with $\sim 20$ points each,
 full pairwise computation takes $\sim 8$~minutes on a single CPU core.
 
 \paragraph{Expert clustering.}
@@ -76,20 +77,12 @@ trained for 20 epochs on the corresponding cluster's activation vectors.
 To isolate the SACD contribution, we evaluate \emph{detection latency}: 
 the number of adversarial queries before L0 mode fires.
 We construct a synthetic query stream: 50 clean images, 
-then 100 consecutive FGSM ($\varepsilon=0.05$) adversarials.
+then consecutive PGD/FGSM adversarial bursts according to the campaign
+scenario definitions emitted by \texttt{run\_campaign\_eval.py}.
 
-We evaluate SACD on a real PRISM inference stream: 50 clean CIFAR-10 images,
-then 100 consecutive FGSM ($\varepsilon=0.05$) adversarials.
-CampaignMonitor uses BOCPD priors calibrated to the observed clean distribution
-($\mu_0=4.6,\,\kappa_0=5,\,\alpha_0=3,\,\beta_0=3$; hazard rate $1/30$;
-$k_\text{alert}=10$, $p_\text{alert}=0.45$, $t_\text{warmup}=20$).
-
-Results (seed 42): clean mean score $4.63\pm1.11$; adversarial mean $7.80\pm1.41$.
-L0 fires at global step 50---the \emph{first} adversarial query---
-yielding detection latency of 0 adversarial queries.
-A single false alarm occurs during the clean phase (step 21, score $8.64$),
-giving a per-query false alarm rate of $1{/}50=2\%$, consistent with
-the L2 conformal coverage bound ($\alpha=0.03$).
+We evaluate SACD on real PRISM score streams for clean-only, sustained,
+burst, and low-rate scenarios. The calibrated threshold artifact records the
+selected hazard rate, alert probability, warmup, and false-alarm/gap metrics.
 
 \paragraph{Calibration requirement.}
 BOCPD requires domain-calibrated priors.
@@ -112,7 +105,7 @@ calibration set anomaly scores.
 Hyperparameter & Default & Range tested & Sensitivity \\
 \midrule
 $n_\text{cal}$ (calibration size)  & 5000 & 500–5000 & Low ($\pm0.09$ on L3) \\
-$n_\text{sub}$ (TDA subsampling)   & 200  & 50–500   & Medium (TPR $\pm4\%$) \\
+$n_\text{sub}$ (TDA subsampling)   & 150  & 50–500   & Medium (TPR $\pm4\%$) \\
 $K$ (expert clusters)              & 4    & 2–8      & Low (Recovery $\pm2\%$) \\
 $\lambda$ (L0 threshold factor)    & 0.8  & 0.6–0.95 & Medium (FPR tradeoff) \\
 $p_\text{alert}$ (BOCPD threshold) & 0.50 & 0.30–0.70 & Low (latency $\pm2$ steps) \\

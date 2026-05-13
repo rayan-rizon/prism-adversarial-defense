@@ -49,7 +49,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=EPS_LINF_STANDARD, seed=4
     rng = np.random.RandomState(seed)
 
     # ── Load PRISM ────────────────────────────────────────────────────────────
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     from src.models import load_backbone
     backbone = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     wrapped = load_backbone(torch.device("cuda" if torch.cuda.is_available() else "cpu"), wrap=True)
@@ -86,7 +86,7 @@ def run_campaign_experiment(n_clean=50, n_adv=100, eps=EPS_LINF_STANDARD, seed=4
         model=wrapped,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
-        nb_classes=BACKBONE_NUM_CLASSES,  # ResNet-18 ImageNet backbone has 1000 output classes
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
     )
     fgsm = FastGradientMethod(art_clf, eps=eps)

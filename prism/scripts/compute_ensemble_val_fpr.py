@@ -1,15 +1,15 @@
 """
 Compute Ensemble Val FPR — High-Statistical-Power FPR Report
 
-Scores the validation split (CIFAR-10 test idx 7000-7999, n=1000) through
+Scores the active dataset validation split (test idx 7000-7999, n=1000) through
 the FULL PRISM pipeline (ensemble scorer + ensemble calibrator) to produce
 FPR estimates with narrow Wilson CIs (~+/-1.5% at n=1000 vs +/-3.3% at n=300).
 
 IMPORTANT: Must be run AFTER calibrate_ensemble.py so models/calibrator.pkl
 contains the ensemble-calibrated thresholds. The val split is held-out from
-both training (CIFAR-10 train set) and calibration (test idx 5000-6999).
+both training (active train set) and calibration (test idx 5000-6999).
 
-Output: experiments/calibration/ensemble_fpr_report.json
+Output: config-aware ensemble_fpr_report.json under experiments/calibration/
 
 USAGE
 -----
@@ -35,7 +35,7 @@ from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor
 from src.config import (
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, VAL_IDX,
-    LAYER_WEIGHTS, DIM_WEIGHTS, DATASET, PATHS,
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
 from src.models import load_backbone
@@ -71,11 +71,11 @@ def compute_ensemble_val_fpr(
     print(f"Validation split: test idx {VAL_IDX[0]}-{VAL_IDX[1]-1} (n={VAL_IDX[1]-VAL_IDX[0]})")
 
     # ── Load PRISM with ensemble scorer ───────────────────────────────────────
-    layer_names   = ['layer2', 'layer3', 'layer4']
+    layer_names   = LAYER_NAMES
     layer_weights = LAYER_WEIGHTS
     dim_weights   = DIM_WEIGHTS
 
-    # CIFAR-10-trained backbone — same as profiling/training/calibration.
+    # Active CIFAR-trained backbone — same as profiling/training/calibration.
     model = load_backbone(device)
 
     cal_p  = PATHS['calibrator']

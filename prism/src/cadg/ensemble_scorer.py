@@ -66,7 +66,7 @@ class PersistenceEnsembleScorer:
 
     Design constraints for publishability:
       - Trained supervised on clean vs adversarial features with an INDEPENDENT
-        training split (CIFAR-10 training set, not the test evaluation split).
+        active-dataset training split, not the test evaluation split.
       - Coefficients are fixed at evaluation time (not dynamic).
       - Regularisation C=1.0 selected by held-out 20% AUC on training data.
     """
@@ -476,9 +476,23 @@ class PersistenceEnsembleScorer:
     @classmethod
     def load(cls, path: str, base_scorer: TopologicalScorer,
              layer_names: List[str]) -> 'PersistenceEnsembleScorer':
-        """Load ensemble scorer from disk."""
-        with open(path, 'rb') as f:
+        """Load a local, dict-format ensemble scorer artifact from disk."""
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Ensemble scorer not found: {path}")
+        resolved = p.resolve()
+        project_root = Path(__file__).resolve().parents[2]
+        cwd = Path.cwd().resolve()
+        if not (resolved.is_relative_to(project_root) or resolved.is_relative_to(cwd)):
+            raise ValueError(
+                f"Refusing to load ensemble pickle outside trusted project paths: {resolved}"
+            )
+        with open(resolved, 'rb') as f:
             data = pickle.load(f)
+        if not isinstance(data, dict):
+            raise TypeError(
+                f"Expected dict-format PersistenceEnsembleScorer artifact, got {type(data).__name__}"
+            )
         scorer = cls(
             base_scorer=base_scorer,
             layer_names=layer_names,

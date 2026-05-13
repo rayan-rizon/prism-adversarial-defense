@@ -8,7 +8,7 @@ copy-paste job; no manual numerical transcription.
 Emitted tables (into --out-dir, default: paper/tables/):
   main_attacks.tex            — PRISM attacks (FGSM/PGD/Square/AutoAttack/CW) 5-seed pooled
   adaptive_pgd.tex            — λ sweep TPR/FPR with tier FPRs
-  ablation.tex                — Full vs No-L0 vs No-MoE vs TDA-only (+ ensemble-no-TDA if present)
+  ablation.tex                — Full vs No-MoE vs Ensemble-no-TDA vs TDA-only
   baselines.tex               — LID / Mahalanobis / ODIN / Energy vs PRISM at matched FPR
   campaign.tex                — SACD scenarios, L0-on vs L0-off ASR gap
   recovery.tex                — TAMSH recovery_accuracy per strategy
@@ -59,6 +59,76 @@ def _load_json(path):
         return json.load(f)
 
 
+def _experiments_root(results_dir):
+    """Accept project root, experiments/, or external prism_results/ roots."""
+    rd = os.path.abspath(results_dir)
+    if os.path.basename(rd) == 'experiments':
+        return rd
+    if os.path.isdir(os.path.join(rd, 'evaluation')) or os.path.isdir(os.path.join(rd, 'ablation')):
+        return rd
+    exp = os.path.join(rd, 'experiments')
+    return exp if os.path.isdir(exp) else rd
+
+
+def _dataset_label(path, data):
+    meta = data.get('metadata') or data.get('_meta') or {}
+    dataset = meta.get('dataset') or data.get('dataset')
+    if dataset:
+        ds = str(dataset).upper().replace('_', '-')
+        if ds in {'CIFAR10', 'CIFAR-10'}:
+            return 'CIFAR-10'
+        if ds in {'CIFAR100', 'CIFAR-100'}:
+            return 'CIFAR-100'
+        return ds
+    name = os.path.basename(path).lower()
+    if 'cifar100' in name or 'c100' in name:
+        return 'CIFAR-100'
+    return 'CIFAR-10'
+
+
+def _entry_from_aggregate(entry):
+    if not isinstance(entry, dict):
+        return None
+    if all(k in entry for k in ('pool_TP', 'pool_FP', 'pool_FN', 'pool_TN')):
+        return {
+            'TP': entry['pool_TP'], 'FP': entry['pool_FP'],
+            'FN': entry['pool_FN'], 'TN': entry['pool_TN'],
+        }
+    return None
+
+
+def _collect_attack_entries(path):
+    """Return [(dataset, attack, counts_dict)] from single or multi-seed files."""
+    d = _load_json(path)
+    dataset = _dataset_label(path, d)
+    rows = []
+
+    if isinstance(d.get('aggregate'), dict):
+        for atk, entry in d['aggregate'].items():
+            counts = _entry_from_aggregate(entry)
+            if counts is not None:
+                rows.append((dataset, atk, counts))
+        if rows:
+            return rows
+
+    if isinstance(d.get('per_seed'), dict):
+        for seed_res in d['per_seed'].values():
+            if not isinstance(seed_res, dict):
+                continue
+            for atk, entry in seed_res.items():
+                if isinstance(entry, dict) and 'TP' in entry:
+                    rows.append((dataset, atk, entry))
+        if rows:
+            return rows
+
+    for atk, entry in d.items():
+        if atk.startswith('_') or not isinstance(entry, dict):
+            continue
+        if 'TP' in entry:
+            rows.append((dataset, atk, entry))
+    return rows
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Pool helpers
 # ────────────────────────────────────────────────────────────────────────────
@@ -89,50 +159,46 @@ def _pool_counts(entries):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_main_attacks(results_dir):
-    paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_paper_seed*.json')))
-    # Also merge CW results if present
-    # Accept both per-seed files (results_cw_seed*.json) and the pooled-seed
-    # file produced by run_vastai_full.sh (results_cw_n<N>_ms<S>.json).
-    cw_paths = sorted(set(
-        glob(os.path.join(results_dir, 'experiments', 'evaluation', 'results_cw_seed*.json'))
-        + glob(os.path.join(results_dir, 'experiments', 'evaluation', 'results_cw_n*_ms*.json'))
+    exp_root = _experiments_root(results_dir)
+    eval_dir = os.path.join(exp_root, 'evaluation')
+    paths = sorted(set(
+        glob(os.path.join(eval_dir, 'results_paper_seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_*paper_seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_fast_n*_ms*.json'))
+        + glob(os.path.join(eval_dir, 'results_*fast_n*_ms*.json'))
+        + glob(os.path.join(eval_dir, 'results_cw_n*_ms*.json'))
+        + glob(os.path.join(eval_dir, 'results_*cw_n*_ms*.json'))
+        + glob(os.path.join(eval_dir, 'results_cw_seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_*cw_seed*.json'))
     ))
-    # Also n1000 fast pool
-    pool_paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_fast_n1000_ms*.json')))
+    paths = [
+        p for p in paths
+        if not ('_ms' in os.path.basename(p) and '_seed' in os.path.basename(p))
+    ]
 
     per_attack = defaultdict(list)
-    for p in paths + pool_paths:
-        d = _load_json(p)
-        for atk, entry in d.items():
-            if atk.startswith('_') or not isinstance(entry, dict): continue
-            if 'TP' in entry:
-                per_attack[atk].append(entry)
-    for p in cw_paths:
-        d = _load_json(p)
-        for atk, entry in d.items():
-            if atk.startswith('_') or not isinstance(entry, dict): continue
-            if 'CW' in atk or atk == 'CW':
-                per_attack[atk].append(entry)
+    for p in paths:
+        for dataset, atk, entry in _collect_attack_entries(p):
+            if atk in {'FGSM', 'PGD', 'Square', 'AutoAttack', 'CW', 'CW_L2'} or 'CW' in atk:
+                per_attack[(dataset, atk)].append(entry)
 
     if not per_attack:
-        return "% No main-attack results found.\n"
+        return f"% No main-attack results found under {eval_dir}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py — do not edit by hand.",
-        "\\begin{tabular}{lcccc}",
+        "\\begin{tabular}{llcccc}",
         "\\toprule",
-        "Attack & TPR & 95\\% CI & FPR & $n$ \\\\",
+        "Dataset & Attack & TPR & 95\\% CI & FPR & $n$ \\\\",
         "\\midrule",
     ]
     order = ['FGSM', 'PGD', 'Square', 'AutoAttack', 'CW', 'CW_L2']
-    for atk in order + [a for a in per_attack if a not in order]:
-        if atk not in per_attack: continue
-        pooled = _pool_counts(per_attack[atk])
+    keys = sorted(per_attack, key=lambda k: (k[0], order.index(k[1]) if k[1] in order else 99, k[1]))
+    for dataset, atk in keys:
+        pooled = _pool_counts(per_attack[(dataset, atk)])
         lo, hi = pooled['TPR_CI']
         lines.append(
-            f"{atk} & {_fmt(pooled['TPR'])} & {_fmt_ci(lo, hi)} & "
+            f"{dataset} & {atk} & {_fmt(pooled['TPR'])} & {_fmt_ci(lo, hi)} & "
             f"{_fmt(pooled['FPR'])} & {pooled['n_adv']} \\\\"
         )
     lines += ["\\bottomrule", "\\end{tabular}"]
@@ -144,30 +210,34 @@ def table_main_attacks(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_adaptive_pgd(results_dir):
+    exp_root = _experiments_root(results_dir)
     paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_adaptive_pgd_seed*.json')))
-    per_lambda = defaultdict(list)
+        exp_root, 'evaluation', 'results*adaptive_pgd_seed*.json')))
+    per_dataset_lambda = defaultdict(list)
     for p in paths:
         d = _load_json(p)
+        dataset = _dataset_label(p, d)
         for key, entry in d.items():
             if key.startswith('_') or not isinstance(entry, dict): continue
             m = re.match(r'AdaptivePGD_lambda_([0-9.]+)', key)
-            if m: per_lambda[float(m.group(1))].append(entry)
-    if not per_lambda:
-        return "% No adaptive-PGD results found.\n"
+            if m:
+                per_dataset_lambda[(dataset, float(m.group(1)))].append(entry)
+    if not per_dataset_lambda:
+        return f"% No adaptive-PGD results found under {os.path.join(exp_root, 'evaluation')}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py",
-        "\\begin{tabular}{cccc}",
+        "\\begin{tabular}{lcccc}",
         "\\toprule",
-        "$\\lambda$ & TPR & 95\\% CI & FPR \\\\",
+        "Dataset & $\\lambda$ & TPR & 95\\% CI & FPR \\\\",
         "\\midrule",
     ]
-    for lam in sorted(per_lambda):
-        pooled = _pool_counts(per_lambda[lam])
+    for dataset, lam in sorted(per_dataset_lambda):
+        pooled = _pool_counts(per_dataset_lambda[(dataset, lam)])
         lo, hi = pooled['TPR_CI']
         lines.append(
-            f"{lam:.1f} & {_fmt(pooled['TPR'])} & {_fmt_ci(lo, hi)} & {_fmt(pooled['FPR'])} \\\\"
+            f"{dataset} & {lam:.1f} & {_fmt(pooled['TPR'])} & {_fmt_ci(lo, hi)} & "
+            f"{_fmt(pooled['FPR'])} \\\\"
         )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'
@@ -178,32 +248,47 @@ def table_adaptive_pgd(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_ablation(results_dir):
-    path = os.path.join(results_dir, 'experiments', 'ablation',
-                        'results_ablation_multiseed.json')
-    if not os.path.exists(path):
-        return "% No ablation multi-seed file found.\n"
-    d = _load_json(path)
-    agg = d.get('aggregate', {})
-    stat = d.get('statistical_tests', {})
-    if not agg:
-        return "% aggregate key missing.\n"
+    exp_root = _experiments_root(results_dir)
+    paths = sorted(glob(os.path.join(exp_root, 'ablation', 'results*ablation_multiseed.json')))
+    if not paths:
+        return f"% No ablation multi-seed file found under {os.path.join(exp_root, 'ablation')}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py",
-        "\\begin{tabular}{lccc}",
+        "\\begin{tabular}{llccc}",
         "\\toprule",
-        "Configuration & Mean TPR & $\\Delta$ vs Full & $p$-value \\\\",
+        "Dataset & Configuration & Mean TPR & $\\Delta$ vs Full & $p$-value \\\\",
         "\\midrule",
     ]
-    for cfg_name, cfg_agg in agg.items():
-        tpr_mean = cfg_agg.get('mean_TPR', cfg_agg.get('TPR_mean'))
-        delta = stat.get(cfg_name, {}).get('delta_tpr', None)
-        pval  = stat.get(cfg_name, {}).get('p_value', None)
-        delta_s = (f"{delta:+.4f}" if isinstance(delta, (int, float)) else "--")
-        pval_s  = (f"{pval:.3f}" if isinstance(pval, (int, float)) else "--")
-        lines.append(
-            f"{cfg_name} & {_fmt(tpr_mean, 4)} & {delta_s} & {pval_s} \\\\"
-        )
+    for path in paths:
+        d = _load_json(path)
+        dataset = _dataset_label(path, d)
+        agg = d.get('aggregate', {})
+        stat = d.get('statistical_tests', {})
+        if not agg:
+            continue
+        for cfg_name, cfg_agg in agg.items():
+            tpr_mean = cfg_agg.get('mean_TPR', cfg_agg.get('TPR_mean'))
+            tests = stat.get(cfg_name, {})
+            deltas = [
+                v.get('mean_delta') for v in tests.values()
+                if isinstance(v, dict)
+                and isinstance(v.get('mean_delta'), (int, float))
+                and np.isfinite(v.get('mean_delta'))
+            ]
+            pvals = [
+                v.get('p_value') for v in tests.values()
+                if isinstance(v, dict)
+                and isinstance(v.get('p_value'), (int, float))
+                and np.isfinite(v.get('p_value'))
+            ]
+            delta = float(np.mean(deltas)) if deltas else None
+            pval = float(np.mean(pvals)) if pvals else None
+            delta_s = (f"{delta:+.4f}" if isinstance(delta, (int, float)) else "--")
+            pval_s  = (f"{pval:.3f}" if isinstance(pval, (int, float)) else "--")
+            lines.append(
+                f"{dataset} & {cfg_name} & {_fmt(tpr_mean, 4)} & {delta_s} & {pval_s} \\\\"
+            )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'
 
@@ -213,36 +298,37 @@ def table_ablation(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_baselines(results_dir):
+    exp_root = _experiments_root(results_dir)
     paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_baselines*seed*.json')))
+        exp_root, 'evaluation', 'results*baselines*seed*.json')))
     paths += sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_baselines.json')))
-    per_det_atk = defaultdict(lambda: defaultdict(list))
+        exp_root, 'evaluation', 'results*baselines.json')))
+    per_dataset_det_atk = defaultdict(list)
     for p in paths:
         d = _load_json(p)
+        dataset = _dataset_label(p, d)
         for det, attacks in d.items():
             if det.startswith('_') or not isinstance(attacks, dict): continue
             for atk, entry in attacks.items():
                 if isinstance(entry, dict) and 'TP' in entry:
-                    per_det_atk[det][atk].append(entry)
-    if not per_det_atk:
-        return "% No baseline results found.\n"
+                    per_dataset_det_atk[(dataset, det, atk)].append(entry)
+    if not per_dataset_det_atk:
+        return f"% No baseline results found under {os.path.join(exp_root, 'evaluation')}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py",
-        "\\begin{tabular}{llccc}",
+        "\\begin{tabular}{lllccc}",
         "\\toprule",
-        "Detector & Attack & TPR & 95\\% CI & FPR \\\\",
+        "Dataset & Detector & Attack & TPR & 95\\% CI & FPR \\\\",
         "\\midrule",
     ]
-    for det in sorted(per_det_atk):
-        for atk in sorted(per_det_atk[det]):
-            pooled = _pool_counts(per_det_atk[det][atk])
-            lo, hi = pooled['TPR_CI']
-            lines.append(
-                f"{det} & {atk} & {_fmt(pooled['TPR'])} & "
-                f"{_fmt_ci(lo, hi)} & {_fmt(pooled['FPR'])} \\\\"
-            )
+    for dataset, det, atk in sorted(per_dataset_det_atk):
+        pooled = _pool_counts(per_dataset_det_atk[(dataset, det, atk)])
+        lo, hi = pooled['TPR_CI']
+        lines.append(
+            f"{dataset} & {det} & {atk} & {_fmt(pooled['TPR'])} & "
+            f"{_fmt_ci(lo, hi)} & {_fmt(pooled['FPR'])} \\\\"
+        )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'
 
@@ -252,37 +338,40 @@ def table_baselines(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_campaign(results_dir):
+    exp_root = _experiments_root(results_dir)
     paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'campaign', 'results_campaign*seed*.json')))
+        exp_root, 'campaign', 'results*campaign*seed*.json')))
     paths += sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_campaign*.json')))
-    per_scen = defaultdict(lambda: {'l0_on': [], 'l0_off': [], 'l0_active_frac': []})
+        exp_root, 'evaluation', 'results*campaign*.json')))
+    per_dataset_scen = defaultdict(lambda: {'l0_on': [], 'l0_off': [], 'l0_active_frac': []})
     for p in paths:
         d = _load_json(p)
+        dataset = _dataset_label(p, d)
         for scen, v in d.items():
             if scen.startswith('_') or not isinstance(v, dict): continue
             if 'l0_on' in v and 'l0_off' in v:
-                per_scen[scen]['l0_on'].append(v['l0_on']['ASR'])
-                per_scen[scen]['l0_off'].append(v['l0_off']['ASR'])
-                per_scen[scen]['l0_active_frac'].append(
+                per_dataset_scen[(dataset, scen)]['l0_on'].append(v['l0_on']['ASR'])
+                per_dataset_scen[(dataset, scen)]['l0_off'].append(v['l0_off']['ASR'])
+                per_dataset_scen[(dataset, scen)]['l0_active_frac'].append(
                     v['l0_on'].get('l0_active_fraction', None))
-    if not per_scen:
-        return "% No campaign results found.\n"
+    if not per_dataset_scen:
+        return f"% No campaign results found under {exp_root}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py",
-        "\\begin{tabular}{lccc}",
+        "\\begin{tabular}{llccc}",
         "\\toprule",
-        "Scenario & ASR (L0 off) & ASR (L0 on) & $\\Delta$ (pp) \\\\",
+        "Dataset & Scenario & ASR (L0 off) & ASR (L0 on) & $\\Delta$ (pp) \\\\",
         "\\midrule",
     ]
-    for scen in sorted(per_scen):
-        off = np.mean(per_scen[scen]['l0_off']) if per_scen[scen]['l0_off'] else 0
-        on  = np.mean(per_scen[scen]['l0_on']) if per_scen[scen]['l0_on'] else 0
+    for dataset, scen in sorted(per_dataset_scen):
+        entry = per_dataset_scen[(dataset, scen)]
+        off = np.mean(entry['l0_off']) if entry['l0_off'] else 0
+        on  = np.mean(entry['l0_on']) if entry['l0_on'] else 0
         delta = 100.0 * (off - on)
         scen_tex = scen.replace('_', '\\_')
         lines.append(
-            f"{scen_tex} & {_fmt(off)} & {_fmt(on)} & {delta:+.2f} \\\\"
+            f"{dataset} & {scen_tex} & {_fmt(off)} & {_fmt(on)} & {delta:+.2f} \\\\"
         )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'
@@ -293,38 +382,43 @@ def table_campaign(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_recovery(results_dir):
+    exp_root = _experiments_root(results_dir)
     paths = sorted(glob(os.path.join(
-        results_dir, 'experiments', 'recovery', 'results_recovery*seed*.json')))
+        exp_root, 'recovery', 'results*recovery*seed*.json')))
     paths += sorted(glob(os.path.join(
-        results_dir, 'experiments', 'evaluation', 'results_recovery*.json')))
-    per_strat = defaultdict(list)
+        exp_root, 'evaluation', 'results*recovery*.json')))
+    per_dataset_strat = defaultdict(list)
     for p in paths:
         d = _load_json(p)
+        dataset = _dataset_label(p, d)
         for k, v in d.items():
             if k.startswith('_') or not isinstance(v, dict): continue
             if 'recovery_accuracy' in v:
-                per_strat[k].append(v)
-    if not per_strat:
-        return "% No recovery results found.\n"
+                per_dataset_strat[(dataset, k)].append(v)
+    if not per_dataset_strat:
+        return f"% No recovery results found under {exp_root}.\n"
 
     lines = [
         "% Auto-generated by scripts/build_paper_tables.py",
-        "\\begin{tabular}{lccc}",
+        "\\begin{tabular}{llccc}",
         "\\toprule",
-        "Strategy & Recovery Acc. & 95\\% CI & Availability \\\\",
+        "Dataset & Strategy & Recovery Acc. & 95\\% CI & Availability \\\\",
         "\\midrule",
     ]
-    for strat in ['reject', 'passthrough', 'tamsh']:
-        if strat not in per_strat: continue
-        entries = per_strat[strat]
-        n_correct = sum(e.get('n_correct', 0) for e in entries)
-        n_l3      = sum(e.get('n_l3', 0) for e in entries)
-        acc = n_correct / max(n_l3, 1)
-        lo, hi = wilson_ci(n_correct, n_l3)
-        avail = np.mean([e.get('availability', 0) for e in entries])
-        lines.append(
-            f"{strat} & {_fmt(acc)} & {_fmt_ci(lo, hi)} & {_fmt(avail)} \\\\"
-        )
+    datasets = sorted({dataset for dataset, _ in per_dataset_strat})
+    for dataset in datasets:
+        for strat in ['reject', 'passthrough', 'tamsh']:
+            if (dataset, strat) not in per_dataset_strat:
+                continue
+            entries = per_dataset_strat[(dataset, strat)]
+            n_correct = sum(e.get('n_correct', 0) for e in entries)
+            n_l3      = sum(e.get('n_l3', 0) for e in entries)
+            acc = n_correct / max(n_l3, 1)
+            lo, hi = wilson_ci(n_correct, n_l3)
+            avail = np.mean([e.get('availability', 0) for e in entries])
+            lines.append(
+                f"{dataset} & {strat} & {_fmt(acc)} & {_fmt_ci(lo, hi)} & {_fmt(avail)} \\\\"
+            )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'
 

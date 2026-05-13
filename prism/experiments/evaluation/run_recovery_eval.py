@@ -8,12 +8,9 @@ rejected inputs. The standard TPR-based ablation cannot surface this because
 TPR does not measure availability.
 
 This script compares three post-L3 strategies on the L3-triggered adversarial
-subset, using the model's predicted class (top-1) vs. the CIFAR-10 ground
-truth label as the correctness signal. Note: the backbone is ImageNet-1000,
-so we use a fixed CIFAR-10 → ImageNet-1000 class mapping via the *clean*
-backbone prediction on the original clean image (the "oracle" clean label).
-Recovery accuracy = P(adversarial routed through strategy → same argmax as
-clean-image argmax).
+subset, using the dataset ground-truth label as the primary correctness
+signal. It also reports a clean-correct conditional metric restricted to
+samples the base CIFAR backbone classified correctly before attack.
 
 Strategies:
   - reject:      Availability = 0 (baseline).
@@ -34,6 +31,7 @@ USAGE
       --seeds 42 123 456 789 999
 """
 import torch
+import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
 import numpy as np
@@ -103,6 +101,11 @@ def _load_moe(experts_path=None):
     if isinstance(data, TopologyAwareMoE):
         return data
     if isinstance(data, dict) and 'experts' in data:
+        if int(data.get('output_dim', -1)) != BACKBONE_NUM_CLASSES:
+            raise ValueError(
+                f"{experts_path}: expert output_dim={data.get('output_dim')} "
+                f"does not match active BACKBONE_NUM_CLASSES={BACKBONE_NUM_CLASSES}"
+            )
         rebuilt = []
         for sd in data['experts']:
             net = ExpertSubNetwork(
@@ -120,8 +123,8 @@ def _load_moe(experts_path=None):
     return None
 
 
-def _oracle_clean_argmax(model, x_pixel, device):
-    """Top-1 argmax of the clean image through the backbone — our 'correct' label."""
+def _clean_argmax(model, x_pixel, device):
+    """Top-1 argmax of the clean image through the backbone."""
     mean_t = torch.tensor(_MEAN, device=device).view(1, 3, 1, 1)
     std_t  = torch.tensor(_STD,  device=device).view(1, 3, 1, 1)
     with torch.no_grad():
@@ -147,7 +150,7 @@ def run_recovery_eval(
     torch.manual_seed(seed)
 
     # ── Model ──
-    # CIFAR-10-trained backbone (see PRISM Implementation §0.5).
+    # Active CIFAR-trained backbone from the current config.
     model = load_backbone(device)
 
     # ── MoE (TAMSH) ──
@@ -161,7 +164,12 @@ def run_recovery_eval(
     ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
     eval_indices = list(range(*EVAL_IDX))
     sample_idx = rng.choice(eval_indices, min(n_test, len(eval_indices)), replace=False)
-    imgs_pixel = [ds[int(i)][0] for i in sample_idx]
+    imgs_pixel = []
+    labels = []
+    for i in sample_idx:
+        img, y = ds[int(i)]
+        imgs_pixel.append(img)
+        labels.append(int(y))
     X_pixel_np = torch.stack(imgs_pixel).numpy()
 
     # ── Generate adversarials ──
@@ -198,7 +206,7 @@ def run_recovery_eval(
 
     # ── Phase 1: identify L3-triggered adversarials ──
     print("Identifying L3-triggered adversarials...")
-    l3_triggered = []  # list of (j, x_adv_pixel, x_clean_pixel, clean_argmax, adv_diagrams, adv_acts)
+    l3_triggered = []
     for j, img_pixel in enumerate(tqdm(imgs_pixel, desc="  triage")):
         x_clean_pixel = img_pixel.unsqueeze(0).to(device)
         x_adv_pixel   = torch.tensor(X_adv_np[j]).unsqueeze(0).to(device)
@@ -206,7 +214,8 @@ def run_recovery_eval(
 
         _, level, meta = prism.defend(x_adv_norm)
         if level in ('L3', 'L3_REJECT'):
-            clean_argmax = _oracle_clean_argmax(model, x_clean_pixel, device)
+            clean_argmax = _clean_argmax(model, x_clean_pixel, device)
+            true_label = int(labels[j])
             # Re-extract diagrams + activations for this adv (PRISM stateful internals
             # are consumed by defend()); keep things simple with a fresh pass.
             acts = prism.extractor.extract(x_adv_norm)
@@ -219,7 +228,9 @@ def run_recovery_eval(
                 'x_clean_pixel': x_clean_pixel,
                 'x_adv_pixel': x_adv_pixel,
                 'x_adv_norm': x_adv_norm,
+                'true_label': true_label,
                 'clean_argmax': clean_argmax,
+                'clean_correct': clean_argmax == true_label,
                 'acts': acts,
                 'diagrams': diagrams,
             })
@@ -251,10 +262,13 @@ def run_recovery_eval(
     expert_selection_counts = {}
     for strat in strategies:
         correct = 0
+        correct_clean_correct = 0
         available = 0
+        available_clean_correct = 0
         expert_uses = {}
         for item in tqdm(l3_triggered, desc=f"  {strat}"):
-            clean_argmax = item['clean_argmax']
+            true_label = item['true_label']
+            clean_correct = bool(item['clean_correct'])
             if strat == 'reject':
                 # Availability 0; correctness 0 by construction.
                 continue
@@ -263,15 +277,19 @@ def run_recovery_eval(
                     logits = norm_model(item['x_adv_pixel'])
                 pred = int(logits.argmax(1).item())
                 available += 1
-                if pred == clean_argmax:
+                if clean_correct:
+                    available_clean_correct += 1
+                if pred == true_label:
                     correct += 1
+                    if clean_correct:
+                        correct_clean_correct += 1
             elif strat == 'tamsh':
                 assert moe is not None
                 # Use the deepest monitored layer's flat activation as expert input.
                 last_layer = LAYER_NAMES[-1]
                 a = item['acts'][last_layer]
                 if a.dim() > 2:
-                    a_flat = a.view(a.size(0), -1)
+                    a_flat = F.adaptive_avg_pool2d(a, 1).view(a.size(0), -1)
                 else:
                     a_flat = a
                 expert_out, expert_idx = moe.forward_through_expert(
@@ -279,21 +297,36 @@ def run_recovery_eval(
                 pred = int(expert_out.argmax(1).item())
                 expert_uses[expert_idx] = expert_uses.get(expert_idx, 0) + 1
                 available += 1
-                if pred == clean_argmax:
+                if clean_correct:
+                    available_clean_correct += 1
+                if pred == true_label:
                     correct += 1
+                    if clean_correct:
+                        correct_clean_correct += 1
             else:
                 raise ValueError(f"Unknown strategy: {strat}")
 
         recovery_acc = correct / max(n_l3, 1)
         availability = available / max(n_l3, 1)
         ci = wilson_ci(correct, n_l3)
+        n_clean_correct_l3 = sum(int(item['clean_correct']) for item in l3_triggered)
+        recovery_acc_cc = correct_clean_correct / max(n_clean_correct_l3, 1)
+        availability_cc = available_clean_correct / max(n_clean_correct_l3, 1)
+        ci_cc = wilson_ci(correct_clean_correct, n_clean_correct_l3)
 
         results[strat] = {
             'recovery_accuracy': round(recovery_acc, 4),
             'recovery_accuracy_CI_95': [round(ci[0], 4), round(ci[1], 4)],
+            'recovery_accuracy_clean_correct': round(recovery_acc_cc, 4),
+            'recovery_accuracy_clean_correct_CI_95': [
+                round(ci_cc[0], 4), round(ci_cc[1], 4)
+            ],
             'availability': round(availability, 4),
+            'availability_clean_correct': round(availability_cc, 4),
             'n_correct': correct,
+            'n_correct_clean_correct': correct_clean_correct,
             'n_l3': n_l3,
+            'n_clean_correct_l3': n_clean_correct_l3,
         }
         if strat == 'tamsh':
             expert_selection_counts = {int(k): int(v) for k, v in expert_uses.items()}
@@ -318,6 +351,7 @@ def run_recovery_eval(
         'attack': attack_name,
         'n_test': n_total,
         'n_l3_triggered': n_l3,
+        'n_clean_correct_l3': sum(int(item['clean_correct']) for item in l3_triggered),
         'l3_trigger_rate': round(trigger_rate, 4),
         'trigger_rate_ok': trigger_rate_ok,
         'strategies': strategies,
@@ -329,9 +363,8 @@ def run_recovery_eval(
             'if miss, TAMSH (C4) demoted to appendix per plan P0.5.'
         ),
         'oracle_source': (
-            "top-1 argmax of the CLEAN backbone on the original (un-attacked) image — "
-            "the backbone is ImageNet-1000 so we use its own clean prediction as the "
-            "'correct' label, not the CIFAR-10 ground truth."
+            f"{DATASET.upper()} ground-truth label is the primary correctness "
+            "signal; clean-correct conditional metrics are also reported."
         ),
     }
 

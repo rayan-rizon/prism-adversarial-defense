@@ -1,11 +1,11 @@
 """
-Build Topological Self-Profile from CIFAR-10 TEST set (FPR fix)
+Build Topological Self-Profile from the active CIFAR TEST set (FPR fix)
 
 RATIONALE
 ---------
-The original build_profile.py used CIFAR-10 TRAINING data for profiling and
-calibration, while run_evaluation.py evaluates on the TEST set.  CIFAR-10
-train and test have a measurable distribution shift in activation space, which
+The original build_profile.py used TRAINING data for profiling and
+calibration, while run_evaluation.py evaluates on the TEST set.  CIFAR
+train and test splits have a measurable distribution shift in activation space, which
 causes the conformal guarantee to be violated:
 
   - L2 target α=0.03  -> observed FPR ≈ 3.3%  (excess 0.3%)
@@ -26,7 +26,7 @@ This clean separation ensures zero data leakage between:
 USAGE
 -----
   cd prism/
-  python scripts/build_profile_testset.py          # builds from CIFAR-10 test
+  python scripts/build_profile_testset.py          # builds from active dataset test
   python scripts/calibrate_ensemble.py             # calibrates using test cal split
 """
 import torch
@@ -65,9 +65,8 @@ from src.models import load_backbone
 # All shared constants imported from src.config (backed by configs/default.yaml).
 # Split indices are the single source of truth -- do not hardcode here.
 
-# Native CIFAR-10 32x32 with backbone-correct normalisation. The ImageNet
-# 224x224 path is preserved behind BACKBONE_INPUT_SIZE for the optional
-# ImageNet evaluation arm.
+# Native CIFAR 32x32 with backbone-correct normalisation. Non-32x32 configs
+# can still request resizing through BACKBONE_INPUT_SIZE.
 _norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 if BACKBONE_INPUT_SIZE == 32:
     _TRANSFORM = T.Compose([T.ToTensor(), _norm])
@@ -87,7 +86,7 @@ def build_profile_testset(
     print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
 
     # ── Model ─────────────────────────────────────────────────────────────────
-    # CIFAR-10-trained ResNet-18. Profiles built on this backbone are the
+    # Active CIFAR-trained ResNet-18. Profiles built on this backbone are the
     # reference manifold against which all downstream Wasserstein distances
     # are computed.
     model = load_backbone(torch.device(device))

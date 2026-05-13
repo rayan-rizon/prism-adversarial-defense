@@ -2,14 +2,13 @@
 Train Differentiated MoE Experts for TAMSH (P0.5)
 
 Each expert is a small MLP that maps the *final monitored layer*'s activation
-→ ImageNet-1000 logits, trained on a specific attack distribution so the
-four experts are genuinely differentiated (not just independent clones). The
-Wasserstein router can then route e.g. PGD-shaped perturbations to the
-PGD-specialised expert.
+to the active CIFAR backbone's class logits, trained on a specific attack
+distribution so the four experts are genuinely differentiated (not just
+independent clones). The Wasserstein router can then route e.g. PGD-shaped
+perturbations to the PGD-specialised expert.
 
-Per-expert training mix (attack → target logits from the clean backbone on
-the original clean image; this is "distillation of the clean prediction"
-under the attack's perturbation — the expert learns to see through the attack):
+Per-expert training mix (attack → dataset ground-truth label from the original
+clean image; the expert learns to recover the CIFAR class through the attack):
 
     Expert 0: Clean only (availability baseline)
     Expert 1: FGSM (ε=8/255)  — single-step
@@ -104,7 +103,7 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
     print(f"Device: {device}")
 
     # ── Model + dataset ──
-    # Two views of the same CIFAR-10 checkpoint:
+    # Two views of the same CIFAR checkpoint:
     #   model      — unwrapped, used by ActivationExtractor (named_modules)
     #   norm_model — wrapped, used by ART (pixel-space attack inputs)
     model = load_backbone(device)
@@ -124,22 +123,21 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
                            replace=False)
     print(f"Training on {len(train_idx)} images from {DATASET.upper()} CAL split")
 
-    pixel_imgs = [ds[int(i)][0] for i in train_idx]
+    pixel_imgs = []
+    labels = []
+    for i in train_idx:
+        img, y = ds[int(i)]
+        pixel_imgs.append(img)
+        labels.append(int(y))
     X_pixel = torch.stack(pixel_imgs).numpy()
 
     # ── Activation extractor + profiler (for medoid diagrams per expert) ──
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
-    # ── Compute clean backbone targets (soft distillation) ──
-    print("Computing clean-backbone target logits...")
-    X_pixel_t = torch.tensor(X_pixel).to(device)
-    target_logits_list = []
-    with torch.no_grad():
-        for i in range(0, len(X_pixel_t), 64):
-            target_logits_list.append(norm_model(X_pixel_t[i:i+64]).cpu())
-    target_logits_all = torch.cat(target_logits_list, dim=0)
-    target_labels = target_logits_all.argmax(dim=1)
+    # ── Ground-truth expert targets ──
+    print("Using dataset ground-truth labels as expert targets...")
+    target_labels = torch.tensor(labels, dtype=torch.long)
 
     eps = EPS_LINF_STANDARD
     last_layer = LAYER_NAMES[-1]
@@ -175,7 +173,7 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
     # Probe dimensions
     probe = _extract_last_layer(X_pixel[:1])
     input_dim = probe.shape[1]
-    output_dim = 1000
+    output_dim = BACKBONE_NUM_CLASSES
     print(f"Expert input_dim={input_dim}, output_dim={output_dim}, hidden_dim={hidden_dim}")
 
     # ── Train each expert ──
@@ -279,6 +277,10 @@ def train_experts(n_train=3000, epochs=3, batch_size=32, hidden_dim=256,
         'expert_names': [name for name, _ in expert_specs],
         'attack_mixes': [mix for _, mix in expert_specs],
         'training_seed': seed,
+        'dataset': DATASET,
+        'num_classes': BACKBONE_NUM_CLASSES,
+        'activation_layer': last_layer,
+        'target_source': 'dataset_ground_truth',
     }
     os.makedirs(os.path.dirname(output), exist_ok=True)
     with open(output, 'wb') as f:

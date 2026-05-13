@@ -12,7 +12,7 @@ Improvements over run_evaluation.py:
   8. Latency measurement (mean ± std over 200 test images)
   9. Results saved as results_paper.json with all metadata
 
-EVAL SPLIT: CIFAR-10 test indices 8000-9999 (2000 images → n=1000 for attack eval)
+EVAL SPLIT: active dataset test indices 8000-9999 (2000 images → n=1000 for attack eval)
   - Profiles built on : test 0-4999
   - Cal built on      : test 5000-6999
   - Val built on      : test 7000-7999
@@ -108,10 +108,8 @@ from src.data_loader import load_test_dataset
 from src.models import load_backbone, _NormalizedBackbone
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-# Mean/std/resolution are sourced from configs/default.yaml via src.config.
-# With the CIFAR-10-trained backbone (default), images are consumed at native
-# 32x32 with CIFAR-10 channel statistics. The ImageNet 224x224 track is kept
-# behind BACKBONE_INPUT_SIZE for the optional ImageNet evaluation arm.
+# Mean/std/resolution are sourced from the active config via src.config.
+# CIFAR runs use native 32x32 images and dataset-specific channel statistics.
 _MEAN = BACKBONE_MEAN
 _STD  = BACKBONE_STD
 if BACKBONE_INPUT_SIZE == 32:
@@ -211,7 +209,7 @@ def run_evaluation_full(
     square_max_iter: int = 5000,
     gen_chunk: int = None,
     cw_chunk: int = 512,   # CIFAR 32x32 is 49x smaller than 224x224
-    aa_chunk: int = 64,    # ImageNet-era default was 8; raised for CIFAR throughput
+    aa_chunk: int = 64,    # high-resolution default was 8; raised for CIFAR throughput
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
@@ -236,14 +234,14 @@ def run_evaluation_full(
     torch.manual_seed(seed)
 
     # ── Model ──────────────────────────────────────────────────────────────────
-    # Load the CIFAR-10-trained ResNet-18 backbone. The returned object is a
-    # `_NormalizedBackbone` wrapping the raw CIFARResNet18 — it accepts
+    # Load the active CIFAR-trained ResNet-18 backbone. The returned object is a
+    # `_NormalizedBackbone` wrapping the raw CIFARResNet — it accepts
     # pixel-space [0, 1] tensors and applies (x - mean) / std internally.
     # The unwrapped backbone is available as `model._model` if downstream
     # code needs the raw forward (it currently does not).
     model = load_backbone(device)
     # PRISM hooks `model.layer2 / layer3 / layer4`; the wrapper forwards
-    # these attribute lookups to the inner CIFARResNet18.
+    # these attribute lookups to the inner CIFARResNet.
     layer_names   = LAYER_NAMES
     layer_weights = LAYER_WEIGHTS
     dim_weights   = DIM_WEIGHTS
@@ -287,9 +285,9 @@ def run_evaluation_full(
     # NOTE: must be on the same device as the main model so CW / PGD
     # gradient computations run on GPU (not CPU) — this is the critical fix
     # that reduces CW from ~285s/sample (CPU) to ~3s/sample (A100 GPU).
-    # ART classifier uses the same CIFAR-10 backbone as the PRISM defense,
-    # this time wrapped with pixel-space normalisation so ART/AutoAttack
-    # can compute perturbations in pixel space [0, 1].
+    # ART classifier uses the same active CIFAR backbone as the PRISM defense,
+    # wrapped with pixel-space normalisation so ART/AutoAttack can compute
+    # perturbations in pixel space [0, 1].
     norm_model = load_backbone(device, wrap=True)
     device_type = 'gpu' if device.type == 'cuda' else 'cpu'
     classifier = PyTorchClassifier(
@@ -362,7 +360,7 @@ def run_evaluation_full(
             '_meta': {
                 'n_test':       n_test,
                 'n_actual':     int(len(sample_idx)),
-                'eval_split':   f'CIFAR-10 test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+                'eval_split':   f'{DATASET.upper()} test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
                 'seed':         seed,
                 'attacks':      [],
                 'latency':      latency,
@@ -386,8 +384,7 @@ def run_evaluation_full(
         img_pixel, _ = pixel_dataset[int(i)]
         all_imgs_pixel.append(img_pixel)
     # Stack: (N, 3, H, W) numpy array for ART batch generation; native
-    # resolution comes from BACKBONE_INPUT_SIZE (32 for CIFAR-10, 224 for
-    # ImageNet track).
+    # resolution comes from BACKBONE_INPUT_SIZE.
     X_pixel_np = torch.stack(all_imgs_pixel).numpy()
     print(f"Pre-loaded {len(all_imgs_pixel)} images ✓")
 
@@ -681,7 +678,8 @@ def run_evaluation_full(
     results['_meta'] = {
         'n_test':       n_test,
         'n_actual':     int(len(sample_idx)),
-        'eval_split':   f'CIFAR-10 test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+        'dataset':      DATASET,
+        'eval_split':   f'{DATASET.upper()} test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
         'seed':         seed,
         'eps_linf':     EPS_LINF_STANDARD,
         'eps_note':     '8/255 = standard RobustBench/AutoAttack convention',
@@ -705,12 +703,10 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
                     aa_chunk: int = 64, aa_version: str = 'standard'):
     """Run AutoAttack and evaluate each example through PRISM.
 
-    The backbone is now CIFAR-10-trained, so attack labels are the true CIFAR-10
-    ground truth (the prior label-space mismatch — ImageNet 1000-class backbone
-    on CIFAR-10 — has been eliminated). `run_standard_evaluation(X, y, bs=32)`
-    produced zero log output for the entire (slow) AutoAttack run, so we chunk
-    by `aa_chunk` and print per-chunk timing + PRISM evaluation, so log tails
-    advance.
+    The backbone is CIFAR-trained, so AutoAttack labels are active-dataset class
+    ids. `run_standard_evaluation(X, y, bs=32)` produced zero log output for the
+    entire slow AutoAttack run, so we chunk by `aa_chunk` and print per-chunk
+    timing plus PRISM evaluation so log tails advance.
     """
     if not AA_AVAILABLE:
         return {'error': 'autoattack not installed'}
@@ -730,13 +726,13 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
 
     X = torch.stack(imgs_pixel).to(device)     # (N, 3, H, W) in [0,1]
 
-    # CIFAR-trained backbone — labels 0-9 are valid. We still use the
-    # model's clean predictions as the attack reference so AutoAttack's
+    # CIFAR-trained backbone — active-dataset class ids are valid. We still use
+    # the model's clean predictions as the attack reference so AutoAttack's
     # "success" criterion is consistent across seeds (a few % of clean
     # inputs are misclassified by the backbone; using its own predictions
     # makes the attack target the actual decision boundary the model uses).
     with torch.no_grad():
-        y = norm_model(X).argmax(dim=1)         # (N,) ImageNet class ids
+        y = norm_model(X).argmax(dim=1)         # (N,) active-dataset class ids
 
     n_total = X.shape[0]
     X_adv = torch.empty_like(X)
@@ -803,7 +799,7 @@ def run_evaluation_multiseed(
     square_max_iter: int = 5000,
     gen_chunk: int = None,
     cw_chunk: int = 512,   # CIFAR 32x32 is 49x smaller than 224x224
-    aa_chunk: int = 64,    # ImageNet-era default was 8; raised for CIFAR throughput
+    aa_chunk: int = 64,    # high-resolution default was 8; raised for CIFAR throughput
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
@@ -948,6 +944,7 @@ def run_evaluation_multiseed(
             'n_test':      n_test,
             'eps':         round(EPS_LINF_STANDARD, 6),
             'eps_255':     round(EPS_LINF_STANDARD * 255, 2),
+            'dataset':     DATASET,
             'eval_split':  list(EVAL_IDX),
             'attacks':     attacks_to_run,
             'cw_engine':   cw_engine,
