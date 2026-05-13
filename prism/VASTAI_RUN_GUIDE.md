@@ -779,18 +779,19 @@ All other gates determine **venue**, not submission (see §A5).
 
 ## A4. CIFAR-100 Variant (P1.1)
 
-Config: `configs/cifar100.yaml` (already in tree). Same ResNet-18, same
+Config: `configs/cifar100.yaml`. Uses a CIFAR-100-trained `cifar_resnet18`
+backbone (100-class head, 32x32 native, CIFAR-100 channel stats). Same
 `layer_weights`, same 5000/2000/1000/2000 split shape as CIFAR-10; artifacts
-at `models/cifar100/*.pkl`. Execution order matches §A1 steps 1–13, each
-invoked with `--config configs/cifar100.yaml`. Launch via the sibling script:
+at `models/cifar100/*.pkl`. The script trains the backbone from scratch in
+Step 0a, then runs the full pipeline:
 
 ```bash
 bash run_vastai_cifar100.sh
 ```
 
-Expected budget: ~1 GPU-week on a 5090-class card (bulk: CW + campaign +
-recovery + baselines all need re-fitting against the CIFAR-100 clean-score
-distribution). If cal→val FPR overruns target by >1 pp, tighten
+Expected budget: ~6-8h on RTX 5090 (backbone ~45 min, CW eval bottleneck
+~2.5h). Expected CIFAR-100 ResNet-18 clean accuracy: 76-78% (vs 94-95%
+for CIFAR-10). If cal→val FPR overruns target by >1 pp, tighten
 `conformal.tier_cal_alpha_factors.L3` from 0.50 → 0.45 before re-running.
 
 ## A5. Venue Decision Matrix (end of week 7)

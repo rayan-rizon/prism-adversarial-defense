@@ -62,6 +62,46 @@ echo "Instance: $(hostname)"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
+# ── Pre-flight: PyTorch + deps installed? ─────────────────────────────────────
+# Fresh vast.ai instances may ship without ML packages. Detect missing torch
+# and auto-install requirements.txt before any python invocation. Avoids the
+# "ModuleNotFoundError" traceback that aborts the pipeline on Step 0 otherwise.
+echo ""
+echo "=== Pre-flight: verify dependencies ==="
+if ! python -c "import torch" 2>/dev/null; then
+  echo "  PyTorch NOT FOUND — installing from requirements.txt ..."
+  pip install --no-cache-dir --upgrade pip setuptools wheel
+  pip install --no-cache-dir -r requirements.txt || {
+    echo "ERROR: pip install -r requirements.txt failed."
+    echo "       Check network, CUDA wheels, or pin a specific torch wheel for this image."
+    exit 1
+  }
+fi
+python -c "import torch" 2>/dev/null || {
+  echo "ERROR: PyTorch import still fails after pip install. Aborting."
+  echo "       Try:  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121"
+  exit 1
+}
+# Required python modules sanity check (fail fast before Step 1).
+python -c "
+import importlib, sys
+required = ['torch','torchvision','numpy','scipy','sklearn','yaml','tqdm','ripser','gudhi','art','autoattack']
+missing = []
+for m in required:
+    try: importlib.import_module(m)
+    except Exception as e: missing.append((m, str(e).splitlines()[0]))
+if missing:
+    print('MISSING modules:')
+    for m, e in missing: print(f'  - {m}: {e}')
+    sys.exit(1)
+print('  All required modules import OK.')
+" || {
+  echo "  Re-running pip install -r requirements.txt to resolve missing deps ..."
+  pip install --no-cache-dir -r requirements.txt
+  python -c "import torch, ripser, art, autoattack" || { echo "ERROR: dependencies still missing"; exit 1; }
+}
+echo "Pre-flight: PASS"
+
 # ── Environment ──────────────────────────────────────────────────────────────
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export NVIDIA_TF32_OVERRIDE=1

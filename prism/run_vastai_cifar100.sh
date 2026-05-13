@@ -40,6 +40,40 @@ echo "Instance: $(hostname)"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
+# ── Pre-flight: PyTorch + deps installed? ─────────────────────────────────────
+echo ""
+echo "=== Pre-flight: verify dependencies ==="
+if ! python -c "import torch" 2>/dev/null; then
+  echo "  PyTorch NOT FOUND — installing from requirements.txt ..."
+  pip install --no-cache-dir --upgrade pip setuptools wheel
+  pip install --no-cache-dir -r requirements.txt || {
+    echo "ERROR: pip install -r requirements.txt failed."
+    exit 1
+  }
+fi
+python -c "import torch" 2>/dev/null || {
+  echo "ERROR: PyTorch import still fails. Aborting."
+  exit 1
+}
+python -c "
+import importlib, sys
+required = ['torch','torchvision','numpy','scipy','sklearn','yaml','tqdm','ripser','gudhi','art','autoattack']
+missing = []
+for m in required:
+    try: importlib.import_module(m)
+    except Exception as e: missing.append((m, str(e).splitlines()[0]))
+if missing:
+    print('MISSING modules:')
+    for m, e in missing: print(f'  - {m}: {e}')
+    sys.exit(1)
+print('  All required modules import OK.')
+" || {
+  echo "  Re-running pip install -r requirements.txt ..."
+  pip install --no-cache-dir -r requirements.txt
+  python -c "import torch, ripser, art, autoattack" || { echo "ERROR: deps missing"; exit 1; }
+}
+echo "Pre-flight: PASS"
+
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export NVIDIA_TF32_OVERRIDE=1
 export TORCH_CUDNN_V8_API_ENABLED=1
@@ -53,6 +87,53 @@ mkdir -p logs/${TAG} \
          experiments/ablation \
          experiments/campaign \
          experiments/recovery
+
+# ── Step 0: GPU + PyTorch verification ───────────────────────────────────────
+echo ""
+echo "=== Step 0: GPU + PyTorch verification ==="
+python -c "
+import torch
+print('torch:', torch.__version__)
+print('cuda:', torch.version.cuda)
+assert torch.cuda.is_available(), 'CUDA not available'
+print('gpu:', torch.cuda.get_device_name(0))
+print('vram:', round(torch.cuda.get_device_properties(0).total_mem / 1024**3, 1), 'GB')
+assert int(torch.__version__.split('.')[0]) >= 2, f'Need PyTorch >= 2.0, got {torch.__version__}'
+print('OK')
+"
+echo "Step 0: PASS"
+
+# ── Step 0a: Pretrain the CIFAR-100 ResNet-18 backbone ───────────────────────
+CKPT=models/${TAG}/cifar_resnet18_c100.pt
+
+echo ""
+echo "=== Step 0a: Pretrain CIFAR-100 ResNet-18 backbone ==="
+if [ -f "$CKPT" ]; then
+  echo "  Checkpoint exists: $CKPT — skipping pretraining."
+  echo "  (Delete $CKPT to force retrain.)"
+else
+  python scripts/pretrain_cifar_backbone.py \
+    --dataset cifar100 --num-classes 100 \
+    --output "$CKPT" --min-test-acc 0.73 \
+    2>&1 > >(tee logs/${TAG}/step0a_pretrain_backbone.log)
+  STEP0A_EXIT=${PIPESTATUS[0]:-$?}
+  if [ "$STEP0A_EXIT" -ne 0 ]; then
+    echo "ERROR: Step 0a failed. Check logs/${TAG}/step0a_pretrain_backbone.log"
+    exit 1
+  fi
+fi
+
+# Post-step verification
+python -c "
+import torch, sys
+sd = torch.load('$CKPT', map_location='cpu', weights_only=True)
+from src.models.cifar_resnet import cifar_resnet18
+m = cifar_resnet18(num_classes=100)
+m.load_state_dict(sd)
+out = m(torch.randn(1, 3, 32, 32))
+assert out.shape == (1, 100), f'Expected (1,100), got {out.shape}'
+print(f'Backbone OK: {sum(p.numel() for p in m.parameters())/1e6:.2f}M params, output {out.shape}')
+" || { echo "ERROR: Backbone verification failed."; exit 1; }
 
 # ── Step 1: Build reference profiles (CIFAR-100) ─────────────────────────────
 echo ""
@@ -130,6 +211,9 @@ python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
   --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
+  --cw-engine torch \
+  --skip-latency \
+  --checkpoint-interval 100 \
   --output experiments/evaluation/results_${TAG}_cw_n${N_TEST}_ms5.json \
   2>&1 | tee logs/${TAG}/step5_cw_ms5.log &
 PID_CW=$!
@@ -138,6 +222,10 @@ python experiments/evaluation/run_evaluation_full.py \
   --config $CONFIG \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
+  --gen-chunk 128 --square-max-iter 5000 \
+  --aa-version standard --aa-chunk 64 \
+  --skip-latency \
+  --checkpoint-interval 100 \
   --output experiments/evaluation/results_${TAG}_fast_n${N_TEST}_ms5.json \
   2>&1 | tee logs/${TAG}/step5_fast_ms5.log &
 PID_FAST=$!

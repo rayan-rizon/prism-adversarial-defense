@@ -1,22 +1,24 @@
 # PRISM — CIFAR-100 configuration (P1.1)
 #
-# Same ResNet-18 backbone as default.yaml, but retargets the profiling /
-# calibration / evaluation pipeline at CIFAR-100. The backbone is
-# ImageNet-1000 pretrained, so class count does not change — CIFAR-100 only
-# swaps the input distribution. Reference profiles, ensemble scorer,
-# calibrator, and experts must all be retrained against CIFAR-100 using the
-# same scripts:
+# CIFAR-100-adapted ResNet-18, trained from scratch by
+# scripts/pretrain_cifar_backbone.py --dataset cifar100 --num-classes 100.
+# Same architecture as the CIFAR-10 backbone (3x3 stem, no maxpool) but
+# with a 100-class head and CIFAR-100 channel statistics.
 #
+# Full pipeline:
+#   python scripts/pretrain_cifar_backbone.py --dataset cifar100 --num-classes 100 \
+#       --output models/cifar100/cifar_resnet18_c100.pt --min-test-acc 0.73
 #   python scripts/build_profile_testset.py     --config configs/cifar100.yaml
 #   python scripts/train_ensemble_scorer.py    --config configs/cifar100.yaml --fgsm-oversample 2.5
 #   python scripts/calibrate_ensemble.py       --config configs/cifar100.yaml
-#   python scripts/train_experts.py            --config configs/cifar100.yaml   # optional
+#   python scripts/train_experts.py            --config configs/cifar100.yaml
 #
-# All artifacts land in models/cifar100/*.pkl to avoid clobbering CIFAR-10.
+# All artifacts land in models/cifar100/ to avoid clobbering CIFAR-10.
 
 model:
-  name: resnet18
-  weights: IMAGENET1K_V1
+  name: cifar_resnet18
+  backbone_checkpoint: models/cifar100/cifar_resnet18_c100.pt
+  num_classes: 100
   layer_names:
     - layer2
     - layer3
@@ -79,9 +81,9 @@ memory:
 
 data:
   dataset: cifar100
-  image_size: 224
-  mean: [0.485, 0.456, 0.406]
-  std: [0.229, 0.224, 0.225]
+  image_size: 32
+  mean: [0.5071, 0.4867, 0.4408]
+  std:  [0.2675, 0.2565, 0.2761]
   data_root: ./data
 
 profiling:

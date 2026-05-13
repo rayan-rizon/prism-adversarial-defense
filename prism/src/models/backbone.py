@@ -26,7 +26,10 @@ import torch
 import torch.nn as nn
 
 from .cifar_resnet import cifar_resnet18, CIFARResNet18
-from ..config import BACKBONE_MEAN, BACKBONE_STD, BACKBONE_CHECKPOINT_PATH
+from ..config import (
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_CHECKPOINT_PATH,
+    BACKBONE_NUM_CLASSES,
+)
 
 
 class _NormalizedBackbone(nn.Module):
@@ -60,11 +63,11 @@ class _NormalizedBackbone(nn.Module):
 
 def load_backbone(device: torch.device,
                   checkpoint_path: Optional[str] = None,
-                  num_classes: int = 10,
+                  num_classes: Optional[int] = None,
                   eval_mode: bool = True,
                   wrap: bool = False) -> nn.Module:
     """
-    Load the CIFAR-10-trained backbone and move it to *device*.
+    Load the CIFAR-trained backbone and move it to *device*.
 
     Returned object depends on `wrap`:
       - `wrap=False` (default): returns the raw `CIFARResNet18`. This is the
@@ -82,8 +85,10 @@ def load_backbone(device: torch.device,
         checkpoint_path: Path to the pretrained CIFAR ResNet-18 checkpoint.
             Defaults to `BACKBONE_CHECKPOINT_PATH` (config-driven, normally
             `models/cifar_resnet18.pt`).
-        num_classes: 10 for CIFAR-10, 100 for CIFAR-100. The checkpoint must
-            have been trained with the matching head dimension.
+        num_classes: Number of output classes. Defaults to
+            `BACKBONE_NUM_CLASSES` from the active config (10 for CIFAR-10,
+            100 for CIFAR-100). The checkpoint must have been trained with
+            the matching head dimension.
         eval_mode: Whether to call .eval() before returning. Default True.
             Set False only for the pretraining script itself.
         wrap: See above.
@@ -98,13 +103,16 @@ def load_backbone(device: torch.device,
     """
     from pathlib import Path
 
+    if num_classes is None:
+        num_classes = BACKBONE_NUM_CLASSES
+
     ckpt = checkpoint_path or BACKBONE_CHECKPOINT_PATH
     if not Path(ckpt).exists():
         raise FileNotFoundError(
             f"CIFAR backbone checkpoint not found at '{ckpt}'.\n"
             f"  Run:  python scripts/pretrain_cifar_backbone.py\n"
-            f"  This produces a CIFAR-10-trained ResNet-18 in ~1 hour on an "
-            f"RTX 5090 (200 epochs, expected clean test accuracy ≈ 94-95%)."
+            f"  This produces a CIFAR-trained ResNet-18 in ~1 hour on an "
+            f"RTX 5090 (200 epochs)."
         )
 
     backbone = cifar_resnet18(

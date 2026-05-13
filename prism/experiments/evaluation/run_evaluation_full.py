@@ -99,6 +99,7 @@ from src.sacd.monitor import NoOpCampaignMonitor
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
+    BACKBONE_NUM_CLASSES,
     EPS_LINF_STANDARD,
     EVAL_IDX,   # single source of truth -- do not redeclare below
     DATASET, PATHS,
@@ -295,7 +296,7 @@ def run_evaluation_full(
         model=norm_model,
         loss=torch.nn.CrossEntropyLoss(),
         input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
-        nb_classes=10,          # CIFAR-10 classes — backbone was retrained from scratch
+        nb_classes=BACKBONE_NUM_CLASSES,
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
@@ -320,6 +321,7 @@ def run_evaluation_full(
         ),
         'Square': lambda: SquareAttack(
             classifier, eps=EPS_LINF_STANDARD, max_iter=square_max_iter, nb_restarts=1,
+            verbose=False,  # suppress ART tqdm flood — our [gen] chunked lines are the progress
         ),
     }
 
@@ -434,6 +436,11 @@ def run_evaluation_full(
             _bs = cw_chunk
         elif attack_name == 'CW':
             _bs = cw_chunk  # CW-specific: configurable chunk for GPU batch parallelism
+        elif attack_name == 'Square':
+            # Cap Square chunk at 32: ART generates all max_iter queries inside
+            # one generate() call — no external progress hook. Smaller chunks
+            # = more frequent [gen] lines (~5-10s each on GPU).
+            _bs = min(32, getattr(attack, 'batch_size', None) or 32)
         else:
             _bs = getattr(attack, '_batch_size', None) or getattr(attack, 'batch_size', None) or 32
         if attack_name == 'CW':
@@ -443,6 +450,12 @@ def run_evaluation_full(
                   f"optimistic lower-bound ~{_est_chunk:.0f}s per chunk, "
                   f"~{_est_per_img * len(X_pixel_np) / 60:.0f} min total. "
                   "Actual timing is printed after every chunk.", flush=True)
+        elif attack_name == 'Square':
+            n_chunks = max(1, (len(X_pixel_np) + _bs - 1) // _bs)
+            print(f"  Square generation: max_iter={square_max_iter}, chunk={_bs}, "
+                  f"~{n_chunks} chunk(s). "
+                  "Progress printed after each chunk — not stuck, just slow per chunk.",
+                  flush=True)
         print(f"  Generating {len(sample_idx)} adversarial examples "
               f"(chunk={_bs})...", flush=True)
         X_adv_np = np.zeros_like(X_pixel_np)

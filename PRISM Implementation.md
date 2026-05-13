@@ -119,8 +119,8 @@ The frozen list lives in `requirements.txt` — install from there, not from thi
 ```
 prism/
 ├── configs/            YAML configs; see src/config.py loader
-├── data/               CIFAR-10, ImageNet subset
-├── models/             Pretrained weights + reference_profiles.pkl, calibrator.pkl, ensemble_scorer.pkl
+├── data/               CIFAR-10, CIFAR-100
+├── models/             CIFAR-10 backbone + artifacts; models/cifar100/ for CIFAR-100
 ├── src/
 │   ├── tamm/           Topological Activation Manifold Monitor
 │   ├── cadg/           Conformal Adversarial Detection Guarantee
@@ -672,7 +672,8 @@ Honest statement of what this paper covers and what it does not. Fill this
 section in the paper — reviewers who find undisclosed limitations discount
 harder than reviewers who find disclosed ones.
 
-- **Single dataset.** CIFAR-10 only. No CIFAR-100, no ImageNet. Scaling to
+- **Two datasets.** CIFAR-10 and CIFAR-100 (both with CIFAR-trained
+  backbones). No ImageNet or higher-resolution datasets. Scaling to
   larger-resolution inputs requires re-evaluating TDA subsample strategy;
   the medoid computation is O(N²) in diagram count.
 - **Single backbone.** ResNet-18 only. No ViT, no larger ResNet, no

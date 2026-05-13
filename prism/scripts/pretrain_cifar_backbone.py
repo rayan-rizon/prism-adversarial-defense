@@ -1,53 +1,35 @@
 """
-Pretrain the CIFAR-10 ResNet-18 backbone for PRISM.
+Pretrain the CIFAR ResNet-18 backbone for PRISM.
 
-Standard, fully-reproducible CIFAR-10 training schedule that matches the
-research norm used by Madry et al. 2018, TRADES, MART, and the RobustBench
+Standard, fully-reproducible training schedule that matches the research
+norm used by Madry et al. 2018, TRADES, MART, and the RobustBench
 benchmark for clean (non-adversarially-trained) baselines.
+
+Supports both CIFAR-10 (10 classes, ~94-95% acc) and CIFAR-100 (100
+classes, ~76-78% acc) via --dataset / --num-classes flags.
 
 Schedule
 ========
   - Optimiser:  SGD, lr = 0.1, momentum = 0.9, nesterov = True,
                 weight_decay = 5e-4
   - Schedule:   200 epochs, cosine annealing to lr = 0
-  - Batch:      256 (single-GPU; sized for 32x32 CIFAR-10 + RTX 5090's
-                32 GB. Doubling the canonical 128 → 256 saves ~25 % wall-
-                clock without harming final accuracy; cosine + Nesterov
-                absorb the larger-batch noise reduction. Pass --batch-size
-                128 to reproduce the historical schedule exactly.)
+  - Batch:      256
   - Augment:    RandomCrop(32, padding=4) + RandomHorizontalFlip
-  - Precision:  AMP (autocast + GradScaler). 2x faster on RTX 5090 vs
-                FP32. CIFAR ResNet-18 has no numerical-sensitivity issues
-                at FP16; accuracy variance vs FP32 is < 0.1 pp.
+  - Precision:  AMP (autocast + GradScaler)
   - Loss:       CrossEntropyLoss
   - Seed:       42 (deterministic data shuffling)
 
 Expected outcome
 ================
-  - Clean test accuracy: 94.5-95.5 %
-  - Wall-clock on RTX 5090: ≈ 30-45 minutes (was 50-70 min without AMP)
-  - Output checkpoint: ``models/cifar_resnet18.pt``
-  - Saved as a raw state_dict — the PRISM pipeline loads this via
-    ``src.models.load_backbone()``.
-
-Acceptance criterion
-====================
-The script writes ``models/cifar_resnet18.pt`` only if final test
-accuracy ≥ 0.93 (a generous floor — the canonical schedule overshoots).
-A weaker checkpoint is rejected with a non-zero exit, preventing
-silent regressions downstream.
+  CIFAR-10:  94.5-95.5 % test acc, ~30-45 min on RTX 5090
+  CIFAR-100: 76-78 % test acc, ~30-45 min on RTX 5090
 
 Usage
 =====
     python scripts/pretrain_cifar_backbone.py
-    python scripts/pretrain_cifar_backbone.py --epochs 200 --batch-size 128
-    python scripts/pretrain_cifar_backbone.py --fast   # smoke: 5 epochs, ~3 min on RTX 5090
-
-Determinism
-===========
-We set the seed for torch, numpy, and Python. We do NOT enable strict
-cudnn determinism because that slows training ~2x with no accuracy
-benefit for this architecture. Run-to-run accuracy variance is < 0.3 pp.
+    python scripts/pretrain_cifar_backbone.py --dataset cifar100 --num-classes 100 \\
+        --output models/cifar100/cifar_resnet18_c100.pt --min-test-acc 0.73
+    python scripts/pretrain_cifar_backbone.py --fast
 """
 from __future__ import annotations
 
@@ -67,6 +49,12 @@ from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as T
 
+# ── SSL fix ─────────────────────────────────────────────────────────────
+import ssl, certifi
+os.environ.setdefault('SSL_CERT_FILE', certifi.where())
+os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
+ssl._create_default_https_context = ssl.create_default_context
+
 # Ensure src/ is importable when run from the prism/ working directory
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -85,18 +73,19 @@ def _set_seed(seed: int = 42) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-# ── Data ────────────────────────────────────────────────────────────────
-def _build_dataloaders(data_root: str, batch_size: int, num_workers: int
-                        ) -> Tuple[DataLoader, DataLoader]:
-    """
-    Standard CIFAR-10 train/test loaders.
+# ── Dataset channel statistics ─────────────────────────────────────────
+_DATASET_STATS = {
+    'cifar10':  {'mean': [0.4914, 0.4822, 0.4465], 'std': [0.2470, 0.2435, 0.2616]},
+    'cifar100': {'mean': [0.5071, 0.4867, 0.4408], 'std': [0.2675, 0.2565, 0.2761]},
+}
 
-    Training transforms: RandomCrop(32, pad=4) + HorizontalFlip + ToTensor +
-    Normalize. Test transforms: ToTensor + Normalize only. Normalisation
-    constants are pulled from the active config (CIFAR-10 channel stats by
-    default).
-    """
-    normalize = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+
+# ── Data ────────────────────────────────────────────────────────────────
+def _build_dataloaders(data_root: str, batch_size: int, num_workers: int,
+                       dataset: str = 'cifar10',
+                       ) -> Tuple[DataLoader, DataLoader]:
+    stats = _DATASET_STATS[dataset]
+    normalize = T.Normalize(mean=stats['mean'], std=stats['std'])
 
     train_tf = T.Compose([
         T.RandomCrop(32, padding=4),
@@ -109,10 +98,12 @@ def _build_dataloaders(data_root: str, batch_size: int, num_workers: int
         normalize,
     ])
 
-    train_ds = torchvision.datasets.CIFAR10(
+    ds_cls = (torchvision.datasets.CIFAR10 if dataset == 'cifar10'
+              else torchvision.datasets.CIFAR100)
+    train_ds = ds_cls(
         root=data_root, train=True,  download=True, transform=train_tf,
     )
-    test_ds  = torchvision.datasets.CIFAR10(
+    test_ds  = ds_cls(
         root=data_root, train=False, download=True, transform=test_tf,
     )
 
@@ -192,61 +183,68 @@ def _evaluate(model: nn.Module, loader: DataLoader, device: torch.device,
 # ── Main ────────────────────────────────────────────────────────────────
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description='Pretrain CIFAR-10 ResNet-18 backbone for PRISM.'
+        description='Pretrain CIFAR ResNet-18 backbone for PRISM.'
     )
+    parser.add_argument('--dataset',      default='cifar10',
+                        choices=['cifar10', 'cifar100'],
+                        help='Dataset to train on (default: cifar10).')
+    parser.add_argument('--num-classes',  type=int,   default=None,
+                        help='Number of output classes. Auto-detected from '
+                             '--dataset if not specified (10 or 100).')
     parser.add_argument('--epochs',       type=int,   default=200)
-    parser.add_argument('--batch-size',   type=int,   default=256,
-                        help='Default 256 (2x the canonical 128). Cuts wall-'
-                             'clock ~25 %% on RTX 5090 without affecting '
-                             'final accuracy. Pass 128 to reproduce the '
-                             'exact historical schedule.')
+    parser.add_argument('--batch-size',   type=int,   default=256)
     parser.add_argument('--lr',           type=float, default=0.1)
     parser.add_argument('--momentum',     type=float, default=0.9)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
-    parser.add_argument('--num-workers',  type=int,   default=8,
-                        help='Default 8 (RTX 5090 instances typically have '
-                             '16+ vCPUs). Drop to 4 on smaller hosts.')
+    parser.add_argument('--num-workers',  type=int,   default=8)
     parser.add_argument('--no-amp',       action='store_true',
-                        help='Disable mixed-precision training (default ON). '
-                             'AMP is ~2x faster on RTX 5090; accuracy '
-                             'variance vs FP32 is < 0.1 pp.')
+                        help='Disable mixed-precision training.')
     parser.add_argument('--seed',         type=int,   default=42)
     parser.add_argument('--data-root',    default='./data')
-    parser.add_argument('--output',       default=BACKBONE_CHECKPOINT_PATH,
-                        help='Output state_dict path. Default: from config.')
-    parser.add_argument('--min-test-acc', type=float, default=0.93,
-                        help='Refuse to save the checkpoint if final test '
-                             'accuracy is below this floor (default 0.93). '
-                             'Set to 0 only for ablation / smoke runs.')
+    parser.add_argument('--output',       default=None,
+                        help='Output state_dict path. Default: config-driven.')
+    parser.add_argument('--min-test-acc', type=float, default=None,
+                        help='Refuse to save if final test acc is below this '
+                             'floor. Default: 0.93 for CIFAR-10, 0.73 for '
+                             'CIFAR-100.')
     parser.add_argument('--fast', action='store_true',
-                        help='Smoke: 5 epochs only (~3 min on RTX 5090). '
-                             'Auto-disables --min-test-acc gate.')
+                        help='Smoke: 5 epochs, gate disabled.')
     args = parser.parse_args()
+
+    if args.num_classes is None:
+        args.num_classes = 100 if args.dataset == 'cifar100' else 10
+    if args.output is None:
+        args.output = BACKBONE_CHECKPOINT_PATH
+    if args.min_test_acc is None:
+        args.min_test_acc = 0.73 if args.dataset == 'cifar100' else 0.93
 
     if args.fast:
         args.epochs = 5
         args.min_test_acc = 0.0
         print('[FAST MODE] epochs=5, min-test-acc gate disabled')
 
+    stats = _DATASET_STATS[args.dataset]
     _set_seed(args.seed)
     setup_perf_flags(verbose=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     use_amp = (not args.no_amp) and (device.type == 'cuda')
     print(f'Device: {device}')
-    print(f'Backbone:  cifar_resnet18 (CIFAR-adapted: 3x3 stem, no maxpool, 10-class head)')
+    print(f'Dataset:   {args.dataset} ({args.num_classes} classes)')
+    print(f'Backbone:  cifar_resnet18 (CIFAR-adapted: 3x3 stem, no maxpool)')
     print(f'Train:     {args.epochs} epochs, batch={args.batch_size}, '
           f'lr={args.lr}→0 cosine, momentum={args.momentum}, wd={args.weight_decay}')
     print(f'Augment:   RandomCrop(32, pad=4) + RandomHorizontalFlip')
-    print(f'Normalize: mean={BACKBONE_MEAN}, std={BACKBONE_STD}')
+    print(f'Normalize: mean={stats["mean"]}, std={stats["std"]}')
     print(f'Precision: {"AMP (FP16)" if use_amp else "FP32"},  num_workers={args.num_workers}')
 
     train_dl, test_dl = _build_dataloaders(
         args.data_root, args.batch_size, args.num_workers,
+        dataset=args.dataset,
     )
-    print(f'Loaded CIFAR-10: train={len(train_dl.dataset)}, '
+    print(f'Loaded {args.dataset.upper()}: train={len(train_dl.dataset)}, '
           f'test={len(test_dl.dataset)}')
 
-    model = cifar_resnet18(num_classes=10).to(device)
+    model = cifar_resnet18(num_classes=args.num_classes).to(device)
     optim = torch.optim.SGD(
         model.parameters(),
         lr=args.lr, momentum=args.momentum,

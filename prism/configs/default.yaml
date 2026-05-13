@@ -102,4 +102,6 @@ evaluation:
 paths:
   reference_profiles: models/reference_profiles.pkl
   calibrator: models/calibrator.pkl
+  ensemble_scorer: models/ensemble_scorer.pkl
+  experts: models/experts.pkl
   clean_scores: experiments/calibration/clean_scores.npy

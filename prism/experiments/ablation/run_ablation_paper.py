@@ -60,6 +60,7 @@ except ImportError:
 from src.prism import PRISM
 from src.sacd.monitor import NoOpCampaignMonitor, CampaignMonitor
 from src.tamsh.experts import TopologyAwareMoE, ExpertSubNetwork
+from src.models import load_backbone
 from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
