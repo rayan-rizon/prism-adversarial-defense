@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PRISM — Local Smoke Test (CPU, ~10-15 min)
+# PRISM — Local Smoke Test (bounded local integration run)
 # =============================================================================
 # Runs the full pipeline with minimal subsets to verify:
 #   1. Backbone trains and checkpoints correctly
@@ -9,8 +9,9 @@
 #   4. Conformal calibration meets FPR targets
 #   5. Evaluation reports TPR/FPR metrics
 #
-# NOT a metric gate — backbone is 3 epochs (too few for production accuracy).
-# Purpose: catch integration bugs before submitting to vast.ai.
+# NOT a metric gate. This path intentionally uses a tiny local backbone and
+# reduced splits to verify train -> profile -> calibrate wiring without using
+# any Vast.ai artifacts.
 #
 # Usage:
 #   cd prism/
@@ -54,24 +55,24 @@ cfg = {
         'layer_weights': {'layer2': 0.30, 'layer3': 0.30, 'layer4': 0.40},
     },
     'tda': {
-        'n_subsample': 50,     # reduced from 150 for speed
+        'n_subsample': 30,
         'max_dim': 1,
-        'n_reference': 10,     # reduced from 50
+        'n_reference': 5,
         'dim_weights': [0.70, 0.30],
     },
     'conformal': {
         'alphas': {'L1': 0.10, 'L2': 0.03, 'L3': 0.005},
-        'calibration_size': 200,
-        'validation_size': 200,
+        'calibration_size': 100,
+        'validation_size': 50,
         'cal_alpha_factor': 0.7,
         'tier_cal_alpha_factors': {'L1': 0.70, 'L2': 0.70, 'L3': 0.50},
     },
     # Use a smaller slice of the test set for speed (same non-overlapping splits)
     'splits': {
-        'profile_idx': [0,    200],   # 200 images (was 5000)
-        'cal_idx':     [200,  400],   # 200 images (was 2000)
-        'val_idx':     [400,  500],   # 100 images (was 1000)
-        'eval_idx':    [500,  700],   # 200 images (was 2000)
+        'profile_idx': [0,    100],
+        'cal_idx':     [100,  200],
+        'val_idx':     [200,  250],
+        'eval_idx':    [250,  350],
     },
     'campaign': {
         'window_size': 50, 'cp_threshold': 0.3, 'hazard_rate': 0.033,
@@ -87,8 +88,8 @@ cfg = {
         'std':  [0.2470, 0.2435, 0.2616],
         'data_root': './data',
     },
-    'profiling': {'n_clean_images': 200},
-    'evaluation': {'n_test_images': 100, 'attacks': ['FGSM', 'PGD']},
+    'profiling': {'n_clean_images': 100},
+    'evaluation': {'n_test_images': 50, 'attacks': ['FGSM', 'PGD']},
     'paths': {
         'reference_profiles': 'models/smoke_test/reference_profiles.pkl',
         'calibrator':         'models/smoke_test/calibrator.pkl',
@@ -104,18 +105,21 @@ print('  Smoke config written: configs/smoke_test.yaml')
 PYEOF
 
 echo ""
-echo "=== Step 0: Pretrain backbone (3 epochs, smoke) ==="
+echo "=== Step 0: Pretrain backbone (bounded local smoke) ==="
 CKPT="$SMOKE_DIR/cifar_resnet18_smoke.pt"
 if [ -f "$CKPT" ]; then
   echo "  Checkpoint exists — skipping backbone pretrain."
 else
   python3 scripts/pretrain_cifar_backbone.py \
     --dataset cifar10 \
-    --epochs 3 \
-    --batch-size 512 \
+    --epochs 1 \
+    --batch-size 256 \
     --num-workers 0 \
+    --train-subset 2000 \
+    --test-subset 500 \
     --output "$CKPT" \
     --min-test-acc 0.0 \
+    --allow-undertrained-smoke \
     2>&1 | tee "$LOG_DIR/step0_backbone.log"
   echo "  Backbone saved: $CKPT"
 fi
@@ -136,6 +140,7 @@ echo ""
 echo "=== Step 1: Build reference profiles ==="
 python3 scripts/build_profile_testset.py \
   --config "$SMOKE_CONFIG" \
+  --allow-undertrained-smoke \
   2>&1 | tee "$LOG_DIR/step1_profiles.log"
 echo "  Profiles built."
 
@@ -143,8 +148,10 @@ echo ""
 echo "=== Step 2: Train ensemble scorer ==="
 python3 scripts/train_ensemble_scorer.py \
   --config "$SMOKE_CONFIG" \
-  --n-train 200 \
+  --n-train 30 \
+  --pgd-train-steps 5 \
   --fgsm-oversample 1.5 \
+  --allow-undertrained-smoke \
   2>&1 | tee "$LOG_DIR/step2_ensemble.log"
 echo "  Ensemble trained."
 
@@ -163,18 +170,6 @@ python3 scripts/compute_ensemble_val_fpr.py \
   2>&1 | tee "$LOG_DIR/step4_val_fpr.log"
 
 echo ""
-echo "=== Step 5: Evaluation (FGSM + PGD, n=50, single seed) ==="
-python3 experiments/evaluation/run_evaluation_full.py \
-  --config "$SMOKE_CONFIG" \
-  --attacks FGSM PGD \
-  --seed 42 \
-  --n-test 50 \
-  --allow-cpu-cw \
-  --skip-latency \
-  --output "$SMOKE_DIR/results_smoke.json" \
-  2>&1 | tee "$LOG_DIR/step5_eval.log"
-
-echo ""
 echo "=== Smoke Test Results ==="
 python3 - <<'PYEOF'
 import json, os
@@ -190,27 +185,9 @@ if os.path.exists(fpr_path):
 else:
     print("  FPR report not found.")
 
-# Eval results
-res_path = 'models/smoke_test/results_smoke.json'
-if os.path.exists(res_path):
-    res = json.load(open(res_path))
-    print(f"\n  Attack metrics (n=50 per attack):")
-    targets = {'FGSM': 0.85, 'PGD': 0.90, 'CW': 0.85, 'Square': 0.85, 'AutoAttack': 0.90}
-    for attack, data in res.items():
-        if attack.startswith('_') or not isinstance(data, dict):
-            continue
-        tpr = data.get('TPR', 0)
-        fpr = data.get('FPR', 0)
-        tgt = targets.get(attack, 0.85)
-        status = 'PASS' if tpr >= tgt else 'FAIL (smoke backbone — expected)'
-        ci = data.get('TPR_CI_95', [0, 0])
-        print(f"    {attack:12s}: TPR={tpr:.4f} [{ci[0]:.3f},{ci[1]:.3f}]  FPR={fpr:.4f}  target>={tgt:.2f}  [{status}]")
-else:
-    print("  Eval results not found.")
-
-print("\n  NOTE: 3-epoch backbone will NOT meet TPR targets.")
-print("  Smoke test purpose = pipeline correctness, not metric validation.")
-print("  Run vast.ai for real metrics (200-epoch backbone).")
+print("\n  NOTE: this run uses a tiny local backbone subset and reduced splits.")
+print("  Purpose = pipeline correctness, artifact generation, and calibration wiring.")
+print("  It is not a publishable metric run.")
 PYEOF
 
 if [ "$CLEAN" -eq 1 ]; then

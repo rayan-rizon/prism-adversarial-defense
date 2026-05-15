@@ -98,7 +98,7 @@ def _base_calibrator_path() -> str:
     return _artifact_sibling(PATHS['calibrator'], 'calibrator_base.pkl')
 
 
-def _load_moe(required: bool):
+def _load_moe(required: bool, device: torch.device = torch.device('cpu')):
     experts_path = PATHS['experts']
     if not os.path.exists(experts_path):
         if required:
@@ -125,6 +125,7 @@ def _load_moe(required: bool):
             )
             net.load_state_dict(sd)
             net.eval()
+            net.to(device)
             rebuilt.append(net)
         return TopologyAwareMoE(
             experts=rebuilt,
@@ -197,7 +198,7 @@ def build_prism(cfg, model, device):
     )
 
     if cfg.get('use_moe', True):
-        prism.moe = _load_moe(required=True)
+        prism.moe = _load_moe(required=True, device=device)
     else:
         prism.moe = None
 

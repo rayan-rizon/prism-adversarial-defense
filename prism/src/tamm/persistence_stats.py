@@ -81,7 +81,7 @@ def compute_dct_energy(image: np.ndarray) -> float:
     space, supplementing the 36 persistence statistics.
 
     Args:
-        image: (C, H, W) float32 array (normalised or [0, 1]).
+        image: (C, H, W) float32 array in canonical pixel space [0, 1].
     Returns:
         log(\u03a3 high_freq_coeff\u00b2 + 1e-8) \u2014 scalar float.
         Returns 0.0 if scipy is unavailable or image is None.
@@ -203,8 +203,8 @@ def extract_feature_vector(
         ref_profiles: {layer: [H0, H1, ...]} medoid reference profiles.
         layer_names: Ordered list of layers to include.
         dims: Which homology dimensions to include (default [0, 1]).
-        image: Optional (C, H, W) float32 image. When provided, appends
-               the DCT high-frequency energy as a feature.
+        image: Optional (C, H, W) float32 pixel-space [0, 1] image. When
+               provided, appends the DCT high-frequency energy as a feature.
         grad_norm: Optional pre-computed input-gradient L2 norm. When
                    provided, appended as the final feature.
         logits: Optional 1-D array of raw model logits (pre-softmax).

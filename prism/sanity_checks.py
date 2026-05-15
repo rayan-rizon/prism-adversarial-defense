@@ -93,7 +93,15 @@ for label, path, expect_tda in [
     check(f"{label} stored as dict", isinstance(data, dict), f"type={type(data).__name__}")
     if isinstance(data, dict):
         check(f"{label} softmax entropy enabled", bool(data.get('use_softmax_entropy', False)))
-        check(f"{label} grad norm disabled", not bool(data.get('use_grad_norm', False)))
+        recovery_mode = data.get('selection_objective') == 'worst_case_tpr'
+        if recovery_mode and expect_tda:
+            check(f"{label} grad norm enabled", bool(data.get('use_grad_norm', False)))
+            check(
+                f"{label} feature_space_version=pixel-v1",
+                data.get('feature_space_version') == 'pixel-v1',
+            )
+        else:
+            check(f"{label} grad norm disabled", not bool(data.get('use_grad_norm', False)))
         check(f"{label} use_tda={expect_tda}", bool(data.get('use_tda', True)) is expect_tda)
         if expect_tda:
             check(f"{label} n_features >= 38", int(data.get('n_features') or 0) >= 38)

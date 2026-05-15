@@ -101,7 +101,7 @@ from src.config import (
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
     BACKBONE_NUM_CLASSES,
     EPS_LINF_STANDARD,
-    EVAL_IDX,   # single source of truth -- do not redeclare below
+    CAL_IDX, VAL_IDX, EVAL_IDX,   # single source of truth -- do not redeclare below
     DATASET, PATHS,
 )
 from src.data_loader import load_test_dataset
@@ -167,6 +167,39 @@ def per_tier_fpr(clean_levels: dict, n_clean: int) -> dict:
     }
 
 
+def score_quantiles(scores) -> dict:
+    """Compact score distribution summary for audit artifacts."""
+    arr = np.asarray(scores, dtype=np.float32)
+    if arr.size == 0:
+        return {}
+    return {
+        'mean': round(float(arr.mean()), 6),
+        'std': round(float(arr.std()), 6),
+        'min': round(float(arr.min()), 6),
+        'p05': round(float(np.percentile(arr, 5)), 6),
+        'p25': round(float(np.percentile(arr, 25)), 6),
+        'p50': round(float(np.percentile(arr, 50)), 6),
+        'p75': round(float(np.percentile(arr, 75)), 6),
+        'p95': round(float(np.percentile(arr, 95)), 6),
+        'max': round(float(arr.max()), 6),
+    }
+
+
+def _base_attack_success_mask(norm_model, x_clean_np, x_adv_np, device,
+                              batch_size: int = 256) -> np.ndarray:
+    """Return mask where adversarial prediction differs from clean prediction."""
+    preds_clean = []
+    preds_adv = []
+    with torch.no_grad():
+        for s in range(0, len(x_clean_np), batch_size):
+            e = min(s + batch_size, len(x_clean_np))
+            xc = torch.tensor(x_clean_np[s:e], device=device, dtype=torch.float32)
+            xa = torch.tensor(x_adv_np[s:e], device=device, dtype=torch.float32)
+            preds_clean.append(norm_model(xc).argmax(dim=1).detach().cpu().numpy())
+            preds_adv.append(norm_model(xa).argmax(dim=1).detach().cpu().numpy())
+    return (np.concatenate(preds_adv) != np.concatenate(preds_clean))
+
+
 def run_latency_benchmark(prism: PRISM, dataset, device, n: int = 200) -> dict:
     """Measure PRISM.defend() wall-clock latency on n clean images."""
     rng = np.random.RandomState(999)
@@ -176,7 +209,7 @@ def run_latency_benchmark(prism: PRISM, dataset, device, n: int = 200) -> dict:
         img, _ = dataset[int(i)]
         x = _NORMALIZE(img).unsqueeze(0).to(device)
         t0 = time.perf_counter()
-        prism.defend(x)
+        prism.defend(x, pixel_image=img)
         times.append((time.perf_counter() - t0) * 1000.0)
 
     arr = np.array(times)
@@ -271,10 +304,18 @@ def run_evaluation_full(
     _ens_scorer = getattr(prism_base, 'scorer', None)
     _ens_meta = {
         'use_dct':          getattr(_ens_scorer, 'use_dct', None),
+        'use_grad_norm':    getattr(_ens_scorer, 'use_grad_norm', None),
+        'use_softmax_entropy': getattr(_ens_scorer, 'use_softmax_entropy', None),
         'training_attacks': getattr(_ens_scorer, 'training_attacks', None),
         'training_n':       getattr(_ens_scorer, 'training_n', None),
         'training_eps':     getattr(_ens_scorer, 'training_eps', None),
         'n_features':       getattr(_ens_scorer, 'n_features', None),
+        'feature_space_version': getattr(_ens_scorer, 'feature_space_version', None),
+        'selection_objective': getattr(_ens_scorer, 'selection_objective', None),
+        'training_attack_counts': getattr(_ens_scorer, 'training_attack_counts', None),
+        'per_attack_validation_metrics': getattr(
+            _ens_scorer, 'per_attack_validation_metrics', None
+        ),
     }
     print(f"Ensemble provenance: use_dct={_ens_meta['use_dct']}, "
           f"training_attacks={_ens_meta['training_attacks']}, "
@@ -389,6 +430,8 @@ def run_evaluation_full(
     print(f"Pre-loaded {len(all_imgs_pixel)} images ✓")
 
     for attack_name in attacks_to_run:
+        if attack_name == 'AutoAttack':
+            continue
         if attack_name not in all_attacks:
             print(f"Unknown attack: {attack_name}. Skipping.")
             continue
@@ -427,6 +470,7 @@ def run_evaluation_full(
         # CW to get progress every ~8 samples (~30-60 sec per chunk).
         cw_generation_stats = None
         cw_success_mask_np = None
+        base_success_mask_np = None
         if gen_chunk is not None:
             _bs = gen_chunk
         elif use_torch_cw:
@@ -534,6 +578,7 @@ def run_evaluation_full(
                 np.concatenate(cw_success_mask_parts).astype(bool)
                 if cw_success_mask_parts else np.zeros(len(X_pixel_np), dtype=bool)
             )
+            base_success_mask_np = cw_success_mask_np
             cw_l2_arr = np.array(cw_l2_success, dtype=np.float32)
             cuda_peak_mb = None
             if device.type == 'cuda':
@@ -562,14 +607,22 @@ def run_evaluation_full(
                 'cuda_peak_memory_mb': cuda_peak_mb,
             }
 
+        if base_success_mask_np is None:
+            base_success_mask_np = _base_attack_success_mask(
+                norm_model, X_pixel_np, X_adv_np, device, batch_size=max(1, int(_bs))
+            )
+
         # ── Evaluate clean + adversarial through PRISM ────────────────────────
-        cw_base_success_tp = 0
-        cw_base_success_fn = 0
+        base_success_tp = 0
+        base_success_fn = 0
+        clean_scores = []
+        adv_scores = []
         for j, img_pixel in enumerate(tqdm(all_imgs_pixel)):
             x = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
 
             # Clean
-            _, lv_clean, _ = prism_attack.defend(x)
+            _, lv_clean, meta_clean = prism_attack.defend(x, pixel_image=img_pixel)
+            clean_scores.append(float(meta_clean.get('anomaly_score', 0.0)))
             level_clean[lv_clean] = level_clean.get(lv_clean, 0) + 1
             if lv_clean == 'PASS':
                 tn += 1
@@ -577,17 +630,19 @@ def run_evaluation_full(
                 fp += 1
 
             # Adversarial
-            x_adv = _NORMALIZE(torch.tensor(X_adv_np[j])).unsqueeze(0).to(device)
-            _, lv_adv, _ = prism_attack.defend(x_adv)
+            adv_pixel = torch.tensor(X_adv_np[j])
+            x_adv = _NORMALIZE(adv_pixel).unsqueeze(0).to(device)
+            _, lv_adv, meta_adv = prism_attack.defend(x_adv, pixel_image=adv_pixel)
+            adv_scores.append(float(meta_adv.get('anomaly_score', 0.0)))
             level_adv[lv_adv] = level_adv.get(lv_adv, 0) + 1
             if lv_adv != 'PASS':
                 tp += 1
-                if cw_success_mask_np is not None and cw_success_mask_np[j]:
-                    cw_base_success_tp += 1
+                if base_success_mask_np is not None and base_success_mask_np[j]:
+                    base_success_tp += 1
             else:
                 fn += 1
-                if cw_success_mask_np is not None and cw_success_mask_np[j]:
-                    cw_base_success_fn += 1
+                if base_success_mask_np is not None and base_success_mask_np[j]:
+                    base_success_fn += 1
 
             if (j + 1) % checkpoint_interval == 0:
                 _n_adv = tp + fn
@@ -628,16 +683,33 @@ def run_evaluation_full(
             'per_tier_fpr': tier_fpr,
             'clean_level_distribution': level_clean,
             'adversarial_level_distribution': level_adv,
+            'score_quantiles': {
+                'clean': score_quantiles(clean_scores),
+                'adversarial': score_quantiles(adv_scores),
+            },
         }
+        if base_success_mask_np is not None:
+            _success_n = int(np.sum(base_success_mask_np))
+            _success_tpr = base_success_tp / max(_success_n, 1)
+            results[attack_name]['base_attack_success'] = _success_n
+            results[attack_name]['base_attack_success_rate'] = round(
+                _success_n / max(len(base_success_mask_np), 1), 4
+            )
+            results[attack_name]['detector_TPR_on_base_success'] = round(_success_tpr, 4)
+            results[attack_name]['detector_TPR_on_base_success_CI_95'] = [
+                round(v, 4) for v in wilson_ci(base_success_tp, _success_n)
+            ]
+            results[attack_name]['detected_base_success'] = int(base_success_tp)
+            results[attack_name]['missed_base_success'] = int(base_success_fn)
         if cw_generation_stats is not None:
-            _cw_success_n = cw_base_success_tp + cw_base_success_fn
-            _cw_success_tpr = cw_base_success_tp / max(_cw_success_n, 1)
+            _cw_success_n = base_success_tp + base_success_fn
+            _cw_success_tpr = base_success_tp / max(_cw_success_n, 1)
             cw_generation_stats['detector_TPR_on_base_success'] = round(_cw_success_tpr, 4)
             cw_generation_stats['detector_TPR_on_base_success_CI_95'] = [
-                round(v, 4) for v in wilson_ci(cw_base_success_tp, _cw_success_n)
+                round(v, 4) for v in wilson_ci(base_success_tp, _cw_success_n)
             ]
-            cw_generation_stats['detected_base_success'] = int(cw_base_success_tp)
-            cw_generation_stats['missed_base_success'] = int(cw_base_success_fn)
+            cw_generation_stats['detected_base_success'] = int(base_success_tp)
+            cw_generation_stats['missed_base_success'] = int(base_success_fn)
             results[attack_name]['attack_generation'] = cw_generation_stats
             results[attack_name]['detector_TPR_on_base_success'] = round(_cw_success_tpr, 4)
             results[attack_name]['base_attack_success_rate'] = (
@@ -662,6 +734,8 @@ def run_evaluation_full(
             prism_base, pixel_dataset, sample_idx, device, EPS_LINF_STANDARD,
             aa_chunk=aa_chunk, aa_version=aa_version,
         )
+    elif 'AutoAttack' in (attacks_to_run or []):
+        results['AutoAttack'] = {'error': 'autoattack not installed'}
 
     # ── Summary table ──────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
@@ -680,6 +754,8 @@ def run_evaluation_full(
         'n_actual':     int(len(sample_idx)),
         'dataset':      DATASET,
         'eval_split':   f'{DATASET.upper()} test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1}',
+        'calibration_split': f'{DATASET.upper()} test idx {CAL_IDX[0]}-{CAL_IDX[1]-1}',
+        'validation_split': f'{DATASET.upper()} test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}',
         'seed':         seed,
         'eps_linf':     EPS_LINF_STANDARD,
         'eps_note':     '8/255 = standard RobustBench/AutoAttack convention',
@@ -747,20 +823,37 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
         print(f"    [AA gen] {e}/{n_total} elapsed={_dt:.1f}s  "
               f"rate={_dt/max(e,1):.2f}s/img", flush=True)
 
+    with torch.no_grad():
+        adv_pred = norm_model(X_adv).argmax(dim=1)
+    base_success_mask = (adv_pred != y).detach().cpu().numpy().astype(bool)
+    base_success_n = int(base_success_mask.sum())
+
     # ── Evaluate clean + adversarial through PRISM ─────────────────────────────
+    clean_scores = []
+    adv_scores = []
+    base_success_tp = 0
+    base_success_fn = 0
     for j, (pix, adv_pix) in enumerate(zip(X, X_adv)):
         x_clean = _NORMALIZE(pix.cpu()).unsqueeze(0).to(device)
         x_adv   = _NORMALIZE(adv_pix.cpu()).unsqueeze(0).to(device)
 
-        _, lv_c, _ = prism.defend(x_clean)
+        _, lv_c, meta_clean = prism.defend(x_clean, pixel_image=pix)
+        clean_scores.append(float(meta_clean.get('anomaly_score', 0.0)))
         level_clean[lv_c] = level_clean.get(lv_c, 0) + 1
         if lv_c == 'PASS': tn += 1
         else:               fp += 1
 
-        _, lv_a, _ = prism.defend(x_adv)
+        _, lv_a, meta_adv = prism.defend(x_adv, pixel_image=adv_pix)
+        adv_scores.append(float(meta_adv.get('anomaly_score', 0.0)))
         level_adv[lv_a] = level_adv.get(lv_a, 0) + 1
-        if lv_a != 'PASS': tp += 1
-        else:               fn += 1
+        if lv_a != 'PASS':
+            tp += 1
+            if base_success_mask[j]:
+                base_success_tp += 1
+        else:
+            fn += 1
+            if base_success_mask[j]:
+                base_success_fn += 1
 
         if (j + 1) % max(1, n_total // 5) == 0:
             _tpr = tp / max(tp + fn, 1)
@@ -785,6 +878,27 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
         'adversarial_level_distribution': level_adv,
         'TPR_CI_95': [round(v, 4) for v in wilson_ci(tp, n_adv)],
         'FPR_CI_95': [round(v, 4) for v in wilson_ci(fp, n_clean)],
+        'base_attack_success': base_success_n,
+        'base_attack_success_rate': round(base_success_n / max(n_total, 1), 4),
+        'detector_TPR_on_base_success': round(
+            base_success_tp / max(base_success_n, 1), 4
+        ),
+        'detector_TPR_on_base_success_CI_95': [
+            round(v, 4) for v in wilson_ci(base_success_tp, base_success_n)
+        ],
+        'detected_base_success': int(base_success_tp),
+        'missed_base_success': int(base_success_fn),
+        'attack_generation': {
+            'engine': 'autoattack',
+            'version': aa_version,
+            'eps': round(float(eps), 6),
+            'base_attack_success': base_success_n,
+            'base_attack_success_rate': round(base_success_n / max(n_total, 1), 4),
+        },
+        'score_quantiles': {
+            'clean': score_quantiles(clean_scores),
+            'adversarial': score_quantiles(adv_scores),
+        },
     }
 
 
@@ -889,7 +1003,7 @@ def run_evaluation_multiseed(
         for seed_str, seed_res in per_seed_results.items():
             # run_evaluation_full() returns attack results at top level keyed by attack name
             atk_res = seed_res.get(atk)
-            if atk_res is None:
+            if atk_res is None or 'TPR' not in atk_res:
                 continue
             tprs.append(atk_res['TPR'])
             fprs.append(atk_res['FPR'])
@@ -899,9 +1013,15 @@ def run_evaluation_multiseed(
             pool_fn += atk_res.get('FN', 0)
             pool_tn += atk_res.get('TN', 0)
             gen = atk_res.get('attack_generation', {})
-            pool_base_success += int(gen.get('base_attack_success', 0) or 0)
-            pool_detected_base_success += int(gen.get('detected_base_success', 0) or 0)
-            pool_missed_base_success += int(gen.get('missed_base_success', 0) or 0)
+            pool_base_success += int(
+                atk_res.get('base_attack_success', gen.get('base_attack_success', 0)) or 0
+            )
+            pool_detected_base_success += int(
+                atk_res.get('detected_base_success', gen.get('detected_base_success', 0)) or 0
+            )
+            pool_missed_base_success += int(
+                atk_res.get('missed_base_success', gen.get('missed_base_success', 0)) or 0
+            )
 
         if not tprs:
             continue

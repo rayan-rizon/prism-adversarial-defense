@@ -1,11 +1,10 @@
 """
 P0.4 L0 Threshold Calibration
 
-`CampaignMonitor` defaults (`alert_run_prob=0.60`, `hazard_rate=1/30`,
-`warmup_steps=35`) were tuned on synthetic prior-predictive streams, not
-on the trained scorer's actual output. This script grid-searches those
-three parameters on score streams produced by the real ensemble scorer,
-then writes the best cell to `models/l0_thresholds.pkl`.
+`CampaignMonitor` defaults were tuned on synthetic prior-predictive streams,
+not on the trained scorer's actual output. This script grid-searches a
+centered-score CUSUM detector on score streams produced by the real ensemble
+scorer, then writes the best cell to `models/l0_thresholds.pkl`.
 
 Selection rule:
   argmax  ASR_gap_pp   subject to   clean_only_L0_active_frac <= 0.01
@@ -14,9 +13,9 @@ If no grid cell is feasible, the script aborts with a non-zero exit code
 so `run_vastai_full.sh` Step 6b fails fast instead of launching Step 7a
 with uncalibrated thresholds.
 
-The loaded CampaignMonitor is given each cell via the new `thresholds_path`
-kwarg (see src/sacd/monitor.py::_load_thresholds), so no other call-sites
-need to change once this pkl exists.
+The loaded CampaignMonitor is given each cell via `thresholds_path`
+(see src/sacd/monitor.py::_load_thresholds), so no other call-sites need to
+change once this pkl exists.
 
 USAGE
 -----
@@ -27,8 +26,9 @@ USAGE
 OUTPUT
 ------
   models/l0_thresholds.pkl:
-    {'hazard_rate': float, 'alert_run_prob': float, 'warmup_steps': int,
-     'alert_run_length': int, 'l0_factor': float,
+    {'detection_mode': 'cusum', 'score_center': float, 'score_scale': float,
+     'cusum_drift': float, 'cusum_threshold': float, 'warmup_steps': int,
+     'l0_factor': float,
      'calibration_metrics': {...grid details, selected cell...}}
 """
 import os
@@ -96,7 +96,7 @@ def _compute_score_stream(
                 L: profiler.compute_diagram(acts[L].squeeze(0).cpu().numpy())
                 for L in LAYER_NAMES
         }
-        img_np = x_norm.squeeze(0).detach().cpu().numpy() if use_dct else None
+        img_np = img_pixel.detach().cpu().numpy() if use_dct else None
 
         grad_norm = None
         if use_grad_norm:
@@ -131,10 +131,15 @@ def _simulate_stream(scores, tier_thresh_L3, cell, l0_factor=0.8):
     active on that step, the threshold tightens to tier_thresh_L3 * l0_factor.
     """
     monitor = CampaignMonitor(
-        hazard_rate=cell['hazard_rate'],
-        alert_run_prob=cell['alert_run_prob'],
+        hazard_rate=cell.get('hazard_rate', 1 / 30),
+        alert_run_prob=cell.get('alert_run_prob', 0.60),
         warmup_steps=cell['warmup_steps'],
         l0_factor=l0_factor,
+        detection_mode=cell.get('detection_mode', 'bocpd'),
+        score_center=cell.get('score_center', 0.0),
+        score_scale=cell.get('score_scale', 1.0),
+        cusum_drift=cell.get('cusum_drift', 0.25),
+        cusum_threshold=cell.get('cusum_threshold'),
     )
     n_pass_on = 0
     n_pass_off = 0
@@ -235,6 +240,10 @@ def calibrate_l0_thresholds(
           f"max={clean_scores.max():.4f}")
     print(f"adv_scores:   mean={adv_scores.mean():.4f} std={adv_scores.std():.4f} "
           f"max={adv_scores.max():.4f}")
+    score_center = float(np.median(clean_scores))
+    mad = float(np.median(np.abs(clean_scores - score_center)))
+    score_scale = max(1.4826 * mad, float(clean_scores.std()) * 0.5, 1e-6)
+    print(f"CUSUM clean baseline: center={score_center:.4f} scale={score_scale:.4f}")
 
     # ── Grid search ──────────────────────────────────────────────────────────
     # Sustained stream layout: n_clean_prefix clean scores (to let BOCPD
@@ -245,19 +254,19 @@ def calibrate_l0_thresholds(
         [clean_scores[:n_clean_prefix], adv_scores]
     )
 
-    # Expanded grid (210 cells): the prior 48-cell grid (hr ∈ {1/50…1/10},
-    # arp ∈ {0.45…0.75}, ws ∈ {25,35,50}) had every cell exceed the 1% clean
-    # FPR budget — at hr ≥ 1/50 with arp ≤ 0.55, BOCPD fires on ~63% of clean
-    # steps because score variance (std≈0.74) regularly crosses the alert
-    # boundary. The expanded grid adds more conservative values (lower hr,
-    # higher arp, longer warmup) so a feasible cell exists.
+    # Recovery calibration: use a CUSUM over centered scorer output rather than
+    # an L3-only score stream. This lets L0 react to sustained low-grade score
+    # drift even when single PGD/AA examples rarely exceed the L3 threshold.
     grid = []
-    for hr in (1/500, 1/200, 1/100, 1/50, 1/30, 1/20, 1/10):
-        for arp in (0.55, 0.65, 0.75, 0.85, 0.95, 0.99):
-            for ws in (35, 50, 75, 100, 150):
+    for drift in (0.00, 0.10, 0.25, 0.50, 0.75):
+        for threshold in (5.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0):
+            for ws in (20, 35, 50, 75, 100):
                 grid.append({
-                    'hazard_rate': hr,
-                    'alert_run_prob': arp,
+                    'detection_mode': 'cusum',
+                    'score_center': score_center,
+                    'score_scale': score_scale,
+                    'cusum_drift': drift,
+                    'cusum_threshold': threshold,
                     'warmup_steps': ws,
                 })
 
@@ -280,9 +289,14 @@ def calibrate_l0_thresholds(
         # Restrict to the adversarial suffix:
         adv_off_pass, adv_on_pass = 0, 0
         monitor = CampaignMonitor(
-            hazard_rate=cell['hazard_rate'],
-            alert_run_prob=cell['alert_run_prob'],
+            hazard_rate=cell.get('hazard_rate', 1 / 30),
+            alert_run_prob=cell.get('alert_run_prob', 0.60),
             warmup_steps=cell['warmup_steps'],
+            detection_mode=cell.get('detection_mode', 'bocpd'),
+            score_center=cell.get('score_center', 0.0),
+            score_scale=cell.get('score_scale', 1.0),
+            cusum_drift=cell.get('cusum_drift', 0.25),
+            cusum_threshold=cell.get('cusum_threshold'),
         )
         for i, s in enumerate(sustained_stream):
             state = monitor.process_score(float(s))
@@ -313,11 +327,12 @@ def calibrate_l0_thresholds(
 
     results.sort(key=lambda r: (-r['feasible'], -r['asr_gap_pp']))
     print("\nTop 8 cells:")
-    print(f"  {'feas':>5} {'hr':>6} {'arp':>5} {'ws':>4} {'clean_fp':>9} "
+    print(f"  {'feas':>5} {'mode':>6} {'drift':>6} {'thr':>6} {'ws':>4} {'clean_fp':>9} "
           f"{'asr_off':>8} {'asr_on':>8} {'gap_pp':>7}")
     for r in results[:8]:
-        print(f"  {str(r['feasible']):>5} {r['hazard_rate']:>6.3f} "
-              f"{r['alert_run_prob']:>5.2f} {r['warmup_steps']:>4d} "
+        print(f"  {str(r['feasible']):>5} {r.get('detection_mode', 'bocpd'):>6} "
+              f"{r.get('cusum_drift', 0.0):>6.2f} "
+              f"{r.get('cusum_threshold', 0.0):>6.1f} {r['warmup_steps']:>4d} "
               f"{r['clean_l0_active_frac']:>9.4f} "
               f"{r['asr_off']:>8.4f} {r['asr_on']:>8.4f} {r['asr_gap_pp']:>7.2f}")
 
@@ -326,15 +341,21 @@ def calibrate_l0_thresholds(
         print("P0.4 CALIBRATION FAILED. Aborting without writing pkl.")
         sys.exit(1)
 
-    print(f"\n[OK] Selected cell: hazard_rate={best['hazard_rate']:.4f}, "
-          f"alert_run_prob={best['alert_run_prob']:.2f}, "
+    print(f"\n[OK] Selected cell: mode={best.get('detection_mode', 'bocpd')}, "
+          f"cusum_drift={best.get('cusum_drift', 0.0):.2f}, "
+          f"cusum_threshold={best.get('cusum_threshold', 0.0):.1f}, "
           f"warmup_steps={best['warmup_steps']}  "
           f"(clean FPR={best['clean_l0_active_frac']:.4f}, "
           f"ASR gap={best['asr_gap_pp']:.2f}pp).")
 
     payload = {
-        'hazard_rate':      best['hazard_rate'],
-        'alert_run_prob':   best['alert_run_prob'],
+        'detection_mode':   best.get('detection_mode', 'cusum'),
+        'score_center':     best.get('score_center', score_center),
+        'score_scale':      best.get('score_scale', score_scale),
+        'cusum_drift':      best.get('cusum_drift', 0.25),
+        'cusum_threshold':  best.get('cusum_threshold'),
+        'hazard_rate':      best.get('hazard_rate', 1 / 30),
+        'alert_run_prob':   best.get('alert_run_prob', 0.60),
         'warmup_steps':     best['warmup_steps'],
         'alert_run_length': 10,
         'l0_factor':        0.8,
@@ -345,6 +366,8 @@ def calibrate_l0_thresholds(
             'n_clean_prefix': int(n_clean_prefix),
             'tier_thresh_L3': tier_thresh_L3,
             'fpr_budget':     FPR_BUDGET,
+            'score_center':   score_center,
+            'score_scale':    score_scale,
             'selected_cell':  best,
             'top_rows':       results[:16],
         },

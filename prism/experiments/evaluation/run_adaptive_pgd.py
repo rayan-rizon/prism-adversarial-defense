@@ -99,6 +99,32 @@ def per_tier_fpr(clean_levels, n_clean):
     }
 
 
+def _append_jsonl(path, row):
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, sort_keys=True) + '\n')
+
+
+def _load_completed_lambdas(path):
+    completed = {}
+    if not path or not os.path.exists(path):
+        return completed
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get('event') == 'lambda_done' and 'key' in row and 'result' in row:
+                completed[row['key']] = row['result']
+    return completed
+
+
 def _hf_energy_torch(x: torch.Tensor) -> torch.Tensor:
     """
     Differentiable proxy for the DCT high-frequency energy feature.
@@ -274,7 +300,7 @@ def adaptive_pgd_attack_with_restarts(
             eot_samples=eot_samples,
         )
         x_adv_norm = ((x_adv_pixel - mean_t) / std_t)
-        _, lv, info = prism.defend(x_adv_norm)
+        _, lv, info = prism.defend(x_adv_norm, pixel_image=x_adv_pixel)
         evaded = (lv == 'PASS')
         score = float(
             info.get('anomaly_score', info.get('score', info.get('prism_score', 0.0)))
@@ -298,6 +324,8 @@ def run_adaptive_pgd(
     pgd_restarts=1,
     eot_samples=1,
     eot_verify_samples=20,
+    checkpoint_jsonl=None,
+    resume=False,
 ):
     eps = EPS_LINF_STANDARD
     step_size = eps / 4  # 2/255
@@ -313,6 +341,10 @@ def run_adaptive_pgd(
           f"eot_samples={eot_samples}, eps={eps:.4f}, "
           f"lambdas={lambdas}, through_scorer={through_scorer}")
     print(f"Eval split: {DATASET.upper()} test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
+    if checkpoint_jsonl is None:
+        root, ext = os.path.splitext(output_path)
+        checkpoint_jsonl = f"{root}.jsonl" if ext else f"{output_path}.jsonl"
+    print(f"Checkpoint JSONL: {checkpoint_jsonl}  resume={resume}")
     if eot_verify_samples > 1 and eot_samples == 1:
         print(
             f"EOT verification: detector/model path is deterministic; recording "
@@ -341,9 +373,17 @@ def run_adaptive_pgd(
     print(f"Pre-loaded {len(imgs_pixel)} images\n")
 
     results = {}
+    completed = _load_completed_lambdas(checkpoint_jsonl) if resume else {}
+    if completed:
+        results.update(completed)
+        print(f"Resume: loaded {len(completed)} completed lambda result(s).")
     t_start = time.time()
 
     for lam in lambdas:
+        key = f'AdaptivePGD_lambda_{lam}'
+        if key in completed:
+            print(f"\nSkipping λ={lam}; completed result found in checkpoint.")
+            continue
         print(f"\n{'='*60}")
         print(f"Adaptive PGD  λ={lam}")
         print(f"{'='*60}")
@@ -371,7 +411,7 @@ def run_adaptive_pgd(
             x_norm  = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
 
             # Clean evaluation
-            _, lv_c, _ = prism.defend(x_norm)
+            _, lv_c, _ = prism.defend(x_norm, pixel_image=img_pixel)
             level_clean[lv_c] = level_clean.get(lv_c, 0) + 1
             if lv_c == 'PASS':
                 tn += 1
@@ -395,7 +435,7 @@ def run_adaptive_pgd(
                     eot_samples=eot_samples,
                 )
             x_adv_norm = _NORMALIZE(x_adv_pixel.squeeze(0).cpu()).unsqueeze(0).to(device)
-            _, lv_a, _ = prism.defend(x_adv_norm)
+            _, lv_a, _ = prism.defend(x_adv_norm, pixel_image=x_adv_pixel)
             level_adv[lv_a] = level_adv.get(lv_a, 0) + 1
             if lv_a != 'PASS':
                 tp += 1
@@ -405,6 +445,16 @@ def run_adaptive_pgd(
             if (j + 1) % 100 == 0:
                 _tpr = tp / max(tp + fn, 1)
                 print(f"  [{j+1}/{len(imgs_pixel)}] TPR={_tpr:.4f}")
+                _append_jsonl(checkpoint_jsonl, {
+                    'event': 'progress',
+                    'key': key,
+                    'lambda': lam,
+                    'processed': int(j + 1),
+                    'n_total': int(len(imgs_pixel)),
+                    'TP': int(tp), 'FP': int(fp), 'FN': int(fn), 'TN': int(tn),
+                    'TPR': round(float(_tpr), 6),
+                    'timestamp': time.time(),
+                })
 
         n_adv = tp + fn
         n_clean = fp + tn
@@ -416,7 +466,6 @@ def run_adaptive_pgd(
         fpr_ci = wilson_ci(fp, n_clean)
         tier_fpr = per_tier_fpr(level_clean, n_clean)
 
-        key = f'AdaptivePGD_lambda_{lam}'
         results[key] = {
             'TPR': round(tpr, 4),
             'TPR_CI_95': [round(tpr_ci[0], 4), round(tpr_ci[1], 4)],
@@ -439,6 +488,13 @@ def run_adaptive_pgd(
         status = '✅' if tpr >= 0.85 else ('⚠' if tpr >= 0.70 else '❌')
         print(f"\n  TPR={tpr:.4f} CI[{tpr_ci[0]:.4f}, {tpr_ci[1]:.4f}] {status}")
         print(f"  FPR={fpr:.4f} CI[{fpr_ci[0]:.4f}, {fpr_ci[1]:.4f}]")
+        _append_jsonl(checkpoint_jsonl, {
+            'event': 'lambda_done',
+            'key': key,
+            'lambda': lam,
+            'result': results[key],
+            'timestamp': time.time(),
+        })
 
     elapsed = time.time() - t_start
 
@@ -475,6 +531,8 @@ def run_adaptive_pgd(
         'through_scorer': through_scorer,
         'device': str(device),
         'elapsed_s': round(elapsed, 1),
+        'checkpoint_jsonl': checkpoint_jsonl,
+        'resume': bool(resume),
         'attack_design': (
             'BPDA adaptive PGD: combined loss = -CE + λ * '
             'Σ_layer ||a_layer(x_adv) - a_layer(x_clean)||₂ / D_layer'
@@ -520,6 +578,10 @@ if __name__ == '__main__':
                         help='Add a DCT high-frequency energy matching term to the '
                              'loss (coefficient 0.5), targeting the ensemble scorer\'s '
                              '37th feature. Produces a stronger adaptive attack.')
+    parser.add_argument('--checkpoint-jsonl', default=None,
+                        help='Append progress and completed lambda results to this JSONL file.')
+    parser.add_argument('--resume', action='store_true',
+                        help='Skip lambda values already completed in --checkpoint-jsonl.')
     args = parser.parse_args()
 
     run_adaptive_pgd(
@@ -533,4 +595,6 @@ if __name__ == '__main__':
         pgd_restarts=args.pgd_restarts,
         eot_samples=args.eot_samples,
         eot_verify_samples=args.eot_verify_samples,
+        checkpoint_jsonl=args.checkpoint_jsonl,
+        resume=args.resume,
     )

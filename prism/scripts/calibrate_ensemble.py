@@ -51,9 +51,9 @@ from src.models import load_backbone
 
 _norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 if BACKBONE_INPUT_SIZE == 32:
-    _TRANSFORM = T.Compose([T.ToTensor(), _norm])
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
 else:
-    _TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor(), _norm])
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 
 
 def calibrate_ensemble(
@@ -103,30 +103,39 @@ def calibrate_ensemble(
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
     # Dispatch dataset loader on DATASET (cifar10 / cifar100).
-    dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
+    dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
     def get_scores(idx_range, label):
         ensemble_scores = []
         base_scores = []
         _use_dct = getattr(ensemble, 'use_dct', False)
         _use_se  = getattr(ensemble, 'use_softmax_entropy', False)
+        _use_grad = getattr(ensemble, 'use_grad_norm', False)
         for i in tqdm(range(idx_range[0], idx_range[1]), desc=f"Scoring {label}"):
-            img, _ = dataset[i]
-            x = img.unsqueeze(0).to(device)
+            img_pixel, _ = dataset[i]
+            x = _norm(img_pixel).unsqueeze(0).to(device)
             acts = extractor.extract(x)
             dgms = {}
             for layer in LAYER_NAMES:
                 act_np = acts[layer].squeeze(0).cpu().numpy()
                 dgms[layer] = profiler.compute_diagram(act_np)
-            img_np = img.numpy() if _use_dct else None
+            img_np = img_pixel.numpy() if _use_dct else None
             # Compute model logits for softmax-entropy feature (CW-L2 detection).
             logits_np = None
             if _use_se:
                 with torch.no_grad():
                     logits_out = model(x)
                 logits_np = logits_out.squeeze(0).cpu().numpy()
+            grad_norm = None
+            if _use_grad:
+                x_g = x.detach().clone().requires_grad_(True)
+                with torch.enable_grad():
+                    logits_g = model(x_g)
+                    pred_idx = int(logits_g.argmax(1).item())
+                    (grad_x,) = torch.autograd.grad(logits_g[0, pred_idx], x_g)
+                grad_norm = float(grad_x.norm().item())
             base_scores.append(base_scorer.score(dgms))
-            s = ensemble.score(dgms, image=img_np, logits=logits_np)
+            s = ensemble.score(dgms, image=img_np, grad_norm=grad_norm, logits=logits_np)
             ensemble_scores.append(s)
         return (
             np.array(ensemble_scores, dtype=np.float32),

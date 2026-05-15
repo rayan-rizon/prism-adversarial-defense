@@ -109,7 +109,7 @@ def compute_ensemble_val_fpr(
     for i in tqdm(val_indices):
         img, _ = pixel_dataset[i]
         x = _NORMALIZE(img).unsqueeze(0).to(device)
-        _, level, meta = prism.defend(x)
+        _, level, meta = prism.defend(x, pixel_image=img)
         level_counts[level] = level_counts.get(level, 0) + 1
         all_scores.append(meta.get('anomaly_score', 0.0))
 

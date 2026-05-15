@@ -1,0 +1,16 @@
+{
+  "batch_size": 256,
+  "best_test_acc": 0.9525,
+  "checkpoint": "models/cifar_resnet18.pt",
+  "dataset": "cifar10",
+  "epochs": 200,
+  "lr": 0.1,
+  "min_test_acc_gate": 0.93,
+  "momentum": 0.9,
+  "num_classes": 10,
+  "recipe_version": "madry2018-cifar-resnet18-v1",
+  "seed": 42,
+  "sha256_first16": "02f0986c704558b7",
+  "test_acc": 0.9516,
+  "weight_decay": 0.0005
+}

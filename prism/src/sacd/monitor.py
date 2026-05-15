@@ -44,6 +44,11 @@ class CampaignMonitor:
         l0_factor: float = 0.8,
         cooldown_steps: int = 50,
         thresholds_path: Optional[str] = None,
+        detection_mode: str = 'bocpd',
+        score_center: float = 0.0,
+        score_scale: float = 1.0,
+        cusum_drift: float = 0.25,
+        cusum_threshold: Optional[float] = None,
     ):
         """
         Args:
@@ -72,6 +77,11 @@ class CampaignMonitor:
         kappa0           = tcal.get('kappa0',           kappa0)
         alpha0           = tcal.get('alpha0',           alpha0)
         beta0            = tcal.get('beta0',            beta0)
+        detection_mode   = tcal.get('detection_mode',   detection_mode)
+        score_center     = tcal.get('score_center',     score_center)
+        score_scale      = tcal.get('score_scale',      score_scale)
+        cusum_drift      = tcal.get('cusum_drift',      cusum_drift)
+        cusum_threshold  = tcal.get('cusum_threshold',  cusum_threshold)
         self._thresholds_source = thresholds_path if tcal else None
         self._thresholds_calibration = tcal.get('calibration_metrics') if tcal else None
 
@@ -82,6 +92,14 @@ class CampaignMonitor:
         self.warmup_steps = warmup_steps
         self.l0_factor = l0_factor
         self.cooldown_steps = cooldown_steps
+        self.detection_mode = detection_mode
+        self.score_center = float(score_center)
+        self.score_scale = max(float(score_scale), 1e-6)
+        self.cusum_drift = float(cusum_drift)
+        self.cusum_threshold = (
+            float(cusum_threshold) if cusum_threshold is not None else None
+        )
+        self._cusum_score = 0.0
 
         self.bocpd = BayesianOnlineChangepoint(
             hazard_rate=hazard_rate,
@@ -107,6 +125,7 @@ class CampaignMonitor:
         self.l0_start_step = None
         self._step_counter = 0
         self._cooldown_until = 0
+        self._cusum_score = 0.0
         self.alert_log.clear()
 
     def process_score(self, score: float, timestamp: Optional[float] = None) -> Dict:
@@ -134,12 +153,30 @@ class CampaignMonitor:
         # P(run_length <= alert_run_length)
         short_run_prob = float(np.sum(rl_probs[:self.alert_run_length + 1]))
 
-        # Primary detection: short-run probability spike (after warm-up)
-        detection_triggered = (
+        centered_score = (float(score) - self.score_center) / self.score_scale
+        self._cusum_score = max(
+            0.0, self._cusum_score + centered_score - self.cusum_drift
+        )
+        cusum_triggered = (
+            self.cusum_threshold is not None
+            and self._cusum_score > self.cusum_threshold
+            and self._step_counter > self.warmup_steps
+            and self._step_counter > self._cooldown_until
+        )
+
+        # Primary detection: short-run probability spike or calibrated CUSUM.
+        bocpd_triggered = (
             short_run_prob > self.alert_run_prob
             and self._step_counter > self.warmup_steps
             and self._step_counter > self._cooldown_until
         )
+        mode = (self.detection_mode or 'bocpd').lower()
+        if mode == 'cusum':
+            detection_triggered = cusum_triggered
+        elif mode == 'hybrid':
+            detection_triggered = bocpd_triggered or cusum_triggered
+        else:
+            detection_triggered = bocpd_triggered
 
         if detection_triggered and not self.l0_active:
             self.l0_active = True
@@ -152,6 +189,8 @@ class CampaignMonitor:
                 'timestamp': timestamp,
                 'cp_probability': cp_prob,
                 'short_run_prob': short_run_prob,
+                'cusum_score': self._cusum_score,
+                'detection_mode': self.detection_mode,
                 'map_run_length': self.bocpd.get_most_likely_run_length(),
                 'buffer_mean': float(np.mean(self.score_buffer)),
                 'buffer_std': float(np.std(self.score_buffer)),
@@ -163,6 +202,8 @@ class CampaignMonitor:
             'l0_active': self.l0_active,
             'changepoint_prob': cp_prob,
             'short_run_prob': short_run_prob,
+            'cusum_score': self._cusum_score,
+            'detection_mode': self.detection_mode,
             'buffer_mean': float(np.mean(buf)) if buf else 0.0,
             'buffer_std': float(np.std(buf)) if buf else 0.0,
             'step': self._step_counter,

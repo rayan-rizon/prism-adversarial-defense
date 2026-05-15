@@ -1,0 +1,173 @@
+{
+  "CW": {
+    "TPR": 0.965,
+    "TPR_CI_95": [
+      0.9517,
+      0.9747
+    ],
+    "FPR": 0.066,
+    "FPR_CI_95": [
+      0.0522,
+      0.0831
+    ],
+    "Precision": 0.936,
+    "F1": 0.9503,
+    "TP": 965,
+    "FP": 66,
+    "FN": 35,
+    "TN": 934,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.066,
+      "FPR_L2_plus": 0.019,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 934,
+      "L1": 47,
+      "L2": 16,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "PASS": 35,
+      "L1": 658,
+      "L3_REJECT": 53,
+      "L2": 254
+    },
+    "attack_generation": {
+      "engine": "torch",
+      "base_attack_success": 1000,
+      "base_attack_success_rate": 1.0,
+      "mean_success_l2": 0.142872,
+      "max_success_l2": 1.971153,
+      "chunk_timings": [
+        {
+          "start": 0,
+          "end": 128,
+          "chunk_size": 128,
+          "elapsed_s": 7.99,
+          "cumulative_elapsed_s": 7.99,
+          "rate_s_per_img": 0.0624,
+          "base_attack_success_cumulative": 128
+        },
+        {
+          "start": 128,
+          "end": 256,
+          "chunk_size": 128,
+          "elapsed_s": 7.85,
+          "cumulative_elapsed_s": 15.84,
+          "rate_s_per_img": 0.0614,
+          "base_attack_success_cumulative": 256
+        },
+        {
+          "start": 256,
+          "end": 384,
+          "chunk_size": 128,
+          "elapsed_s": 7.68,
+          "cumulative_elapsed_s": 23.52,
+          "rate_s_per_img": 0.06,
+          "base_attack_success_cumulative": 384
+        },
+        {
+          "start": 384,
+          "end": 512,
+          "chunk_size": 128,
+          "elapsed_s": 7.75,
+          "cumulative_elapsed_s": 31.27,
+          "rate_s_per_img": 0.0605,
+          "base_attack_success_cumulative": 512
+        },
+        {
+          "start": 512,
+          "end": 640,
+          "chunk_size": 128,
+          "elapsed_s": 7.74,
+          "cumulative_elapsed_s": 39.01,
+          "rate_s_per_img": 0.0605,
+          "base_attack_success_cumulative": 640
+        },
+        {
+          "start": 640,
+          "end": 768,
+          "chunk_size": 128,
+          "elapsed_s": 7.74,
+          "cumulative_elapsed_s": 46.75,
+          "rate_s_per_img": 0.0605,
+          "base_attack_success_cumulative": 768
+        },
+        {
+          "start": 768,
+          "end": 896,
+          "chunk_size": 128,
+          "elapsed_s": 7.67,
+          "cumulative_elapsed_s": 54.42,
+          "rate_s_per_img": 0.0599,
+          "base_attack_success_cumulative": 896
+        },
+        {
+          "start": 896,
+          "end": 1000,
+          "chunk_size": 104,
+          "elapsed_s": 6.91,
+          "cumulative_elapsed_s": 61.33,
+          "rate_s_per_img": 0.0665,
+          "base_attack_success_cumulative": 1000
+        }
+      ],
+      "initial_chunk": 128,
+      "final_chunk": 128,
+      "max_iter": 40,
+      "binary_search_steps": 5,
+      "confidence": 0.0,
+      "learning_rate": 0.01,
+      "cuda_peak_memory_mb": 901.4,
+      "detector_TPR_on_base_success": 0.965,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9517,
+        0.9747
+      ],
+      "detected_base_success": 965,
+      "missed_base_success": 35
+    },
+    "detector_TPR_on_base_success": 0.965,
+    "base_attack_success_rate": 1.0
+  },
+  "_meta": {
+    "n_test": 1000,
+    "n_actual": 1000,
+    "dataset": "cifar10",
+    "eval_split": "CIFAR10 test idx 8000-9999",
+    "seed": 456,
+    "eps_linf": 0.03137254901960784,
+    "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+    "attacks": [
+      "CW"
+    ],
+    "latency": {
+      "skipped": true
+    },
+    "latency_skipped": true,
+    "device": "cuda",
+    "ensemble": {
+      "use_dct": true,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square",
+        "CW",
+        "AutoAttack"
+      ],
+      "training_n": 4000,
+      "training_eps": 0.03137254901960784,
+      "n_features": 38
+    },
+    "cw_engine": "torch"
+  }
+}

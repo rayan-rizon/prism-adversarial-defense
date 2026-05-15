@@ -29,7 +29,7 @@ from .sacd.monitor import CampaignMonitor
 from .tamsh.experts import TopologyAwareMoE
 from .memory.immune_memory import ImmuneMemory
 from .federation import FederationManager
-from .config import N_SUBSAMPLE, MAX_DIM
+from .config import N_SUBSAMPLE, MAX_DIM, BACKBONE_MEAN, BACKBONE_STD
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,35 @@ class PRISM:
         with open(resolved, 'rb') as f:
             return pickle.load(f)
 
-    def defend(self, x: torch.Tensor) -> Tuple[Optional[torch.Tensor], str, Dict[str, Any]]:
+    @staticmethod
+    def _normalised_to_pixel_numpy(
+        x: torch.Tensor,
+        pixel_image: Optional[torch.Tensor] = None,
+    ) -> np.ndarray:
+        """
+        Return a (C,H,W) pixel-space [0,1] numpy image for feature extractors.
+
+        PRISM's backbone path receives normalised tensors. DCT features are
+        trained on pixel-space tensors, so runtime scoring must denormalise
+        before computing DCT energy. Callers that already have the exact pixel
+        tensor can pass it through pixel_image.
+        """
+        if pixel_image is not None:
+            pix = pixel_image.detach()
+            if pix.dim() == 4:
+                pix = pix.squeeze(0)
+            return pix.clamp(0.0, 1.0).cpu().numpy().astype(np.float32)
+
+        mean = torch.tensor(BACKBONE_MEAN, device=x.device, dtype=x.dtype).view(1, -1, 1, 1)
+        std = torch.tensor(BACKBONE_STD, device=x.device, dtype=x.dtype).view(1, -1, 1, 1)
+        pix = (x.detach() * std + mean).clamp(0.0, 1.0)
+        return pix.squeeze(0).cpu().numpy().astype(np.float32)
+
+    def defend(
+        self,
+        x: torch.Tensor,
+        pixel_image: Optional[torch.Tensor] = None,
+    ) -> Tuple[Optional[torch.Tensor], str, Dict[str, Any]]:
         """
         Main inference with PRISM defense.
 
@@ -199,7 +227,9 @@ class PRISM:
         7. Execute response action (pass / log / purify / expert / reject)
 
         Args:
-            x: Input tensor, shape (1, C, H, W) for a single image.
+            x: Normalised input tensor, shape (1, C, H, W), for a single image.
+            pixel_image: Optional matching pixel-space [0,1] tensor used only
+                for pixel-domain features such as DCT energy.
         Returns:
             (prediction, level, metadata)
             - prediction: Model output tensor, or None if rejected.
@@ -233,7 +263,10 @@ class PRISM:
         use_grad_norm = getattr(self.scorer, 'use_grad_norm', False)
         use_softmax_entropy = getattr(self.scorer, 'use_softmax_entropy', False)
 
-        img_np   = x.squeeze(0).cpu().numpy() if use_dct else None
+        img_np = (
+            self._normalised_to_pixel_numpy(x, pixel_image=pixel_image)
+            if use_dct else None
+        )
         grad_norm = None
         if use_grad_norm:
             x_g = x.detach().clone().requires_grad_(True)
@@ -255,6 +288,8 @@ class PRISM:
 
         score = self.scorer.score(diagrams, image=img_np, grad_norm=grad_norm, logits=logits_np)
         metadata['anomaly_score'] = score
+        if use_dct:
+            metadata['feature_space_version'] = 'pixel-v1'
         metadata['per_layer_scores'] = self.scorer.score_per_layer(diagrams)
 
         # --- Step 5: Update campaign monitor (L0) ---
@@ -325,6 +360,9 @@ class PRISM:
                         expert_input.size(0), -1
                     )
                 expert.eval()
+                # Ensure expert is on the same device as input
+                device = expert_input.device
+                expert = expert.to(device)
                 with torch.no_grad():
                     pred = expert(expert_input)
                 metadata['expert_idx'] = idx

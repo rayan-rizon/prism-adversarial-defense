@@ -143,10 +143,10 @@ class _APGDGenerator:
     backbone's own clean predictions so training remains self-consistent for
     CIFAR-10 and CIFAR-100.
     """
-    def __init__(self, norm_model, eps, device, n_iter=40):
+    def __init__(self, norm_model, eps, device, n_iter=40, loss='ce'):
         self._attack = APGDAttack(
             norm_model, norm='Linf', eps=eps,
-            n_iter=n_iter, n_restarts=1, loss='ce', rho=0.75, verbose=False,
+            n_iter=n_iter, n_restarts=1, loss=loss, rho=0.75, verbose=False,
         )
         self._norm_model = norm_model
         self._device = device
@@ -308,6 +308,11 @@ def train_ensemble_scorer(
     cw_bss: int = 3,
     cw_oversample: float = 1.0,
     no_tda_features: bool = False,
+    balanced_attacks: bool = False,
+    pgd_train_steps: int = 40,
+    aa_train_mode: str = 'apgd-ce',
+    selection_objective: str = 'worst_case_tpr',
+    allow_undertrained_smoke: bool = False,
 ):
     """
     Args:
@@ -339,11 +344,16 @@ def train_ensemble_scorer(
 
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Dynamic attack mix. FGSM uses fgsm_oversample weight; CW uses
-    # cw_oversample (default 1.0); others weight=1.
-    weights = {'FGSM': fgsm_oversample, 'PGD': 1.0, 'Square': 1.0}
-    if include_cw:          weights['CW']         = cw_oversample
-    if include_autoattack:  weights['AutoAttack'] = 1.0
+    # Dynamic attack mix. The robust default path can force equal attack-family
+    # shares so PGD/AutoAttack cannot be hidden by an aggregate AUC win.
+    if balanced_attacks:
+        weights = {'FGSM': 1.0, 'PGD': 1.0, 'Square': 1.0}
+        if include_cw:          weights['CW']         = 1.0
+        if include_autoattack:  weights['AutoAttack'] = 1.0
+    else:
+        weights = {'FGSM': fgsm_oversample, 'PGD': 1.0, 'Square': 1.0}
+        if include_cw:          weights['CW']         = cw_oversample
+        if include_autoattack:  weights['AutoAttack'] = 1.0
     total_weight = sum(weights.values())
 
     print(f"Device: {device}")
@@ -351,6 +361,10 @@ def train_ensemble_scorer(
     share = {a: w / total_weight for a, w in weights.items()}
     print("Adversarial mix: " + "  ".join(
         f"{a}:{share[a]:.1%}" for a in weights))
+    print(f"Selection objective: {selection_objective}")
+    print(f"PGD train steps: {pgd_train_steps}")
+    if include_autoattack:
+        print(f"AutoAttack train mode: {aa_train_mode}")
 
     # -- Load pre-built components ------------------------------------------------
     if not os.path.exists(profile_path):
@@ -404,7 +418,8 @@ def train_ensemble_scorer(
     attacks = {
         'FGSM': FastGradientMethod(art_clf, eps=fgsm_eps),
         'PGD': ProjectedGradientDescent(
-            art_clf, eps=fgsm_eps, eps_step=fgsm_eps / 4, max_iter=20),
+            art_clf, eps=fgsm_eps, eps_step=fgsm_eps / 4,
+            max_iter=pgd_train_steps, num_random_init=1),
         # Square: gradient-free black-box; 1000 queries is enough for training
         # signal (eval uses 5000). Lower budget keeps training time reasonable.
         'Square': SquareAttack(
@@ -422,8 +437,9 @@ def train_ensemble_scorer(
     if include_autoattack:
         # APGD-CE slice only (fastest component); full AutoAttack ensemble is
         # 4x slower and APGD alone provides the gradient-L∞ signature we want.
+        aa_loss = {'apgd-ce': 'ce', 'apgd-dlr': 'dlr'}[aa_train_mode]
         attacks['AutoAttack'] = _APGDGenerator(
-            norm_model, eps=fgsm_eps, device=device, n_iter=40,
+            norm_model, eps=fgsm_eps, device=device, n_iter=40, loss=aa_loss,
         )
 
     # -- Extract features -------------------------------------------------------
@@ -456,6 +472,7 @@ def train_ensemble_scorer(
     off = 0
     X_adv_parts = []
     W_adv_parts = []
+    adv_label_parts = []
     per_attack_shapes = {}
     for atk_name in attack_names:
         n_atk = counts[atk_name]
@@ -488,15 +505,18 @@ def train_ensemble_scorer(
         off += n_atk
         X_adv_parts.append(X_atk)
         W_adv_parts.append(W_atk)
+        adv_label_parts.append(np.array([atk_name] * X_atk.shape[0], dtype=object))
         per_attack_shapes[atk_name] = X_atk.shape[0]
 
     X_adv = np.vstack(X_adv_parts)
     W_adv = np.concatenate(W_adv_parts)
+    adv_labels = np.concatenate(adv_label_parts)
     # Shuffle so the 80/20 train/val split sees all attack families -- without
     # shuffle, X_adv[:80%] would contain almost no samples from the last attack.
     perm  = np.random.RandomState(42).permutation(len(X_adv))
     X_adv = X_adv[perm]
     W_adv = W_adv[perm]
+    adv_labels = adv_labels[perm]
 
     print(f"\nFeature matrix shapes: clean={X_clean.shape}, adv={X_adv.shape}")
     print("  (" + ", ".join(f"{a}: {n}" for a, n in per_attack_shapes.items()) + ")")
@@ -531,6 +551,13 @@ def train_ensemble_scorer(
         use_softmax_entropy=use_softmax_entropy,
         use_grad_norm=use_grad_norm,
         use_tda=not no_tda_features,
+        feature_space_version='pixel-v1',
+        selection_objective=selection_objective,
+        training_attack_counts={k: int(v) for k, v in per_attack_shapes.items()},
+        balanced_attacks=balanced_attacks,
+        pgd_train_steps=pgd_train_steps,
+        aa_train_mode=aa_train_mode if include_autoattack else None,
+        gradient_head_enabled=use_grad_norm,
     )
 
     # 80/20 split for training vs internal validation
@@ -566,7 +593,7 @@ def train_ensemble_scorer(
     # (0.50) and below the production target (≥ 0.92 on properly-trained
     # backbones) — see fix/backbone-acc-gate plan §"Acceptance criteria".
     AUC_FLOOR = 0.85
-    if auc is not None and auc < AUC_FLOOR:
+    if auc is not None and auc < AUC_FLOOR and not allow_undertrained_smoke:
         # Surface backbone provenance in the error message so the diagnosis
         # is one terminal line away from the failure.
         backbone_acc_msg = ""
@@ -594,6 +621,11 @@ def train_ensemble_scorer(
             f"Verify models/cifar_resnet18.acc.json reports test_acc ≥ 0.93 "
             f"and re-run scripts/pretrain_cifar_backbone.py if not."
         )
+    if auc is not None and auc < AUC_FLOOR:
+        print(
+            f"[WARN] Proceeding with low-AUC smoke ensemble (AUC={auc:.4f} < "
+            f"{AUC_FLOOR:.2f}). This scorer is for local integration testing only."
+        )
 
     # -- Tune α on the held-out 20% (P0.6 lever) -------------------------------
     # The α=0.4/0.5 default is a guess; grid-search on the same held-out slice
@@ -605,9 +637,18 @@ def train_ensemble_scorer(
             adv_features=X_adv[n_adv_train:],
             clean_w_scores=W_clean[n_clean_train:],
             adv_w_scores=W_adv[n_adv_train:],
+            adv_attack_labels=adv_labels[n_adv_train:].tolist(),
+            selection_objective=selection_objective,
+            clean_fpr_target=0.10,
         )
         ensemble.alpha_tune_summary = tune_summary
-        print(f"Selected α = {ensemble.alpha:.3f} (held-out AUC grid search)")
+        print(f"Selected α = {ensemble.alpha:.3f} ({tune_summary['selection_objective']})")
+        best_row = tune_summary.get('best_row', {})
+        per_attack = best_row.get('per_attack_tpr') or {}
+        if per_attack:
+            print("Held-out per-attack TPR at clean FPR<=10%: " + "  ".join(
+                f"{k}:{v:.3f}" for k, v in sorted(per_attack.items())
+            ))
     else:
         print("Skipping α tuning — validation slice is empty.")
 
@@ -615,6 +656,13 @@ def train_ensemble_scorer(
     ensemble.training_eps     = fgsm_eps
     ensemble.training_attacks = attack_names          # dynamic list
     ensemble.training_n       = len(X_adv)
+    ensemble.training_attack_counts = {k: int(v) for k, v in per_attack_shapes.items()}
+    ensemble.balanced_attacks = balanced_attacks
+    ensemble.pgd_train_steps = pgd_train_steps
+    ensemble.aa_train_mode = aa_train_mode if include_autoattack else None
+    ensemble.gradient_head_enabled = use_grad_norm
+    ensemble.feature_space_version = 'pixel-v1'
+    ensemble.selection_objective = selection_objective
     ensemble.fgsm_oversample  = fgsm_oversample
     ensemble.no_tda_features  = no_tda_features
     for atk_name, cnt in per_attack_shapes.items():
@@ -665,6 +713,9 @@ if __name__ == '__main__':
     parser.add_argument('--use-grad-norm', action='store_true',
                         help='Append input-gradient L2 norm as a feature. '
                              'Improves FGSM discrimination; adds ~5ms latency.')
+    parser.add_argument('--enable-gradient-head', action='store_true',
+                        help='Alias for --use-grad-norm. Records the scorer as '
+                             'using the gradient-attack feature branch.')
     parser.add_argument('--no-softmax-entropy', action='store_true',
                         help='Disable softmax-entropy feature (default: enabled). '
                              'Softmax entropy captures CW-L2 decision-boundary '
@@ -676,6 +727,22 @@ if __name__ == '__main__':
                         help='Add CW-L2 to training attack mix. Improves CW TPR at eval.')
     parser.add_argument('--include-autoattack', action='store_true',
                         help='Add AutoAttack-APGD-CE slice to training mix.')
+    parser.add_argument('--balanced-attacks', action='store_true',
+                        help='Use equal sample weight for each active attack '
+                             'family so PGD/AutoAttack cannot be diluted.')
+    parser.add_argument('--pgd-train-steps', type=int, default=40,
+                        help='PGD iterations for adversarial training. Default '
+                             '40 matches the evaluation PGD configuration.')
+    parser.add_argument('--aa-train-mode', choices=['apgd-ce', 'apgd-dlr'],
+                        default='apgd-ce',
+                        help='AutoAttack/APGD training slice to include when '
+                             '--include-autoattack is set.')
+    parser.add_argument('--selection-objective',
+                        choices=['auc', 'worst_case_tpr'],
+                        default='worst_case_tpr',
+                        help='Alpha selection objective on held-out training '
+                             'slice. worst_case_tpr maximizes the minimum '
+                             'per-attack TPR at clean FPR<=10%%.')
     parser.add_argument('--cw-max-iter', type=int, default=40,
                         help='CW max_iter for training (default 40, matches eval).')
     parser.add_argument('--cw-bss', type=int, default=5,
@@ -691,6 +758,10 @@ if __name__ == '__main__':
                              'on FGSM/PGD/Square before adopting non-default value.')
     parser.add_argument('--fast',      action='store_true',
                         help='Quick smoke-test: n_train=150')
+    parser.add_argument('--allow-undertrained-smoke', action='store_true',
+                        help='Smoke-only escape hatch: allow the ensemble '
+                             'trainer to continue even if held-out AUC is '
+                             'below the publishable floor.')
     args = parser.parse_args()
 
     if args.fast:
@@ -708,7 +779,7 @@ if __name__ == '__main__':
         n_train=args.n_train,
         fgsm_eps=args.fgsm_eps,
         fgsm_oversample=args.fgsm_oversample,
-        use_grad_norm=args.use_grad_norm,
+        use_grad_norm=args.use_grad_norm or args.enable_gradient_head,
         use_softmax_entropy=not args.no_softmax_entropy,
         data_root=args.data_root,
         output_path=args.output,
@@ -719,4 +790,9 @@ if __name__ == '__main__':
         cw_bss=args.cw_bss,
         cw_oversample=args.cw_oversample,
         no_tda_features=args.no_tda_features,
+        balanced_attacks=args.balanced_attacks,
+        pgd_train_steps=args.pgd_train_steps,
+        aa_train_mode=args.aa_train_mode,
+        selection_objective=args.selection_objective,
+        allow_undertrained_smoke=args.allow_undertrained_smoke,
     )

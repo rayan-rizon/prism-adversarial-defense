@@ -61,7 +61,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torchvision
 import torchvision.transforms as T
 
@@ -99,6 +99,8 @@ _DATASET_STATS = {
 # ── Data ────────────────────────────────────────────────────────────────
 def _build_dataloaders(data_root: str, batch_size: int, num_workers: int,
                        dataset: str = 'cifar10',
+                       train_subset: int | None = None,
+                       test_subset: int | None = None,
                        ) -> Tuple[DataLoader, DataLoader]:
     stats = _DATASET_STATS[dataset]
     normalize = T.Normalize(mean=stats['mean'], std=stats['std'])
@@ -122,6 +124,10 @@ def _build_dataloaders(data_root: str, batch_size: int, num_workers: int,
     test_ds  = ds_cls(
         root=data_root, train=False, download=True, transform=test_tf,
     )
+    if train_subset is not None:
+        train_ds = Subset(train_ds, list(range(min(train_subset, len(train_ds)))))
+    if test_subset is not None:
+        test_ds = Subset(test_ds, list(range(min(test_subset, len(test_ds)))))
 
     # persistent_workers keeps the worker processes alive between epochs,
     # avoiding the ~1-2 s fork cost per epoch. prefetch_factor lets each
@@ -225,6 +231,15 @@ def main() -> int:
                              '0.73 for CIFAR-100. Cannot be lowered below '
                              'these floors — the downstream detector pipeline '
                              'is statistically vacuous below them.')
+    parser.add_argument('--train-subset', type=int, default=None,
+                        help='Optional number of training images to use for a '
+                             'bounded local smoke run.')
+    parser.add_argument('--test-subset', type=int, default=None,
+                        help='Optional number of test images to use for a '
+                             'bounded local smoke run.')
+    parser.add_argument('--allow-undertrained-smoke', action='store_true',
+                        help='Smoke-only escape hatch: allow saving a checkpoint '
+                             'below the publishable accuracy floor.')
     args = parser.parse_args()
 
     if args.num_classes is None:
@@ -234,7 +249,7 @@ def main() -> int:
     _MIN_FLOOR = 0.73 if args.dataset == 'cifar100' else 0.93
     if args.min_test_acc is None:
         args.min_test_acc = _MIN_FLOOR
-    if args.min_test_acc < _MIN_FLOOR:
+    if args.min_test_acc < _MIN_FLOOR and not args.allow_undertrained_smoke:
         # We deliberately do not allow loosening below the publishable floor.
         # An undertrained backbone makes attacks ill-defined and collapses
         # detector TPR to the FPR baseline — see plan §"Why this collapses
@@ -263,6 +278,8 @@ def main() -> int:
     train_dl, test_dl = _build_dataloaders(
         args.data_root, args.batch_size, args.num_workers,
         dataset=args.dataset,
+        train_subset=args.train_subset,
+        test_subset=args.test_subset,
     )
     print(f'Loaded {args.dataset.upper()}: train={len(train_dl.dataset)}, '
           f'test={len(test_dl.dataset)}')
@@ -301,7 +318,7 @@ def main() -> int:
     print(f'\nFinal test accuracy: {test_acc:.4f}  (best across epochs: {best_acc:.4f})')
     print(f'Total wall-clock: {total_dt/60:.1f} min')
 
-    if test_acc < args.min_test_acc:
+    if test_acc < args.min_test_acc and not args.allow_undertrained_smoke:
         print(
             f'\nREFUSING TO SAVE: final test accuracy {test_acc:.4f} < '
             f'gate {args.min_test_acc:.4f}. Inspect the training curve and '
@@ -309,6 +326,13 @@ def main() -> int:
             flush=True,
         )
         return 1
+    if test_acc < args.min_test_acc:
+        print(
+            f'\n[WARN] Saving undertrained smoke backbone: acc {test_acc:.4f} < '
+            f'publishable gate {args.min_test_acc:.4f}. '
+            f'This checkpoint is for local integration smoke only.',
+            flush=True,
+        )
 
     # Save raw state_dict (most portable form for downstream load_backbone()).
     output_path = Path(args.output)
@@ -341,6 +365,9 @@ def main() -> int:
         'sha256_first16':   h.hexdigest()[:16],
         'checkpoint':       str(output_path),
         'recipe_version':   'madry2018-cifar-resnet18-v1',
+        'train_subset':     args.train_subset,
+        'test_subset':      args.test_subset,
+        'allow_undertrained_smoke': bool(args.allow_undertrained_smoke),
     }
     with open(sidecar_path, 'w') as f:
         json.dump(sidecar, f, indent=2, sort_keys=True)

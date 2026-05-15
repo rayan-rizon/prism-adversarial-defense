@@ -32,7 +32,7 @@ import logging
 import numpy as np
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..tamm.persistence_stats import extract_feature_vector, PersistenceDiagram
 from ..tamm.scorer import TopologicalScorer
@@ -90,6 +90,14 @@ class PersistenceEnsembleScorer:
         use_softmax_entropy: bool = False,
         use_grad_norm: bool = False,
         use_tda: bool = True,
+        feature_space_version: str = 'pixel-v1',
+        selection_objective: str = 'auc',
+        per_attack_validation_metrics: Optional[Dict[str, Any]] = None,
+        training_attack_counts: Optional[Dict[str, int]] = None,
+        balanced_attacks: bool = False,
+        pgd_train_steps: Optional[int] = None,
+        aa_train_mode: Optional[str] = None,
+        gradient_head_enabled: Optional[bool] = None,
     ):
         """
         Args:
@@ -138,6 +146,16 @@ class PersistenceEnsembleScorer:
         self.use_dct = use_dct
         self.use_softmax_entropy = use_softmax_entropy
         self.use_grad_norm = use_grad_norm
+        self.feature_space_version = feature_space_version
+        self.selection_objective = selection_objective
+        self.per_attack_validation_metrics = per_attack_validation_metrics or {}
+        self.training_attack_counts = training_attack_counts or {}
+        self.balanced_attacks = balanced_attacks
+        self.pgd_train_steps = pgd_train_steps
+        self.aa_train_mode = aa_train_mode
+        self.gradient_head_enabled = (
+            use_grad_norm if gradient_head_enabled is None else gradient_head_enabled
+        )
         # P0.6 ablation flag: when False, the 36-dim persistence-statistics block
         # is dropped from extract_features() and alpha is expected to be 0 so
         # the Wasserstein component does not contribute. score() returns the
@@ -184,11 +202,70 @@ class PersistenceEnsembleScorer:
 
     def _logistic_prob(self, feat: np.ndarray) -> float:
         """Sigmoid of linear combination: P(adversarial | features)."""
-        if not self._logistic_fitted:
-            return 0.5  # uninformative prior
-        feat_norm = self._normalise(feat)
-        logit = float(np.dot(self.logistic_weights, feat_norm) + self.logistic_bias)
+        logit = self._logistic_raw_logit(feat)
         return float(1.0 / (1.0 + np.exp(-logit)))
+
+    def _logistic_raw_logit(self, feat: np.ndarray) -> float:
+        """Raw linear logit before sigmoid."""
+        if not self._logistic_fitted:
+            return 0.0
+        feat_norm = self._normalise(feat)
+        return float(np.dot(self.logistic_weights, feat_norm) + self.logistic_bias)
+
+    def score_components(
+        self,
+        diagrams: Dict[str, List[PersistenceDiagram]],
+        image: Optional[np.ndarray] = None,
+        grad_norm: Optional[float] = None,
+        logits: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return score internals for audits without changing inference behavior.
+        """
+        w_score = self.base_scorer.score(diagrams) if self.use_tda else 0.0
+        components: Dict[str, Any] = {
+            'score': float(w_score),
+            'w_score': float(w_score),
+            'feature_space_version': self.feature_space_version,
+            'fallback': False,
+        }
+
+        if not self._logistic_fitted:
+            components['fallback'] = True
+            components['fallback_reason'] = 'logistic_not_fitted'
+            return components
+        if self.use_dct and image is None:
+            components['fallback'] = True
+            components['fallback_reason'] = 'missing_dct_image'
+            return components
+        if self.use_grad_norm and grad_norm is None:
+            components['fallback'] = True
+            components['fallback_reason'] = 'missing_grad_norm'
+            return components
+        if self.use_softmax_entropy and logits is None:
+            components['fallback'] = True
+            components['fallback_reason'] = 'missing_logits'
+            return components
+
+        feat = self.extract_features(
+            diagrams, image=image, grad_norm=grad_norm, logits=logits
+        )
+        raw_logit = self._logistic_raw_logit(feat)
+        logit_prob = float(1.0 / (1.0 + np.exp(-raw_logit)))
+        logit_centered = raw_logit - self.logit_shift
+        if self.use_tda:
+            score = self.alpha * w_score + (1.0 - self.alpha) * logit_centered
+        else:
+            score = logit_centered
+
+        components.update({
+            'score': float(score),
+            'features': feat,
+            'raw_logit': float(raw_logit),
+            'logit_prob': float(logit_prob),
+            'logit_centered': float(logit_centered),
+        })
+        return components
 
     def score(
         self,
@@ -220,44 +297,9 @@ class PersistenceEnsembleScorer:
             Scalar — higher means more likely adversarial.
             Falls back to base Wasserstein score if logistic is not fitted.
         """
-        w_score = self.base_scorer.score(diagrams) if self.use_tda else 0.0
-
-        if not self._logistic_fitted:
-            return w_score
-
-        if self.use_dct and image is None:
-            return w_score
-
-        if self.use_grad_norm and grad_norm is None:
-            return w_score
-
-        if self.use_softmax_entropy and logits is None:
-            return w_score
-
-        feat = self.extract_features(diagrams, image=image, grad_norm=grad_norm, logits=logits)
-        logit_prob = self._logistic_prob(feat)
-
-        if not self.use_tda:
-            # P0.6: alpha=0 and Wasserstein disabled. Return the centred logit
-            # directly so downstream calibration can thresh on a raw score.
-            logit_score = float(np.clip(logit_prob, 1e-6, 1 - 1e-6))
-            logit_score = float(np.log(logit_score / (1 - logit_score)))
-            return logit_score - self.logit_shift
-
-        # Convert probability to raw logit (unbounded)
-        logit_score = float(np.clip(logit_prob, 1e-6, 1 - 1e-6))
-        logit_score = float(np.log(logit_score / (1 - logit_score)))
-
-        # Centre logit by its mean on clean training data
-        # For clean inputs: logit_score ≈ logit_shift → logit_centered ≈ 0
-        # For adversarial inputs: logit_score >> logit_shift → logit_centered > 0
-        logit_centered = logit_score - self.logit_shift
-
-        # Additive fusion: both channels contribute independently.
-        # When both are elevated (adversarial), the sum is high.
-        # When Wasserstein is near-zero (CW-L2), the logistic still
-        # contributes its full signal — fixing the CW detection gap.
-        return self.alpha * w_score + (1.0 - self.alpha) * logit_centered
+        return float(self.score_components(
+            diagrams, image=image, grad_norm=grad_norm, logits=logits
+        )['score'])
 
     def score_per_layer(
         self, diagrams: Dict[str, List[PersistenceDiagram]]
@@ -388,9 +430,17 @@ class PersistenceEnsembleScorer:
         clean_w_scores: np.ndarray,
         adv_w_scores: np.ndarray,
         grid: Tuple[float, ...] = (0.2, 0.35, 0.5, 0.65, 0.8),
+        adv_attack_labels: Optional[List[str]] = None,
+        selection_objective: str = 'auc',
+        clean_fpr_target: float = 0.10,
     ) -> Dict[str, float]:
         """
-        Pick alpha that maximises held-out composite-score AUC.
+        Pick alpha on a held-out slice.
+
+        selection_objective='auc' preserves the historical aggregate AUC
+        behavior. selection_objective='worst_case_tpr' chooses the alpha with
+        the best minimum per-attack TPR at a fixed clean FPR threshold, using
+        aggregate AUC only as a tie-breaker.
 
         Must be called *after* `fit_logistic` (the logistic weights and the
         data-derived normalisation constants need to already exist). Skips
@@ -420,20 +470,66 @@ class PersistenceEnsembleScorer:
         y = np.array([0] * len(clean_features) + [1] * len(adv_features))
 
         aucs = []
+        rows = []
+        labels = (
+            np.asarray(adv_attack_labels)
+            if adv_attack_labels is not None and len(adv_attack_labels) == len(adv_features)
+            else None
+        )
         for a in grid:
-            s = self.composite_score_from_features(X, w, alpha=a)
-            aucs.append(float(roc_auc_score(y, s)))
+            s_clean = self.composite_score_from_features(clean_features, clean_w_scores, alpha=a)
+            s_adv = self.composite_score_from_features(adv_features, adv_w_scores, alpha=a)
+            s = np.concatenate([s_clean, s_adv])
+            auc = float(roc_auc_score(y, s))
+            aucs.append(auc)
 
-        best_idx = int(np.argmax(aucs))
+            row: Dict[str, Any] = {'alpha': float(a), 'auc': auc}
+            if labels is not None:
+                thresh_idx = int(np.ceil((len(s_clean) + 1) * (1 - clean_fpr_target)))
+                thresh_idx = min(max(thresh_idx, 1), len(s_clean)) - 1
+                threshold = float(np.sort(s_clean)[thresh_idx])
+                per_attack = {}
+                for atk in sorted(set(labels.tolist())):
+                    mask = labels == atk
+                    per_attack[atk] = float(np.mean(s_adv[mask] > threshold))
+                row.update({
+                    'clean_threshold': threshold,
+                    'clean_fpr': float(np.mean(s_clean > threshold)),
+                    'per_attack_tpr': per_attack,
+                    'worst_case_tpr': float(min(per_attack.values())) if per_attack else None,
+                    'mean_attack_tpr': float(np.mean(list(per_attack.values()))) if per_attack else None,
+                })
+            rows.append(row)
+
+        objective = selection_objective.lower()
+        if objective == 'worst_case_tpr' and labels is not None:
+            best_idx = max(
+                range(len(rows)),
+                key=lambda i: (
+                    rows[i].get('worst_case_tpr') or -1.0,
+                    rows[i].get('mean_attack_tpr') or -1.0,
+                    rows[i]['auc'],
+                ),
+            )
+        else:
+            best_idx = int(np.argmax(aucs))
+            objective = 'auc'
+
         self.alpha = float(grid[best_idx])
-        logger.info("tune_alpha: selected α=%.3f (AUC=%.4f); grid AUCs: %s",
-                    self.alpha, aucs[best_idx],
+        self.selection_objective = objective
+        self.per_attack_validation_metrics = rows[best_idx]
+        logger.info("tune_alpha: selected α=%.3f objective=%s AUC=%.4f; grid AUCs: %s",
+                    self.alpha, objective, aucs[best_idx],
                     ", ".join(f"α={a:.2f}:{auc:.4f}" for a, auc in zip(grid, aucs)))
         return {
             'selected_alpha': self.alpha,
             'grid': list(grid),
             'aucs': aucs,
+            'rows': rows,
             'best_auc': aucs[best_idx],
+            'best_row': rows[best_idx],
+            'selection_objective': objective,
+            'clean_fpr_target': clean_fpr_target,
             'skipped': False,
         }
 
@@ -455,6 +551,10 @@ class PersistenceEnsembleScorer:
             'training_eps': self.training_eps,
             'training_attacks': self.training_attacks,
             'training_n': self.training_n,
+            'training_attack_counts': self.training_attack_counts,
+            'balanced_attacks': self.balanced_attacks,
+            'pgd_train_steps': self.pgd_train_steps,
+            'aa_train_mode': self.aa_train_mode,
             # P0.3 regression gate: sanity_checks.py::Check 6 asserts >= 2.5.
             'fgsm_oversample': getattr(self, 'fgsm_oversample', None),
             'no_tda_features': getattr(self, 'no_tda_features', False),
@@ -468,6 +568,10 @@ class PersistenceEnsembleScorer:
             'use_grad_norm': self.use_grad_norm,
             'use_tda': self.use_tda,   # P0.6 ablation flag
             'n_features': self.n_features,   # @property value; serialised for verification
+            'feature_space_version': self.feature_space_version,
+            'selection_objective': self.selection_objective,
+            'per_attack_validation_metrics': self.per_attack_validation_metrics,
+            'gradient_head_enabled': self.gradient_head_enabled,
         }
         with open(path, 'wb') as f:
             pickle.dump(data, f)
@@ -511,6 +615,14 @@ class PersistenceEnsembleScorer:
             use_softmax_entropy=data.get('use_softmax_entropy', False),
             use_grad_norm=data.get('use_grad_norm', False),
             use_tda=data.get('use_tda', True),
+            feature_space_version=data.get('feature_space_version', 'pixel-v1'),
+            selection_objective=data.get('selection_objective', 'auc'),
+            per_attack_validation_metrics=data.get('per_attack_validation_metrics', {}),
+            training_attack_counts=data.get('training_attack_counts', {}),
+            balanced_attacks=data.get('balanced_attacks', False),
+            pgd_train_steps=data.get('pgd_train_steps'),
+            aa_train_mode=data.get('aa_train_mode'),
+            gradient_head_enabled=data.get('gradient_head_enabled'),
         )
         scorer._logistic_fitted = data.get('_logistic_fitted', False)
         return scorer
