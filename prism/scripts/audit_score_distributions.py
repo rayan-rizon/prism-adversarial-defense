@@ -51,6 +51,8 @@ from src.config import (
 from src.data_loader import load_test_dataset
 from src.models import load_backbone
 from src.tamm.extractor import ActivationExtractor
+from src.tamm.logit_stability import compute_input_stability_features
+from src.tamm.persistence_stats import compute_logit_profile_features
 from src.tamm.scorer import TopologicalScorer
 from src.tamm.tda import TopologicalProfiler
 
@@ -101,12 +103,27 @@ def _input_grad_norm(model, x_norm, device):
     return float(grad_x.norm().item())
 
 
+def _stability_features(model, x_norm, img_pixel, logits_np, feature_count):
+    return compute_input_stability_features(
+        model=model,
+        x_norm=x_norm,
+        img_pixel=img_pixel,
+        mean=BACKBONE_MEAN,
+        std=BACKBONE_STD,
+        logits_np=logits_np,
+        feature_count=feature_count,
+    )
+
+
 def _score_pixels(imgs_pixel, model, extractor, profiler, scorer, calibrator, device, label):
     scores, w_scores, raw_logits, centered_logits, probs, levels = [], [], [], [], [], []
     features = []
     use_dct = getattr(scorer, 'use_dct', False)
     use_grad_norm = getattr(scorer, 'use_grad_norm', False)
     use_entropy = getattr(scorer, 'use_softmax_entropy', False)
+    use_logit_profile = getattr(scorer, 'use_logit_profile_features', False)
+    use_stability = getattr(scorer, 'use_stability_features', False)
+    stability_feature_count = int(getattr(scorer, 'stability_feature_count', 4))
 
     for img_pixel in tqdm(imgs_pixel, desc=f"score[{label}]"):
         x_norm = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
@@ -117,14 +134,24 @@ def _score_pixels(imgs_pixel, model, extractor, profiler, scorer, calibrator, de
         }
         grad_norm = _input_grad_norm(model, x_norm, device) if use_grad_norm else None
         logits_np = None
-        if use_entropy:
+        if use_entropy or use_logit_profile or use_stability:
             with torch.no_grad():
                 logits_np = model(x_norm).squeeze(0).detach().cpu().numpy()
+        logit_profile_features = None
+        if use_logit_profile:
+            logit_profile_features = compute_logit_profile_features(logits_np)
+        stability_features = None
+        if use_stability:
+            stability_features = _stability_features(
+                model, x_norm, img_pixel, logits_np, stability_feature_count,
+            )
         comps = scorer.score_components(
             dgms,
             image=img_pixel.detach().cpu().numpy() if use_dct else None,
             grad_norm=grad_norm,
             logits=logits_np,
+            logit_profile_features=logit_profile_features,
+            stability_features=stability_features,
         )
         score = float(comps['score'])
         scores.append(score)
@@ -290,6 +317,7 @@ def main():
             'seed': args.seed,
             'eps_linf': round(float(EPS_LINF_STANDARD), 6),
             'feature_space_version': getattr(scorer, 'feature_space_version', None),
+            'stability_feature_count': getattr(scorer, 'stability_feature_count', None),
             'selection_objective': getattr(scorer, 'selection_objective', None),
             'training_attacks': getattr(scorer, 'training_attacks', None),
             'training_attack_counts': getattr(scorer, 'training_attack_counts', None),

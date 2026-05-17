@@ -49,6 +49,8 @@ from src import bootstrap  # noqa: F401
 from src.tamm.extractor import ActivationExtractor
 from src.tamm.tda import TopologicalProfiler
 from src.tamm.scorer import TopologicalScorer
+from src.tamm.logit_stability import compute_input_stability_features
+from src.tamm.persistence_stats import compute_logit_profile_features
 from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
 from src.cadg.calibrate import ConformalCalibrator
 from src.sacd.monitor import CampaignMonitor
@@ -81,6 +83,18 @@ _NORMALIZE       = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 from src.models import _NormalizedBackbone as _NormalizedResNet
 
 
+def _stability_features(model, x_norm, img_pixel, logits_np, feature_count):
+    return compute_input_stability_features(
+        model=model,
+        x_norm=x_norm,
+        img_pixel=img_pixel,
+        mean=BACKBONE_MEAN,
+        std=BACKBONE_STD,
+        logits_np=logits_np,
+        feature_count=feature_count,
+    )
+
+
 def _compute_score_stream(
     imgs_pixel, profiler, extractor, ensemble, model, device, label,
 ):
@@ -89,6 +103,9 @@ def _compute_score_stream(
     use_dct = getattr(ensemble, 'use_dct', False)
     use_grad_norm = getattr(ensemble, 'use_grad_norm', False)
     use_softmax_entropy = getattr(ensemble, 'use_softmax_entropy', False)
+    use_logit_profile_features = getattr(ensemble, 'use_logit_profile_features', False)
+    use_stability_features = getattr(ensemble, 'use_stability_features', False)
+    stability_feature_count = int(getattr(ensemble, 'stability_feature_count', 4))
     for i, img_pixel in enumerate(tqdm(imgs_pixel, desc=f"  score[{label}]")):
         x_norm = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
         acts = extractor.extract(x_norm)
@@ -108,16 +125,26 @@ def _compute_score_stream(
             grad_norm = float(grad_x.norm().item())
 
         logits_np = None
-        if use_softmax_entropy:
+        if use_softmax_entropy or use_logit_profile_features or use_stability_features:
             with torch.no_grad():
                 logits = model(x_norm)
             logits_np = logits.squeeze(0).detach().cpu().numpy()
+        logit_profile_features = None
+        if use_logit_profile_features:
+            logit_profile_features = compute_logit_profile_features(logits_np)
+        stability_features = None
+        if use_stability_features:
+            stability_features = _stability_features(
+                model, x_norm, img_pixel, logits_np, stability_feature_count
+            )
 
         scores[i] = ensemble.score(
             dgms,
             image=img_np,
             grad_norm=grad_norm,
             logits=logits_np,
+            logit_profile_features=logit_profile_features,
+            stability_features=stability_features,
         )
     return scores
 

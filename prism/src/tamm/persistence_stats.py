@@ -34,6 +34,7 @@ except ImportError:
 from .tda import TopologicalProfiler, PersistenceDiagram
 
 
+LOGIT_PROFILE_FEATURE_COUNT = 8
 # Small floor to avoid log(0); persistence values << EPS are treated as zero
 _ENTROPY_EPS = 1e-10
 # Features with persistence below this are considered noise (ripser artefacts)
@@ -70,6 +71,137 @@ def compute_softmax_entropy(logits: np.ndarray) -> float:
     # Entropy: -sum(p * log(p)), skipping zero entries
     ent = -np.sum(probs * np.log(probs + 1e-12))
     return float(ent)
+
+
+def compute_logit_profile_features(logits: np.ndarray) -> np.ndarray:
+    """
+    Compute deterministic classifier-confidence summary features.
+
+    These features are intentionally label-free and use only the frozen
+    backbone logits at evaluation time. They target the remaining FGSM/Square
+    lower tail where topological and transform-stability evidence overlaps the
+    clean distribution under the L1 FPR constraint.
+
+    Returned order:
+      [top_confidence, top2_probability_gap, top3_probability_mass,
+       logit_margin, logit_range, centered_logit_l2, logsumexp_energy,
+       probability_l2]
+    """
+    if logits is None or len(logits) == 0:
+        return np.zeros(LOGIT_PROFILE_FEATURE_COUNT, dtype=np.float32)
+
+    z = np.asarray(logits, dtype=np.float64).reshape(-1)
+    if z.size == 0 or not np.all(np.isfinite(z)):
+        return np.zeros(LOGIT_PROFILE_FEATURE_COUNT, dtype=np.float32)
+
+    shifted = z - np.max(z)
+    exp_z = np.exp(shifted)
+    probs = exp_z / np.sum(exp_z)
+    p_sorted = np.sort(probs)[::-1]
+    z_sorted = np.sort(z)[::-1]
+
+    top_conf = float(p_sorted[0])
+    top2_gap = float(p_sorted[0] - (p_sorted[1] if p_sorted.size > 1 else 0.0))
+    top3_mass = float(np.sum(p_sorted[: min(3, p_sorted.size)]))
+    margin = float(z_sorted[0] - (z_sorted[1] if z_sorted.size > 1 else 0.0))
+    logit_range = float(z_sorted[0] - z_sorted[-1])
+    centered_l2 = float(np.linalg.norm(z - np.mean(z)))
+    energy = float(np.log(np.sum(np.exp(shifted)) + 1e-12) + np.max(z))
+    prob_l2 = float(np.linalg.norm(probs))
+
+    return np.array([
+        top_conf,
+        top2_gap,
+        top3_mass,
+        margin,
+        logit_range,
+        centered_l2,
+        energy,
+        prob_l2,
+    ], dtype=np.float32)
+
+
+def compute_logit_stability_features(
+    logits: np.ndarray,
+    smoothed_logits: np.ndarray,
+) -> np.ndarray:
+    """
+    Compare model logits before and after a deterministic 3x3 pixel smoothing.
+
+    This is a lightweight transform-consistency signal. Iterative L-infinity
+    attacks often preserve the classifier decision while making the logit margin
+    brittle under benign smoothing; that failure mode is weakly represented in
+    TDA/DCT alone.
+
+    Returns four scalar features:
+      [JS(prob, prob_smooth), top1_changed, abs_confidence_delta,
+       abs_margin_delta]
+    """
+    if logits is None or smoothed_logits is None:
+        return np.zeros(4, dtype=np.float32)
+    a = np.asarray(logits, dtype=np.float64).reshape(-1)
+    b = np.asarray(smoothed_logits, dtype=np.float64).reshape(-1)
+    if a.size == 0 or b.size == 0 or a.size != b.size:
+        return np.zeros(4, dtype=np.float32)
+
+    def _prob(x: np.ndarray) -> np.ndarray:
+        shifted = x - np.max(x)
+        exp_x = np.exp(shifted)
+        return exp_x / np.sum(exp_x)
+
+    pa = _prob(a)
+    pb = _prob(b)
+    m = 0.5 * (pa + pb)
+    js = 0.5 * np.sum(pa * (np.log(pa + 1e-12) - np.log(m + 1e-12)))
+    js += 0.5 * np.sum(pb * (np.log(pb + 1e-12) - np.log(m + 1e-12)))
+
+    top1_changed = float(int(np.argmax(pa) != np.argmax(pb)))
+    conf_delta = abs(float(np.max(pa) - np.max(pb)))
+    a_sorted = np.sort(a)
+    b_sorted = np.sort(b)
+    if a_sorted.size >= 2:
+        margin_a = float(a_sorted[-1] - a_sorted[-2])
+        margin_b = float(b_sorted[-1] - b_sorted[-2])
+        margin_delta = abs(margin_a - margin_b)
+    else:
+        margin_delta = 0.0
+    return np.array([js, top1_changed, conf_delta, margin_delta], dtype=np.float32)
+
+
+def compute_logit_stability_summary(
+    logits: np.ndarray,
+    transformed_logits: List[np.ndarray],
+) -> np.ndarray:
+    """
+    Aggregate deterministic transform-consistency evidence across transforms.
+
+    The original stability block used one 3x3 smoothing transform and returned
+    four values. The v2 block keeps that signal but summarizes several cheap
+    deterministic transforms so a single benign transform cannot dominate the
+    feature. Returned order:
+
+      [max_js, mean_js, max_top1_changed, mean_top1_changed,
+       max_confidence_delta, mean_confidence_delta,
+       max_margin_delta, mean_margin_delta]
+    """
+    rows = []
+    if transformed_logits is None:
+        transformed_logits = []
+    for item in transformed_logits:
+        rows.append(compute_logit_stability_features(logits, item))
+    if not rows:
+        return np.zeros(8, dtype=np.float32)
+    arr = np.vstack(rows).astype(np.float32)
+    return np.array([
+        float(np.max(arr[:, 0])),
+        float(np.mean(arr[:, 0])),
+        float(np.max(arr[:, 1])),
+        float(np.mean(arr[:, 1])),
+        float(np.max(arr[:, 2])),
+        float(np.mean(arr[:, 2])),
+        float(np.max(arr[:, 3])),
+        float(np.mean(arr[:, 3])),
+    ], dtype=np.float32)
 
 
 def compute_dct_energy(image: np.ndarray) -> float:
@@ -183,12 +315,16 @@ def extract_feature_vector(
     image: Optional[np.ndarray] = None,
     grad_norm: Optional[float] = None,
     logits: Optional[np.ndarray] = None,
+    logit_profile_features: Optional[np.ndarray] = None,
+    stability_features: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Build the feature vector for one input.
     Base: 6 stats × 2 dims × 3 layers = 36 features.
     Optional: log high-frequency DCT energy when *image* is provided.
     Optional: softmax entropy when *logits* is provided.
+    Optional: classifier-confidence profile when *logit_profile_features* is provided.
+    Optional: transform-stability feature vector when *stability_features* is provided.
     Optional: input-gradient L2 norm when *grad_norm* is provided.
 
     Features ordered: for each layer, for each dim:
@@ -196,6 +332,8 @@ def extract_feature_vector(
        n_features, entropy, mean_persistence]
     Then, if image is not None: [dct_energy].
     Then, if logits is not None: [softmax_entropy].
+    Then, if logit_profile_features is not None: [logit_profile_features...].
+    Then, if stability_features is not None: [stability_features...].
     Then, if grad_norm is not None: [grad_norm].
 
     Args:
@@ -209,6 +347,8 @@ def extract_feature_vector(
                    provided, appended as the final feature.
         logits: Optional 1-D array of raw model logits (pre-softmax).
                 When provided, appends the softmax entropy as a feature.
+        logit_profile_features: Optional fixed-length classifier-confidence vector.
+        stability_features: Optional fixed-length transform-consistency vector.
     Returns:
         1-D float32 array.
     """
@@ -238,6 +378,14 @@ def extract_feature_vector(
 
     if logits is not None:
         features.append(compute_softmax_entropy(logits))
+
+    if logit_profile_features is not None:
+        features.extend(
+            np.asarray(logit_profile_features, dtype=np.float32).reshape(-1).tolist()
+        )
+
+    if stability_features is not None:
+        features.extend(np.asarray(stability_features, dtype=np.float32).reshape(-1).tolist())
 
     if grad_norm is not None:
         features.append(float(grad_norm))

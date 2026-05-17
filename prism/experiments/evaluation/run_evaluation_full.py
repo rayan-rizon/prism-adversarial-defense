@@ -123,6 +123,17 @@ _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)
 # The wrapper logic is identical; the class lives in src.models.backbone.
 _NormalizedResNet = _NormalizedBackbone
 
+ATTACK_TPR_TARGETS = {
+    'FGSM': 0.85,
+    'PGD': 0.90,
+    'Square': 0.85,
+    'CW': 0.85,
+    'AutoAttack': 0.90,
+}
+FPR_TARGETS = {'L1': 0.10, 'L2': 0.03, 'L3': 0.005}
+POOLED_WILSON_LOWER_TARGET = 0.80
+LATENCY_TARGET_MS = 100.0
+
 
 def _atanh_stable(x: torch.Tensor) -> torch.Tensor:
     x = torch.clamp(x, -0.999999, 0.999999)
@@ -165,6 +176,120 @@ def per_tier_fpr(clean_levels: dict, n_clean: int) -> dict:
         'pass_L2': fp_l2 / max(n_clean, 1) <= 0.03,
         'pass_L3': fp_l3 / max(n_clean, 1) <= 0.005,
     }
+
+
+def _attack_target(attack_name: str) -> float:
+    return ATTACK_TPR_TARGETS.get(attack_name, 0.85)
+
+
+def _status_icon(ok: bool) -> str:
+    return '✅' if ok else '❌'
+
+
+def build_single_seed_gate(results: dict, latency: dict, attacks_to_run: list) -> dict:
+    """Build a machine-readable target gate for a single evaluation run."""
+    attack_rows = {}
+    total_tp = 0
+    total_adv = 0
+    failures = []
+
+    for attack in attacks_to_run or []:
+        row = results.get(attack)
+        if not isinstance(row, dict) or 'TPR' not in row:
+            continue
+        target = _attack_target(attack)
+        tpr = float(row.get('TPR', 0.0))
+        tp = int(row.get('TP', 0))
+        n_adv = int(row.get('n_adv', row.get('TP', 0) + row.get('FN', 0)))
+        total_tp += tp
+        total_adv += n_adv
+        passed = tpr >= target
+        attack_rows[attack] = {
+            'TPR': round(tpr, 4),
+            'target': target,
+            'passed': passed,
+            'TPR_CI_95': row.get('TPR_CI_95'),
+        }
+        if not passed:
+            failures.append(f'{attack} TPR={tpr:.4f} < {target:.2f}')
+
+    fpr_rows = {}
+    ref = next(
+        (results.get(a) for a in (attacks_to_run or [])
+         if isinstance(results.get(a), dict) and 'per_tier_fpr' in results.get(a, {})),
+        None,
+    )
+    if ref is not None:
+        tier = ref.get('per_tier_fpr', {})
+        for name, target in FPR_TARGETS.items():
+            key = f'FPR_{name}_plus'
+            val = float(tier.get(key, 1.0))
+            passed = val <= target
+            fpr_rows[name] = {'FPR': round(val, 4), 'target': target, 'passed': passed}
+            if not passed:
+                failures.append(f'{name} FPR={val:.4f} > {target:.3f}')
+
+    pooled_ci = wilson_ci(total_tp, total_adv)
+    pooled_lower = float(pooled_ci[0])
+    pooled_pass = pooled_lower >= POOLED_WILSON_LOWER_TARGET
+    if total_adv > 0 and not pooled_pass:
+        failures.append(
+            f'pooled Wilson lower={pooled_lower:.4f} < '
+            f'{POOLED_WILSON_LOWER_TARGET:.2f}'
+        )
+
+    latency_mean = latency.get('mean_ms') if isinstance(latency, dict) else None
+    latency_pass = bool(latency.get('pass', False)) if isinstance(latency, dict) else False
+    if latency_mean is not None and not latency_pass:
+        failures.append(f'latency mean={latency_mean:.1f}ms >= {LATENCY_TARGET_MS:.0f}ms')
+
+    return {
+        'attacks': attack_rows,
+        'fpr': fpr_rows,
+        'pooled_tpr': round(total_tp / total_adv, 4) if total_adv else None,
+        'pooled_wilson_lower': round(pooled_lower, 4) if total_adv else None,
+        'pooled_wilson_lower_target': POOLED_WILSON_LOWER_TARGET,
+        'pooled_wilson_passed': pooled_pass if total_adv else None,
+        'latency_mean_ms': latency_mean,
+        'latency_target_ms': LATENCY_TARGET_MS,
+        'latency_passed': latency_pass if latency_mean is not None else None,
+        'passed': len(failures) == 0,
+        'failures': failures,
+    }
+
+
+def print_single_seed_gate(gate: dict) -> None:
+    """Print the same target contract that is stored in the JSON artifact."""
+    print(f"\n{'='*70}")
+    print("TARGET METRIC GATE")
+    print(f"{'-'*70}")
+    for attack, row in gate.get('attacks', {}).items():
+        ci = row.get('TPR_CI_95') or [None, None]
+        ci_text = (
+            f"  CI=[{ci[0]:.4f}, {ci[1]:.4f}]"
+            if ci[0] is not None and ci[1] is not None else ""
+        )
+        print(f"  {_status_icon(row['passed'])} {attack:12} "
+              f"TPR={row['TPR']:.4f}  target≥{row['target']:.2f}{ci_text}")
+    for tier, row in gate.get('fpr', {}).items():
+        print(f"  {_status_icon(row['passed'])} {tier:12} "
+              f"FPR={row['FPR']:.4f}  target≤{row['target']:.3f}")
+    if gate.get('pooled_wilson_lower') is not None:
+        print(f"  {_status_icon(gate['pooled_wilson_passed'])} {'Pooled':12} "
+              f"Wilson lower={gate['pooled_wilson_lower']:.4f}  "
+              f"target≥{gate['pooled_wilson_lower_target']:.2f}")
+    if gate.get('latency_mean_ms') is not None:
+        print(f"  {_status_icon(gate['latency_passed'])} {'Latency':12} "
+              f"mean={gate['latency_mean_ms']:.1f}ms  "
+              f"target<{gate['latency_target_ms']:.0f}ms")
+    print(f"{'-'*70}")
+    if gate.get('passed'):
+        print("✅ GATE RESULT: ALL TARGETS MET")
+    else:
+        print(f"❌ GATE RESULT: FAIL — {len(gate.get('failures', []))} target(s) missed:")
+        for failure in gate.get('failures', []):
+            print(f"     • {failure}")
+    print(f"{'='*70}")
 
 
 def score_quantiles(scores) -> dict:
@@ -306,12 +431,47 @@ def run_evaluation_full(
         'use_dct':          getattr(_ens_scorer, 'use_dct', None),
         'use_grad_norm':    getattr(_ens_scorer, 'use_grad_norm', None),
         'use_softmax_entropy': getattr(_ens_scorer, 'use_softmax_entropy', None),
+        'use_logit_profile_features': getattr(_ens_scorer, 'use_logit_profile_features', None),
+        'logit_profile_feature_count': getattr(_ens_scorer, 'logit_profile_feature_count', None),
+        'use_stability_features': getattr(_ens_scorer, 'use_stability_features', None),
+        'stability_feature_count': getattr(_ens_scorer, 'stability_feature_count', None),
         'training_attacks': getattr(_ens_scorer, 'training_attacks', None),
         'training_n':       getattr(_ens_scorer, 'training_n', None),
         'training_eps':     getattr(_ens_scorer, 'training_eps', None),
+        'training_source_split': getattr(_ens_scorer, 'training_source_split', None),
+        'training_source_description': getattr(
+            _ens_scorer, 'training_source_description', None
+        ),
         'n_features':       getattr(_ens_scorer, 'n_features', None),
+        'logistic_input_dim': getattr(_ens_scorer, 'logistic_input_dim', None),
+        'use_side_quadratic_features': getattr(
+            _ens_scorer, 'use_side_quadratic_features', None
+        ),
+        'quadratic_feature_start': getattr(
+            _ens_scorer, 'quadratic_feature_start', None
+        ),
         'feature_space_version': getattr(_ens_scorer, 'feature_space_version', None),
         'selection_objective': getattr(_ens_scorer, 'selection_objective', None),
+        'fgsm_oversample': getattr(_ens_scorer, 'fgsm_oversample', None),
+        'pgd_oversample': getattr(_ens_scorer, 'pgd_oversample', None),
+        'square_oversample': getattr(_ens_scorer, 'square_oversample', None),
+        'requested_oversample_weights': getattr(
+            _ens_scorer, 'requested_oversample_weights', None
+        ),
+        'square_train_max_iter': getattr(_ens_scorer, 'square_train_max_iter', None),
+        'attack_head_mode': getattr(_ens_scorer, 'attack_head_mode', None),
+        'score_channel_aggregation': getattr(
+            _ens_scorer, 'score_channel_aggregation', None
+        ),
+        'active_attack_heads': sorted(
+            getattr(_ens_scorer, 'attack_heads', {}).keys()
+        ) if getattr(_ens_scorer, 'attack_heads', None) else [],
+        'score_channel_mode': (
+            getattr(_ens_scorer, 'score_channel_calibration', {}) or {}
+        ).get('mode'),
+        'score_channel_validation': (
+            getattr(_ens_scorer, 'score_channel_calibration', {}) or {}
+        ).get('validation_metrics'),
         'training_attack_counts': getattr(_ens_scorer, 'training_attack_counts', None),
         'per_attack_validation_metrics': getattr(
             _ens_scorer, 'per_attack_validation_metrics', None
@@ -320,7 +480,8 @@ def run_evaluation_full(
     print(f"Ensemble provenance: use_dct={_ens_meta['use_dct']}, "
           f"training_attacks={_ens_meta['training_attacks']}, "
           f"training_n={_ens_meta['training_n']}, "
-          f"n_features={_ens_meta['n_features']}")
+          f"n_features={_ens_meta['n_features']}, "
+          f"logistic_input_dim={_ens_meta['logistic_input_dim']}")
 
     # ── ART classifier ─────────────────────────────────────────────────────────
     # NOTE: must be on the same device as the main model so CW / PGD
@@ -435,6 +596,7 @@ def run_evaluation_full(
         if attack_name not in all_attacks:
             print(f"Unknown attack: {attack_name}. Skipping.")
             continue
+        tpr_target = _attack_target(attack_name)
 
         print(f"\n{'='*60}")
         print(f"Attack: {attack_name}")
@@ -652,7 +814,7 @@ def run_evaluation_full(
                 _prec = tp / max(tp + fp, 1)
                 _f1 = 2 * _prec * _tpr / max(_prec + _tpr, 1e-8)
                 print(f"\n  [Checkpoint {j+1}/{len(all_imgs_pixel)}] TPR={_tpr:.4f} "
-                      f"({'✅' if _tpr >= 0.88 else '❌' if _tpr < 0.70 else '⚠'}) | "
+                      f"({'✅' if _tpr >= tpr_target else '❌' if _tpr < 0.70 else '⚠'}) | "
                       f"FPR={_fpr:.4f} ({'✅' if _fpr <= 0.10 else '❌'}) | F1={_f1:.4f}",
                       flush=True)
 
@@ -717,7 +879,8 @@ def run_evaluation_full(
             )
 
         print(f"\n  TPR  = {tpr:.4f}  95% CI [{tpr_ci[0]:.4f}, {tpr_ci[1]:.4f}]"
-              f"  {'✅' if tpr >= 0.90 else '❌' if tpr < 0.70 else '⚠'}")
+              f"  {'✅' if tpr >= tpr_target else '❌' if tpr < 0.70 else '⚠'}"
+              f"  target≥{tpr_target:.2f}")
         print(f"  FPR  = {fpr:.4f}  95% CI [{fpr_ci[0]:.4f}, {fpr_ci[1]:.4f}]"
               f"  {'✅' if fpr <= 0.10 else '❌'}")
         print(f"  F1   = {f1:.4f}")
@@ -739,16 +902,20 @@ def run_evaluation_full(
 
     # ── Summary table ──────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
-    print(f"{'Attack':>10} {'TPR':>8} {'FPR':>8} {'F1':>8} {'TPR≥90%':>9}")
+    print(f"{'Attack':>10} {'TPR':>8} {'Target':>8} {'FPR':>8} {'F1':>8} {'Status':>9}")
     print(f"{'-'*70}")
     for name, r in results.items():
         if name == '_meta':
             continue
-        status = '✅' if r['TPR'] >= 0.90 else ('⚠' if r['TPR'] >= 0.70 else '❌')
-        print(f"{name:>10} {r['TPR']:>8.4f} {r['FPR']:>8.4f} "
+        target = _attack_target(name)
+        status = '✅' if r['TPR'] >= target else ('⚠' if r['TPR'] >= 0.70 else '❌')
+        print(f"{name:>10} {r['TPR']:>8.4f} {target:>8.2f} {r['FPR']:>8.4f} "
               f"{r['F1']:>8.4f} {status:>9}")
 
     # ── Save ───────────────────────────────────────────────────────────────────
+    target_gate = build_single_seed_gate(results, latency, attacks_to_run)
+    print_single_seed_gate(target_gate)
+
     results['_meta'] = {
         'n_test':       n_test,
         'n_actual':     int(len(sample_idx)),
@@ -760,11 +927,35 @@ def run_evaluation_full(
         'eps_linf':     EPS_LINF_STANDARD,
         'eps_note':     '8/255 = standard RobustBench/AutoAttack convention',
         'attacks':      attacks_to_run,
+        'attack_params': {
+            'FGSM': {'eps_linf': EPS_LINF_STANDARD},
+            'PGD': {
+                'eps_linf': EPS_LINF_STANDARD,
+                'eps_step': EPS_LINF_STANDARD / 4,
+                'max_iter': 40,
+                'num_random_init': 1,
+            },
+            'Square': {
+                'eps_linf': EPS_LINF_STANDARD,
+                'max_iter': square_max_iter,
+                'nb_restarts': 1,
+            },
+            'CW': {
+                'max_iter': cw_max_iter,
+                'binary_search_steps': cw_bss,
+                'engine': cw_engine,
+            },
+            'AutoAttack': {
+                'eps_linf': EPS_LINF_STANDARD,
+                'version': aa_version,
+            },
+        },
         'latency':      latency,
         'latency_skipped': bool(skip_latency),
         'device':       str(device),
         'ensemble':     _ens_meta,
         'cw_engine':    cw_engine,
+        'target_metric_gate': target_gate,
     }
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1056,10 +1247,93 @@ def run_evaluation_multiseed(
             aggregate[atk]['pool_detected_base_success'] = pool_detected_base_success
             aggregate[atk]['pool_missed_base_success'] = pool_missed_base_success
 
+    gate_failures = []
+    gate_attacks = {}
+    combined_tp = 0
+    combined_n_adv = 0
+    for atk, ag in aggregate.items():
+        tgt = _attack_target(atk)
+        ok = ag['TPR_mean'] >= tgt
+        gate_attacks[atk] = {
+            'TPR_mean': ag['TPR_mean'],
+            'target': tgt,
+            'passed': ok,
+            'TPR_CI_95_pooled': ag['TPR_CI_95_pooled'],
+        }
+        combined_tp += int(ag.get('pool_TP', 0))
+        combined_n_adv += int(ag.get('pool_TP', 0)) + int(ag.get('pool_FN', 0))
+        if not ok:
+            gate_failures.append(f"{atk} TPR={ag['TPR_mean']:.4f} < {tgt:.2f}")
+
+    gate_fpr = {}
+    pooled_fp_for_gate = {'L1': 0, 'L2': 0, 'L3': 0}
+    pooled_n_for_gate = 0
+    ref_atk_for_gate = next((a for a in attacks_to_run if a in aggregate), None)
+    for seed_data in per_seed_results.values():
+        atk_data = seed_data.get(ref_atk_for_gate, {}) if ref_atk_for_gate else {}
+        ptf = atk_data.get('per_tier_fpr', {})
+        n_clean = atk_data.get('n_clean', 0)
+        if n_clean > 0:
+            pooled_fp_for_gate['L1'] += int(round(ptf.get('FPR_L1_plus', 0) * n_clean))
+            pooled_fp_for_gate['L2'] += int(round(ptf.get('FPR_L2_plus', 0) * n_clean))
+            pooled_fp_for_gate['L3'] += int(round(ptf.get('FPR_L3_plus', 0) * n_clean))
+            pooled_n_for_gate += n_clean
+    if pooled_n_for_gate > 0:
+        for tier, tgt in FPR_TARGETS.items():
+            fpr_val = pooled_fp_for_gate[tier] / pooled_n_for_gate
+            ok = fpr_val <= tgt
+            gate_fpr[tier] = {
+                'FPR': round(fpr_val, 4),
+                'target': tgt,
+                'passed': ok,
+                'FPR_CI_95_pooled': [
+                    round(v, 4) for v in wilson_ci(pooled_fp_for_gate[tier], pooled_n_for_gate)
+                ],
+            }
+            if not ok:
+                gate_failures.append(f"{tier} FPR={fpr_val:.4f} > {tgt:.3f}")
+
+    pooled_ci = wilson_ci(combined_tp, combined_n_adv)
+    pooled_lower = pooled_ci[0] if combined_n_adv else None
+    pooled_pass = (
+        pooled_lower >= POOLED_WILSON_LOWER_TARGET
+        if pooled_lower is not None else None
+    )
+    if pooled_pass is False:
+        gate_failures.append(
+            f"pooled Wilson lower={pooled_lower:.4f} < "
+            f"{POOLED_WILSON_LOWER_TARGET:.2f}"
+        )
+
+    lat_means_for_gate = [
+        seed_data.get('_meta', {}).get('latency', {}).get('mean_ms')
+        for seed_data in per_seed_results.values()
+    ]
+    lat_means_for_gate = [v for v in lat_means_for_gate if v is not None]
+    latency_worst = float(np.max(lat_means_for_gate)) if lat_means_for_gate else None
+    latency_pass = latency_worst < LATENCY_TARGET_MS if latency_worst is not None else None
+    if latency_pass is False:
+        gate_failures.append(f"latency worst={latency_worst:.1f}ms >= {LATENCY_TARGET_MS:.0f}ms")
+
+    multi_seed_gate = {
+        'attacks': gate_attacks,
+        'fpr': gate_fpr,
+        'pooled_tpr': round(combined_tp / combined_n_adv, 4) if combined_n_adv else None,
+        'pooled_wilson_lower': round(float(pooled_lower), 4) if pooled_lower is not None else None,
+        'pooled_wilson_lower_target': POOLED_WILSON_LOWER_TARGET,
+        'pooled_wilson_passed': pooled_pass,
+        'latency_worst_mean_ms': latency_worst,
+        'latency_target_ms': LATENCY_TARGET_MS,
+        'latency_passed': latency_pass,
+        'passed': len(gate_failures) == 0,
+        'failures': gate_failures,
+    }
+
     multi_seed_output = {
         'seeds':     seeds,
         'per_seed':  per_seed_results,
         'aggregate': aggregate,
+        'target_metric_gate': multi_seed_gate,
         'metadata': {
             'n_test':      n_test,
             'eps':         round(EPS_LINF_STANDARD, 6),
@@ -1096,12 +1370,9 @@ def run_evaluation_multiseed(
     # immediately see whether to continue or abort the Vast.ai run.
     # All metrics (TPR, FPR, latency) are pooled across all seeds so the gate
     # uses a consistent multi-seed methodology throughout.
-    tpr_targets = {
-        'FGSM': 0.85, 'PGD': 0.90, 'Square': 0.85,
-        'CW': 0.85, 'AutoAttack': 0.90,
-    }
-    fpr_targets = {'L1': 0.10, 'L2': 0.03, 'L3': 0.005}
-    latency_target = 100.0
+    tpr_targets = ATTACK_TPR_TARGETS
+    fpr_targets = FPR_TARGETS
+    latency_target = LATENCY_TARGET_MS
 
     failures = []
     print(f"\n{'='*65}")
@@ -1146,6 +1417,17 @@ def run_evaluation_multiseed(
                   f"  CI=[{ci[0]:.4f}, {ci[1]:.4f}]  (pooled {len(per_seed_results)} seeds)")
             if not ok:
                 failures.append(f"{tier} FPR={fpr_val:.4f} > {tgt}")
+    pooled_lower = multi_seed_gate.get('pooled_wilson_lower')
+    if pooled_lower is not None:
+        ok = bool(multi_seed_gate.get('pooled_wilson_passed'))
+        icon = '✅' if ok else '❌'
+        print(f"  {icon} {'Pooled':12} Wilson lower={pooled_lower:.4f}"
+              f"  target≥{POOLED_WILSON_LOWER_TARGET:.2f}")
+        if not ok:
+            failures.append(
+                f"pooled Wilson lower={pooled_lower:.4f} < "
+                f"{POOLED_WILSON_LOWER_TARGET:.2f}"
+            )
     # ── Pool latency: mean-of-means; gate on worst seed ───────────────────────
     if lat_means:
         lat_mean_of_means = float(np.mean(lat_means))
@@ -1164,7 +1446,7 @@ def run_evaluation_multiseed(
             print(f"     • {f}")
         print("  ⚠  Consider aborting to save compute time.")
     else:
-        print("✅ GATE RESULT: ALL TARGETS MET — results are publishable.")
+        print("✅ GATE RESULT: ALL REQUESTED TARGETS MET for this attack set.")
     print(f"{'='*65}")
 
     return multi_seed_output

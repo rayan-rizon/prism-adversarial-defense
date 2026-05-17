@@ -30,6 +30,8 @@ from .tamsh.experts import TopologyAwareMoE
 from .memory.immune_memory import ImmuneMemory
 from .federation import FederationManager
 from .config import N_SUBSAMPLE, MAX_DIM, BACKBONE_MEAN, BACKBONE_STD
+from .tamm.logit_stability import compute_input_stability_features
+from .tamm.persistence_stats import compute_logit_profile_features
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +211,40 @@ class PRISM:
         pix = (x.detach() * std + mean).clamp(0.0, 1.0)
         return pix.squeeze(0).cpu().numpy().astype(np.float32)
 
+    @staticmethod
+    def _pixel_tensor(
+        x: torch.Tensor,
+        pixel_image: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Return a 4D pixel-space tensor on x.device matching x."""
+        if pixel_image is not None:
+            pix = pixel_image.detach().to(device=x.device, dtype=x.dtype)
+            if pix.dim() == 3:
+                pix = pix.unsqueeze(0)
+            return pix.clamp(0.0, 1.0)
+
+        mean = torch.tensor(BACKBONE_MEAN, device=x.device, dtype=x.dtype).view(1, -1, 1, 1)
+        std = torch.tensor(BACKBONE_STD, device=x.device, dtype=x.dtype).view(1, -1, 1, 1)
+        return (x.detach() * std + mean).clamp(0.0, 1.0)
+
+    def _stability_features(
+        self,
+        x: torch.Tensor,
+        pixel_image: Optional[torch.Tensor],
+        logits_np: Optional[np.ndarray],
+    ) -> np.ndarray:
+        """Compute the scorer's configured deterministic stability block."""
+        feature_count = int(getattr(self.scorer, 'stability_feature_count', 4))
+        return compute_input_stability_features(
+            model=self.model,
+            x_norm=x,
+            img_pixel=pixel_image,
+            mean=BACKBONE_MEAN,
+            std=BACKBONE_STD,
+            logits_np=logits_np,
+            feature_count=feature_count,
+        )
+
     def defend(
         self,
         x: torch.Tensor,
@@ -262,6 +298,8 @@ class PRISM:
         use_dct      = getattr(self.scorer, 'use_dct', False)
         use_grad_norm = getattr(self.scorer, 'use_grad_norm', False)
         use_softmax_entropy = getattr(self.scorer, 'use_softmax_entropy', False)
+        use_logit_profile_features = getattr(self.scorer, 'use_logit_profile_features', False)
+        use_stability_features = getattr(self.scorer, 'use_stability_features', False)
 
         img_np = (
             self._normalised_to_pixel_numpy(x, pixel_image=pixel_image)
@@ -281,15 +319,32 @@ class PRISM:
         # This forward pass is cheap (~5ms) and captures decision-boundary
         # proximity that TDA features cannot detect.
         logits_np = None
-        if use_softmax_entropy:
+        if use_softmax_entropy or use_logit_profile_features or use_stability_features:
             with torch.no_grad():
                 logits_out = self.model(x)
             logits_np = logits_out.squeeze(0).cpu().numpy()
 
-        score = self.scorer.score(diagrams, image=img_np, grad_norm=grad_norm, logits=logits_np)
+        logit_profile_features = None
+        if use_logit_profile_features:
+            logit_profile_features = compute_logit_profile_features(logits_np)
+
+        stability_features = None
+        if use_stability_features:
+            stability_features = self._stability_features(x, pixel_image, logits_np)
+
+        score = self.scorer.score(
+            diagrams,
+            image=img_np,
+            grad_norm=grad_norm,
+            logits=logits_np,
+            logit_profile_features=logit_profile_features,
+            stability_features=stability_features,
+        )
         metadata['anomaly_score'] = score
         if use_dct:
-            metadata['feature_space_version'] = 'pixel-v1'
+            metadata['feature_space_version'] = getattr(
+                self.scorer, 'feature_space_version', 'pixel-v1'
+            )
         metadata['per_layer_scores'] = self.scorer.score_per_layer(diagrams)
 
         # --- Step 5: Update campaign monitor (L0) ---

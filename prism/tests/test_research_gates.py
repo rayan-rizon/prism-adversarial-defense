@@ -6,6 +6,7 @@ the invariants that must hold before a Vast.ai full run is worth launching.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -17,6 +18,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES, DATASET, MAX_DIM, N_SUBSAMPLE
 from src.models.cifar_resnet import cifar_resnet18
+from src.tamm.persistence_stats import (
+    LOGIT_PROFILE_FEATURE_COUNT,
+    compute_logit_profile_features,
+)
 from src.tamm.tda import TopologicalProfiler
 from src.tamsh.experts import ExpertSubNetwork
 
@@ -60,12 +65,27 @@ class TestTDADeterminism:
                 )
 
 
+class TestFeatureContracts:
+    def test_logit_profile_feature_block_is_finite_and_fixed_width(self):
+        logits = np.array([4.0, 1.0, -2.0, 0.5], dtype=np.float32)
+
+        features = compute_logit_profile_features(logits)
+
+        assert features.shape == (LOGIT_PROFILE_FEATURE_COUNT,)
+        assert np.all(np.isfinite(features))
+        assert features.dtype == np.float32
+
+
 class TestScriptPreflight:
     @pytest.mark.parametrize('script', ['run_vastai_full.sh', 'run_vastai_cifar100.sh'])
     def test_vastai_scripts_are_bash_syntax_valid(self, script):
+        bash = shutil.which('bash')
+        if bash is None:
+            pytest.skip('bash is required for shell-script syntax preflight')
+
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         result = subprocess.run(
-            ['bash', '-n', os.path.join(root, script)],
+            [bash, '-n', os.path.join(root, script)],
             cwd=root,
             text=True,
             capture_output=True,

@@ -33,6 +33,9 @@
 set -euo pipefail
 cd /workspace/prism-repo/prism
 
+PRISM_CONFIG="${PRISM_CONFIG:-configs/vastai_cw_full.yaml}"
+export PRISM_CONFIG
+
 SEEDS="42 123 456 789 999"
 N_TEST=1000
 
@@ -52,13 +55,23 @@ ADAPTIVE_LAMBDAS="0.0 0.5 1.0 2.0 5.0 10.0"
 ADAPTIVE_STEPS=100
 ADAPTIVE_RESTARTS=10
 
-# FGSM oversample (P0.3): restore to 2.5 — the regression to 1.8/2.0 in commits
-# dadf2cf/cf854f0 dropped pooled FGSM TPR from 0.87 → 0.806.
-FGSM_OVERSAMPLE=2.5
+# The canonical detector path uses the locally promoted CW-aware weighted mix.
+# FGSM is oversampled to protect the fast gate; CW is included to remove the
+# prior out-of-distribution CW score collapse. Detector-head training uses the
+# disjoint profile split so scorer fitting, conformal calibration, validation,
+# and held-out eval all follow the same split protocol.
+ENSEMBLE_N_TRAIN=2500
+ENSEMBLE_SOURCE_SPLIT=profile
+ENSEMBLE_GEN_CHUNK=512
+FGSM_OVERSAMPLE=1.5
+PGD_OVERSAMPLE=1.0
+SQUARE_OVERSAMPLE=1.0
+CW_OVERSAMPLE=0.5
 
 echo "============================================================"
 echo "PRISM Vast.ai Full Pipeline — $(date)"
 echo "Instance: $(hostname)"
+echo "Config: $PRISM_CONFIG"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
@@ -143,7 +156,9 @@ print(f'cal_alpha_factor (scalar): {CAL_ALPHA_FACTOR}')
 print(f'tier_cal_alpha_factors: {TIER_CAL_ALPHA_FACTORS}')
 assert TIER_CAL_ALPHA_FACTORS.get('L3', CAL_ALPHA_FACTOR) <= 0.55, \
   f'L3 factor must be <= 0.55, got {TIER_CAL_ALPHA_FACTORS.get(\"L3\")}'
-print('PREFLIGHT PASS: per-tier L3=0.50 confirmed')
+assert TIER_CAL_ALPHA_FACTORS.get('L1', CAL_ALPHA_FACTOR) <= 0.85, \
+  f'L1 factor must be <= 0.85, got {TIER_CAL_ALPHA_FACTORS.get(\"L1\")}'
+print('PREFLIGHT PASS: per-tier L1<=0.85 and L3<=0.55 confirmed')
 "
 
 # ── Step 0a: Pretrain the CIFAR-10 ResNet-18 backbone ────────────────────────
@@ -225,17 +240,21 @@ fi
 #   4. Wait Step 2c + 2d before no-TDA calibration and Phase 1 LOCK.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Step 2: Retrain ensemble (with CW + AutoAttack in training mix) ───────────
+# ── Step 2: Retrain ensemble (CW-aware weighted full-gate artifact) ───────────
 echo ""
 echo "=== Steps 2 + 2c + 2d: Parallel Training Launch ==="
-echo "  Step 2  : ensemble (n=4000, CW+AA, balanced, worst-case TPR) — foreground"
+echo "  Step 2  : ensemble (n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, FGSM=$FGSM_OVERSAMPLE, PGD=$PGD_OVERSAMPLE, Square=$SQUARE_OVERSAMPLE, CW=$CW_OVERSAMPLE, logitprofile+sidequad, worst-case TPR) — foreground"
 echo "  Step 2c : ensemble-no-TDA variant — background"
 echo "  Step 2d : differentiated experts — background"
 echo ""
 
-# Current recovery run uses equal attack-family shares and selects α by
-# worst-case held-out TPR at clean FPR<=10%, not aggregate AUC. Grad norm is
-# enabled as the gradient-attack feature branch for FGSM/PGD/AutoAttack.
+# Current recovery run uses the CW-aware weighted attack mix and selects alpha
+# by worst-case held-out TPR at clean FPR<=10%, not aggregate AUC. Grad norm
+# stays disabled. The canonical raw feature contract is now 54 features:
+# 36 TDA + DCT + softmax entropy + eight logit-profile features +
+# eight deterministic stability-v2 features. The current local winner also
+# uses side-quadratic expansion inside the fitted scorer. CW-L2 and AutoAttack
+# are included in the full Vast.ai gate after local fast/CW smoke passed.
 
 # ── Step 2c: launched in background (independent of Step 2) ───────────────────
 # train_ensemble_scorer.py with --no-tda-features → models/ensemble_no_tda.pkl.
@@ -243,16 +262,23 @@ echo ""
 PID_2C=""
 if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-features'; then
   python scripts/train_ensemble_scorer.py \
-    --n-train 4000 \
-    --fgsm-oversample $FGSM_OVERSAMPLE \
+    --config "$PRISM_CONFIG" \
+    --n-train $ENSEMBLE_N_TRAIN \
+    --source-split $ENSEMBLE_SOURCE_SPLIT \
     --include-cw \
-    --include-autoattack \
-    --balanced-attacks \
+    --fgsm-oversample $FGSM_OVERSAMPLE \
+    --pgd-oversample $PGD_OVERSAMPLE \
+    --square-oversample $SQUARE_OVERSAMPLE \
+    --cw-oversample $CW_OVERSAMPLE \
     --pgd-train-steps 40 \
-    --aa-train-mode apgd-ce \
+    --square-train-max-iter 500 \
+    --cw-max-iter $CW_MAX_ITER \
+    --cw-bss $CW_BSS \
+    --gen-chunk $ENSEMBLE_GEN_CHUNK \
     --selection-objective worst_case_tpr \
-    --cw-max-iter 40 \
-    --cw-bss 5 \
+    --use-stability-features \
+    --use-logit-profile-features \
+    --use-side-quadratic-features \
     --no-tda-features \
     --output models/ensemble_no_tda.pkl \
     > logs/step2c_retrain_no_tda.log 2>&1 &
@@ -268,7 +294,7 @@ fi
 PID_2D=""
 if [ -f scripts/train_experts.py ]; then
   python scripts/train_experts.py \
-    --config configs/default.yaml \
+    --config "$PRISM_CONFIG" \
     --output models/experts.pkl \
     > logs/step2d_train_experts.log 2>&1 &
   PID_2D=$!
@@ -279,19 +305,25 @@ fi
 
 # ── Step 2: foreground (gates Step 3) ─────────────────────────────────────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=4000, balanced CW+AA, worst-case TPR] ==="
+echo "=== Step 2: Retrain Ensemble [n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, CW-aware weighted FGSM/PGD/Square/CW, logitprofile+sidequad, worst-case TPR] ==="
 python scripts/train_ensemble_scorer.py \
-  --n-train 4000 \
-  --fgsm-oversample $FGSM_OVERSAMPLE \
+  --config "$PRISM_CONFIG" \
+  --n-train $ENSEMBLE_N_TRAIN \
+  --source-split $ENSEMBLE_SOURCE_SPLIT \
   --include-cw \
-  --include-autoattack \
-  --balanced-attacks \
+  --fgsm-oversample $FGSM_OVERSAMPLE \
+  --pgd-oversample $PGD_OVERSAMPLE \
+  --square-oversample $SQUARE_OVERSAMPLE \
+  --cw-oversample $CW_OVERSAMPLE \
   --pgd-train-steps 40 \
-  --aa-train-mode apgd-ce \
-  --enable-gradient-head \
+  --square-train-max-iter 500 \
+  --cw-max-iter $CW_MAX_ITER \
+  --cw-bss $CW_BSS \
+  --gen-chunk $ENSEMBLE_GEN_CHUNK \
   --selection-objective worst_case_tpr \
-  --cw-max-iter 40 \
-  --cw-bss 5 \
+  --use-stability-features \
+  --use-logit-profile-features \
+  --use-side-quadratic-features \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/step2_retrain.log)
 STEP2_EXIT=${PIPESTATUS[0]:-$?}
@@ -305,8 +337,8 @@ if [ "$STEP2_EXIT" -ne 0 ]; then
 fi
 
 # ── Step 2b: Post-retrain verification ────────────────────────────────────────
-# Verifies CW/AA training, pixel feature space, gradient branch, and
-# worst-case TPR alpha selection.
+# Verifies fast-attack training, pixel feature space, 54-feature raw contract,
+# side-quadratic scorer expansion, and worst-case TPR alpha selection.
 echo ""
 echo "=== Step 2b: Retrain Verification ==="
 python -c "
@@ -321,37 +353,74 @@ if not isinstance(d, dict):
 ta = list(d.get('training_attacks', []))
 ng = bool(d.get('use_grad_norm', False))
 se = bool(d.get('use_softmax_entropy', False))
+sf = bool(d.get('use_stability_features', False))
+lp = bool(d.get('use_logit_profile_features', False))
+sq = bool(d.get('use_side_quadratic_features', False))
 # n_features is now saved explicitly; fall back to computing from flags for
 # any pkl created before this fix was deployed (backward-compatible).
 nf = d.get('n_features')
 if nf is None:
     base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
-    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('use_grad_norm', False))
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('stability_feature_count', 8)) * int(d.get('use_stability_features', False)) + int(d.get('use_grad_norm', False))
+model_dim = int(d.get('logistic_input_dim') or 0)
 errors = []
-if 'CW' not in ta:
-    errors.append(f'CW missing from training_attacks: {ta}')
-if 'AutoAttack' not in ta:
-    errors.append(f'AutoAttack missing from training_attacks: {ta}')
-if not ng:
-    errors.append('use_grad_norm=False — gradient branch must be ON for the recovery run')
+for required in ('FGSM', 'PGD', 'Square', 'CW'):
+    if required not in ta:
+        errors.append(f'{required} missing from training_attacks: {ta}')
+if ng:
+    errors.append('use_grad_norm=True — grad-norm is a separate 39-feature ablation, not the default artifact')
 if not se:
     errors.append('use_softmax_entropy=False — softmax-entropy must be ON for CW-L2 detection')
-if nf != 39:
-    errors.append(f'n_features={nf}, expected 39 (36 TDA + DCT + entropy + grad-norm)')
-if d.get('feature_space_version') != 'pixel-v1':
-    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-v1')
+if not sf:
+    errors.append('use_stability_features=False - stability features must be ON for PGD recovery')
+if not lp:
+    errors.append('use_logit_profile_features=False - current local winner requires logit-profile features')
+if int(d.get('stability_feature_count', 0)) != 8:
+    errors.append(f'stability_feature_count={d.get(\"stability_feature_count\")}, expected 8')
+if int(d.get('logit_profile_feature_count', 0)) != 8:
+    errors.append(f'logit_profile_feature_count={d.get(\"logit_profile_feature_count\")}, expected 8')
+if nf != 54:
+    errors.append(f'n_features={nf}, expected 54 (36 TDA + DCT + entropy + 8 logit-profile + 8 stability-v2)')
+if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad':
+    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad')
+if not sq:
+    errors.append('use_side_quadratic_features=False - current local winner requires side-quadratic expansion')
+if model_dim <= int(nf or 0):
+    errors.append(f'logistic_input_dim={model_dim}, expected expanded input > n_features={nf}')
+if d.get('attack_head_mode', 'off') not in ('off', None):
+    errors.append(f'attack_head_mode={d.get(\"attack_head_mode\")}, expected off for current local winner')
 if d.get('selection_objective') != 'worst_case_tpr':
     errors.append(f'selection_objective={d.get(\"selection_objective\")}, expected worst_case_tpr')
-if not d.get('balanced_attacks', False):
-    errors.append('balanced_attacks=False — attack-family mix must be balanced')
+if d.get('training_source_split') not in ('profile', 'test-profile'):
+    errors.append(f'training_source_split={d.get(\"training_source_split\")}, expected profile/test-profile')
+requested = d.get('requested_oversample_weights') or {}
+expected_weights = {'FGSM': 1.5, 'PGD': 1.0, 'Square': 1.0, 'CW': 0.5}
+for key, expected in expected_weights.items():
+    try:
+        actual = float(requested.get(key))
+    except Exception:
+        actual = None
+    if actual is None or abs(actual - expected) > 1e-6:
+        errors.append(f'{key} oversample={actual}, expected {expected}')
+counts = d.get('training_attack_counts') or {}
+if counts:
+    total = sum(int(v) for v in counts.values())
+    denom = sum(expected_weights.values())
+    for key, weight in expected_weights.items():
+        expected_count = round(total * weight / denom)
+        actual_count = int(counts.get(key, -999999))
+        if abs(actual_count - expected_count) > 1:
+            errors.append(f'{key} count={actual_count}, expected about {expected_count}; counts={counts}')
 if int(d.get('pgd_train_steps', -1)) != 40:
     errors.append(f'pgd_train_steps={d.get(\"pgd_train_steps\")}, expected 40')
+if int(d.get('square_train_max_iter', -1)) != 500:
+    errors.append(f'square_train_max_iter={d.get(\"square_train_max_iter\")}, expected 500')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
     for err in errors: print(f'  • {err}')
     sys.exit(1)
 print(f'[OK] Retrain verified: training_attacks={ta}')
-print(f'[OK] use_grad_norm={ng}, use_softmax_entropy={se}, n_features={nf}')
+print(f'[OK] use_grad_norm={ng}, entropy={se}, stability={sf}, logit_profile={lp}, sidequad={sq}, n_features={nf}, model_dim={model_dim}')
 "
 if [ $? -ne 0 ]; then
   echo "ERROR: Post-retrain verification failed. Fix and re-run Step 2."; exit 1
@@ -404,7 +473,7 @@ else:
 GATE_EXIT=$?
 if [ $GATE_EXIT -ne 0 ]; then
   echo "ERROR: FPR gate failed. Check logs/step4_val_fpr.log"
-  echo "FIX: Lower tier_cal_alpha_factors in configs/default.yaml, re-run steps 3-4"
+  echo "FIX: Lower tier_cal_alpha_factors in $PRISM_CONFIG, re-run steps 3-4"
   exit 1
 fi
 
@@ -684,10 +753,11 @@ for f in files:
 print(f'Training attacks across result files: {ta_sets}')
 if len(ta_sets) == 1:
     ta = list(ta_sets)[0]
-    if 'CW' in ta and 'AutoAttack' in ta:
-        print('PROVENANCE CHECK PASS: all results use same retrained ensemble')
+    required_train = {'FGSM', 'PGD', 'Square', 'CW'}
+    if required_train.issubset(set(ta)):
+        print('PROVENANCE CHECK PASS: all results use same CW-aware retrained ensemble')
     else:
-        print(f'WARNING: ensemble does not include CW+AutoAttack: {ta}')
+        print(f'WARNING: ensemble missing required training attacks {sorted(required_train)}: {ta}')
 else:
     print('PROVENANCE CHECK FAIL: different ensembles detected!')
     exit(1)
@@ -944,6 +1014,10 @@ out = {
   'ensemble_n_features':       e.get('n_features'),
   'ensemble_use_dct':          e.get('use_dct'),
   'ensemble_use_softmax_entropy': e.get('use_softmax_entropy'),
+  'ensemble_use_logit_profile_features': e.get('use_logit_profile_features'),
+  'ensemble_logit_profile_feature_count': e.get('logit_profile_feature_count'),
+  'ensemble_use_stability_features': e.get('use_stability_features'),
+  'ensemble_stability_feature_count': e.get('stability_feature_count'),
   'ensemble_use_grad_norm':    e.get('use_grad_norm'),
   'ensemble_feature_space_version': e.get('feature_space_version'),
   'ensemble_selection_objective': e.get('selection_objective'),
@@ -965,7 +1039,8 @@ out = {
   'eps_linf':                  8.0/255,
   'cw_eval_params':            {'engine': '$CW_ENGINE', 'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'chunk': $CW_CHUNK, 'confidence': 0.0},
   'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1, 'eot_verify_samples': 20, 'through_scorer': True, 'checkpoint_jsonl': True},
-  'fgsm_oversample':           $FGSM_OVERSAMPLE,
+  'fgsm_oversample':           e.get('fgsm_oversample'),
+  'requested_oversample_weights': e.get('requested_oversample_weights'),
   'baselines_methods':         ['lid', 'mahalanobis', 'odin', 'energy'],
   'campaign_scenarios':        ['clean_only', 'sustained_rho050', 'sustained_rho080', 'sustained_rho100', 'burst', 'low_rate'],
   'recovery_strategies':       ['reject', 'passthrough', 'tamsh'],

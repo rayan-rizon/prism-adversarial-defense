@@ -2,8 +2,10 @@
 # =============================================================================
 # PRISM — Local Smoke Test (CPU, n≈300-500)
 # =============================================================================
-# Purpose: Validate that the FGSM/Square TPR fix (fgsm-oversample=2.5, no
-#          grad-norm, 38 features incl. softmax-entropy) works before spending
+# Purpose: Validate that the local fast-attack detector contract (balanced
+#          FGSM/PGD/Square, no grad-norm, 54 raw features with entropy,
+#          logit-profile, stability-v2, plus side-quadratic scorer expansion)
+#          works before spending
 #          GPU hours on Vast.ai.
 #
 # PARITY TABLE — every param must match run_vastai_full.sh unless marked LOCAL:
@@ -11,14 +13,14 @@
 # │ Parameter                     │ Vast.ai       │ Local (here) │ Match │
 # ├───────────────────────────────┼──────────────┼──────────────┼───────┤
 # │ Python binary                 │ python        │ python3      │ LOCAL │
-# │ fgsm-oversample               │ 2.5           │ 2.5          │  ✅   │
+# │ attack mix                    │ balanced      │ balanced     │  ✅   │
 # │ use-grad-norm                 │ OFF           │ OFF          │  ✅   │
-# │ include-cw (train)            │ YES           │ NO  (slow)   │ LOCAL │
-# │ include-autoattack (train)    │ YES           │ NO  (missing)│ LOCAL │
-# │ n-train                       │ 4000          │ 500          │ LOCAL │
+# │ include-cw (train)            │ NO            │ NO           │  ✅   │
+# │ include-autoattack (train)    │ NO            │ NO           │  ✅   │
+# │ n-train                       │ 2400          │ 500          │ LOCAL │
 # │ cw-max-iter (train)           │ 40            │ —            │ LOCAL │
 # │ cw-bss (train)                │ 5             │ —            │ LOCAL │
-# │ TIER_CAL_ALPHA_FACTORS        │ L1=0.7,L2=0.7,L3=0.5 (config.py) │ SAME │ ✅ │
+# │ TIER_CAL_ALPHA_FACTORS        │ L1=0.75,L2=0.7,L3=0.5 (config.py) │ SAME │ ✅ │
 # │ CONFORMAL_ALPHAS              │ L1=0.1,L2=0.03,L3=0.005 (config.py) │ SAME │ ✅ │
 # │ EPS_LINF                      │ 8/255         │ 8/255        │  ✅   │
 # │ EVAL_IDX split                │ 8000-9999     │ 8000-9999    │  ✅   │
@@ -28,7 +30,7 @@
 # │ N_SUBSAMPLE                   │ 150 (config.py)│ SAME        │  ✅   │
 # │ n-test (eval)                 │ 1000          │ 300          │ LOCAL │
 # │ seeds (eval)                  │ 5 (42..999)   │ 1 (42 only)  │ LOCAL │
-# │ attacks (eval)                │ FGSM+PGD+Square+AA │ FGSM+Square │ LOCAL │
+# │ attacks (eval)                │ FGSM+PGD+Square+AA │ FGSM+PGD+Square │ LOCAL │
 # │ square-max-iter               │ 5000          │ 500 (fast)   │ LOCAL │
 # │ checkpoint-interval           │ 100           │ 50           │ LOCAL │
 # │ gen-chunk                     │ 128           │ 32  (CPU)    │ LOCAL │
@@ -39,7 +41,8 @@
 #
 # LOCAL deviations are all compute-budget adjustments — none change the
 # underlying algorithm, model architecture, or calibration logic.
-# If this test passes (FGSM TPR ≥ 80%, Square TPR ≥ 83%), Vast.ai run is safe.
+# If this test passes at the publishable FGSM/PGD/Square gates, Vast.ai CW-L2
+# and AutoAttack runs are worth launching.
 #
 # Usage: bash run_smoke_test.sh [n_test]
 #   n_test: optional override, default 300. Use 500 for higher confidence.
@@ -195,16 +198,25 @@ echo ""
 # ── Step 2: Retrain ensemble ──────────────────────────────────────────────────
 echo "=== Step 2: Retrain Ensemble [n_train=500, FGSM+PGD+Square only] ==="
 echo "  LOCAL deviations (compute only — algorithm identical):"
-echo "    n-train:          500  (Vast.ai: 4000)"
+echo "    n-train:          500  (Vast.ai: 2400)"
 echo "    include-cw:       OFF  (slow on CPU; AUC impact ~0.003)"
 echo "    include-autoattack: OFF (not installed)"
-echo "    fgsm-oversample:  2.5  ← SAME as Vast.ai ✅"
+echo "    attack mix:       balanced FGSM/PGD/Square  ← SAME local fast-attack contract"
 echo "    use-grad-norm:    OFF  ← SAME as Vast.ai (REVERTED) ✅"
+echo "    logit-profile:    ON   ← current local FGSM/Square lower-tail fix"
+echo "    side-quadratic:   ON   ← current local lower-tail candidate"
 echo ""
-# 500 samples with fgsm-os=2.5 → FGSM≈278, PGD≈111, Square≈111
+# 500 samples with --balanced-attacks -> approximately equal FGSM/PGD/Square shares.
 python3 scripts/train_ensemble_scorer.py \
   --n-train 500 \
-  --fgsm-oversample 2.5 \
+  --source-split profile \
+  --balanced-attacks \
+  --pgd-train-steps 40 \
+  --square-train-max-iter 500 \
+  --selection-objective worst_case_tpr \
+  --use-stability-features \
+  --use-logit-profile-features \
+  --use-side-quadratic-features \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/smoke_step2_retrain.log)
 echo "Step 2: DONE"
@@ -223,7 +235,12 @@ if not isinstance(e, dict):
     sys.exit(1)
 ta = list(e.get('training_attacks', []))
 ng = bool(e.get('use_grad_norm', False))
+se = bool(e.get('use_softmax_entropy', False))
+sf = bool(e.get('use_stability_features', False))
+lp = bool(e.get('use_logit_profile_features', False))
+sq = bool(e.get('use_side_quadratic_features', False))
 nf = int(e.get('n_features', 0)) if 'n_features' in e else None
+model_dim = int(e.get('logistic_input_dim') or 0)
 errors = []
 # Smoke-test-specific: CW/AA not included (CPU budget), but FGSM must be present
 if 'FGSM' not in ta:
@@ -231,14 +248,36 @@ if 'FGSM' not in ta:
 # Grad-norm must be OFF (same as Vast.ai post-regression-fix)
 if ng:
     errors.append('use_grad_norm=True — must be OFF (see regression_analysis_20260422.md)')
-if nf is not None and nf != 38:
-    errors.append(f'n_features={nf}, expected 38')
+if not se:
+    errors.append('use_softmax_entropy=False — must be ON')
+if not sf:
+    errors.append('use_stability_features=False - must be ON for canonical local detector')
+if not lp:
+    errors.append('use_logit_profile_features=False - current local winner requires logit-profile features')
+if nf is not None and nf != 54:
+    errors.append(f'n_features={nf}, expected 54')
+if int(e.get('stability_feature_count', 0)) != 8:
+    errors.append(f'stability_feature_count={e.get(\"stability_feature_count\")}, expected 8')
+if int(e.get('logit_profile_feature_count', 0)) != 8:
+    errors.append(f'logit_profile_feature_count={e.get(\"logit_profile_feature_count\")}, expected 8')
+if e.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad':
+    errors.append(f'feature_space_version={e.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad')
+if not sq:
+    errors.append('use_side_quadratic_features=False - current local winner requires side-quadratic expansion')
+if model_dim <= (nf or 0):
+    errors.append(f'logistic_input_dim={model_dim}, expected expanded input > n_features={nf}')
+if e.get('attack_head_mode', 'off') not in ('off', None):
+    errors.append(f'attack_head_mode={e.get(\"attack_head_mode\")}, expected off for current local winner')
+if int(e.get('pgd_train_steps', -1)) != 40:
+    errors.append(f'pgd_train_steps={e.get(\"pgd_train_steps\")}, expected 40')
+if int(e.get('square_train_max_iter', -1)) != 500:
+    errors.append(f'square_train_max_iter={e.get(\"square_train_max_iter\")}, expected 500')
 if errors:
     print('RETRAIN VERIFICATION FAIL:')
     for err in errors: print(f'  • {err}')
     sys.exit(1)
 print(f'[OK] training_attacks={ta}')
-print(f'[OK] use_grad_norm={ng}, n_features={nf}')
+print(f'[OK] use_grad_norm={ng}, entropy={se}, stability={sf}, logit_profile={lp}, sidequad={sq}, n_features={nf}, model_dim={model_dim}')
 "
 if [ $? -ne 0 ]; then
   echo "ERROR: Step 2b verification failed."; exit 2
@@ -293,11 +332,11 @@ print(f'  reference_profiles   SHA256: {h(\"models/reference_profiles.pkl\")}')
 echo ""
 
 # ── Step 5: Evaluation — FGSM + Square only (no AutoAttack locally) ───────────
-echo "=== Step 5: Eval [n=$N_TEST, seed=$SEED, attacks: FGSM + Square] ==="
+echo "=== Step 5: Eval [n=$N_TEST, seed=$SEED, attacks: FGSM + PGD + Square] ==="
 echo "  LOCAL deviations:"
 echo "    n-test:           $N_TEST  (Vast.ai: 1000)"
 echo "    seeds:            1  (seed 42 only; Vast.ai: 5 seeds)"
-echo "    attacks:          FGSM Square  (Vast.ai: +PGD +AutoAttack)"
+echo "    attacks:          FGSM PGD Square  (Vast.ai: +CW +AutoAttack)"
 echo "    square-max-iter:  500  (Vast.ai: 5000 — faster, less thorough)"
 echo "    gen-chunk:        32  (Vast.ai: 128 — smaller for CPU memory)"
 echo "    checkpoint-interval: 50  (Vast.ai: 100)"
@@ -305,7 +344,7 @@ echo "  Algorithm, calibrator, model: IDENTICAL to Vast.ai ✅"
 echo ""
 python3 experiments/evaluation/run_evaluation_full.py \
   --n-test "$N_TEST" \
-  --attacks FGSM Square \
+  --attacks FGSM PGD Square \
   --seed "$SEED" \
   --square-max-iter 500 \
   --gen-chunk 32 \
@@ -318,9 +357,10 @@ echo ""
 echo "=== Step 6: Smoke Gate Check ==="
 echo ""
 echo "  Targets (same as Vast.ai publishable thresholds):"
-echo "    FGSM TPR ≥ 80%  (smoke gate; Vast.ai gate: 85%)"
-echo "    Square TPR ≥ 83%  (smoke gate; Vast.ai gate: 85%)"
-echo "  Note: n=$N_TEST is smaller than n=1000 → wider CIs; use 80/83% not 85/85%"
+echo "    FGSM   TPR >= 85%"
+echo "    PGD    TPR >= 90%"
+echo "    Square TPR >= 85%"
+echo "  Note: n=$N_TEST is smaller than n=1000, so this gate is diagnostic; promotion still requires the multi-seed gate."
 echo ""
 python3 -c "
 import json, sys
@@ -328,13 +368,17 @@ d = json.load(open('$SMOKE_OUTPUT_DIR/smoke_results_n${N_TEST}_seed${SEED}.json'
 
 # Single-seed result (no --multi-seed flag)
 fgsm = d.get('FGSM', {})
+pgd  = d.get('PGD', {})
 sqr  = d.get('Square', {})
 
 fgsm_tpr = fgsm.get('TPR', 0)
+pgd_tpr  = pgd.get('TPR', 0)
 sqr_tpr  = sqr.get('TPR', 0)
 fgsm_ci  = fgsm.get('TPR_CI_95', [0, 0])
+pgd_ci   = pgd.get('TPR_CI_95', [0, 0])
 sqr_ci   = sqr.get('TPR_CI_95', [0, 0])
 fgsm_fn  = fgsm.get('FN', '?')
+pgd_fn   = pgd.get('FN', '?')
 sqr_fn   = sqr.get('FN', '?')
 
 # FPR for clean-safety sanity
@@ -342,16 +386,18 @@ fgsm_fpr = fgsm.get('FPR', 0)
 fgsm_l1  = fgsm.get('per_tier_fpr', {}).get('FPR_L1_plus', 0)
 
 print(f'  FGSM  TPR={fgsm_tpr:.4f}  CI=[{fgsm_ci[0]:.3f}, {fgsm_ci[1]:.3f}]  FN={fgsm_fn}')
+print(f'  PGD   TPR={pgd_tpr:.4f}  CI=[{pgd_ci[0]:.3f}, {pgd_ci[1]:.3f}]  FN={pgd_fn}')
 print(f'  Square TPR={sqr_tpr:.4f}  CI=[{sqr_ci[0]:.3f}, {sqr_ci[1]:.3f}]  FN={sqr_fn}')
 print(f'  FPR L1+={fgsm_l1:.4f}  (target ≤ 0.10)')
 print()
 
 failures = []
-# Smoke thresholds are looser than publication: n=300 has wide CIs
-if fgsm_tpr < 0.80:
-    failures.append(f'FGSM TPR={fgsm_tpr:.4f} < 0.80 smoke threshold')
-if sqr_tpr < 0.83:
-    failures.append(f'Square TPR={sqr_tpr:.4f} < 0.83 smoke threshold')
+if fgsm_tpr < 0.85:
+    failures.append(f'FGSM TPR={fgsm_tpr:.4f} < 0.85 target')
+if pgd_tpr < 0.90:
+    failures.append(f'PGD TPR={pgd_tpr:.4f} < 0.90 target')
+if sqr_tpr < 0.85:
+    failures.append(f'Square TPR={sqr_tpr:.4f} < 0.85 target')
 if fgsm_l1 > 0.10:
     failures.append(f'L1+ FPR={fgsm_l1:.4f} > 0.10 target')
 
@@ -363,8 +409,9 @@ if failures:
     sys.exit(1)
 else:
     print('✅ SMOKE TEST PASS:')
-    print(f'     FGSM TPR={fgsm_tpr:.4f} ≥ 0.80 ✅')
-    print(f'     Square TPR={sqr_tpr:.4f} ≥ 0.83 ✅')
+    print(f'     FGSM TPR={fgsm_tpr:.4f} ≥ 0.85 ✅')
+    print(f'     PGD TPR={pgd_tpr:.4f} ≥ 0.90 ✅')
+    print(f'     Square TPR={sqr_tpr:.4f} ≥ 0.85 ✅')
     print()
     print('  Proceed to Vast.ai: bash run_vastai_full.sh')
 "

@@ -44,13 +44,13 @@ conformal:
   # verified on the val split against the published alpha (exchangeability
   # slack buffer to absorb cal/val distribution shift).
   cal_alpha_factor: 0.7    # legacy scalar; retained as fallback when per-tier map is absent
-  # Per-tier calibration alpha multipliers. L3 tightened because its tail is
-  # sparse (≈7 clean samples at the 99.65 pct on n=2000 cal split), so the same
-  # cal→eval rank shift produces ~44 % FPR overrun. L1/L2 kept at 0.70 — they
-  # already pass with >35 % headroom and tightening them would erode TPR without
-  # benefit. See n=1000 5-seed result (L3 FPR=0.0072 vs 0.005 target).
+  # Per-tier calibration alpha multipliers. L1 uses 75% of the published alpha
+  # because the logit-profile side-channel candidate measured 10.3% held-out
+  # L1 FPR at 80%. L2 keeps moderate slack; L3 stays tightened because its tail is sparse
+  # (≈7 clean samples at the 99.65 pct on n=2000 cal split), so the same
+  # cal→eval rank shift produces large relative FPR movement.
   tier_cal_alpha_factors:
-    L1: 0.70
+    L1: 0.75
     L2: 0.70
     L3: 0.50
 

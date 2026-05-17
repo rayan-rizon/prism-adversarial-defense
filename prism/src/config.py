@@ -71,7 +71,7 @@ def _get_defaults() -> dict:
             'conformal': {
                 'alphas': {'L1': 0.10, 'L2': 0.03, 'L3': 0.005},
                 'cal_alpha_factor': 0.7,
-                'tier_cal_alpha_factors': {'L1': 0.70, 'L2': 0.70, 'L3': 0.50},
+                'tier_cal_alpha_factors': {'L1': 0.90, 'L2': 0.70, 'L3': 0.50},
             },
             'data': {
                 'mean': [0.4914, 0.4822, 0.4465],
@@ -128,11 +128,12 @@ CONFORMAL_ALPHAS: Dict[str, float] = _CFG['conformal']['alphas']
 # (results_n500_planA.json: L3 FPR=0.008 > target 0.005).
 CAL_ALPHA_FACTOR: float = _CFG.get('conformal', {}).get('cal_alpha_factor', 0.7)
 
-# Per-tier calibration alpha multipliers. L3 tightened to 0.50 to absorb the
-# sparse-tail cal→eval shift that pushed the n=1000 5-seed L3 FPR to 0.0072
-# (vs 0.005 target). L1/L2 left at the legacy 0.70 — they pass with ~35 %
-# headroom and tightening would erode TPR without benefit. If the per-tier
-# key is absent from config, fall back to the scalar for backward compat.
+# Per-tier calibration alpha multipliers. L1 is set to the highest local value
+# that stayed below the published validation FPR gate after profile-split
+# training; L2 keeps moderate slack and L3 remains conservative because its
+# sparse tail is sensitive to small calibration-to-validation rank shifts. If
+# the per-tier key is absent from config, fall back to the scalar for backward
+# compatibility.
 TIER_CAL_ALPHA_FACTORS: Dict[str, float] = _CFG.get('conformal', {}).get(
     'tier_cal_alpha_factors',
     {'L1': CAL_ALPHA_FACTOR, 'L2': CAL_ALPHA_FACTOR, 'L3': CAL_ALPHA_FACTOR},

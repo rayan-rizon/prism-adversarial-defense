@@ -1,0 +1,85 @@
+# PRISM CW-aware FGSM-rebalanced candidate with L1 recalibration.
+# Reuses the cw_candidate_fgsm scorer and calibrates a separate conformal
+# threshold set with more L1 slack while still verifying against published FPR.
+
+model:
+  name: cifar_resnet18
+  backbone_checkpoint: models/cifar_resnet18.pt
+  num_classes: 10
+  layer_names:
+    - layer2
+    - layer3
+    - layer4
+  layer_weights:
+    layer2: 0.30
+    layer3: 0.30
+    layer4: 0.40
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas:
+    L1: 0.10
+    L2: 0.03
+    L3: 0.005
+  calibration_size: 5000
+  validation_size: 5000
+  cal_alpha_factor: 0.7
+  tier_cal_alpha_factors:
+    L1: 0.85
+    L2: 0.70
+    L3: 0.50
+
+splits:
+  profile_idx: [0, 5000]
+  cal_idx:     [5000, 7000]
+  val_idx:     [7000, 8000]
+  eval_idx:    [8000, 10000]
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 10
+  alert_run_prob: 0.60
+  warmup_steps: 35
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar10
+  image_size: 32
+  mean: [0.4914, 0.4822, 0.4465]
+  std:  [0.2470, 0.2435, 0.2616]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 10000
+
+evaluation:
+  n_test_images: 1000
+  attacks:
+    - FGSM
+    - PGD
+    - CW
+    - Square
+    - HopSkipJump
+
+paths:
+  reference_profiles: models/reference_profiles.pkl
+  calibrator: models/cw_candidate_fgsm_l1/calibrator.pkl
+  ensemble_scorer: models/cw_candidate_fgsm/ensemble_scorer.pkl
+  experts: models/experts.pkl
+  clean_scores: experiments/calibration/cw_candidate_fgsm_l1_clean_scores.npy

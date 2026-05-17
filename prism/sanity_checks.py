@@ -44,6 +44,13 @@ def sibling(path: str, name: str) -> str:
     return os.path.join(os.path.dirname(path) or '.', name)
 
 
+def _float_close(value, expected: float, tol: float = 1e-6) -> bool:
+    try:
+        return abs(float(value) - expected) <= tol
+    except Exception:
+        return False
+
+
 print(f"\n=== PRISM sanity checks: {DATASET.upper()} ===")
 print(f"Backbone classes={BACKBONE_NUM_CLASSES}, input={BACKBONE_INPUT_SIZE}x{BACKBONE_INPUT_SIZE}")
 
@@ -93,18 +100,132 @@ for label, path, expect_tda in [
     check(f"{label} stored as dict", isinstance(data, dict), f"type={type(data).__name__}")
     if isinstance(data, dict):
         check(f"{label} softmax entropy enabled", bool(data.get('use_softmax_entropy', False)))
-        recovery_mode = data.get('selection_objective') == 'worst_case_tpr'
-        if recovery_mode and expect_tda:
-            check(f"{label} grad norm enabled", bool(data.get('use_grad_norm', False)))
+        check(f"{label} grad norm disabled", not bool(data.get('use_grad_norm', False)))
+        feature_space = data.get('feature_space_version')
+        expected_feature_spaces = (
+            {
+                'pixel-stability-v2',
+                'pixel-stability-v2+sidequad',
+                'pixel-stability-v2+logitprofile+sidequad',
+            }
+            if expect_tda else {
+                'pixel-v1',
+                'pixel-stability-v2+sidequad',
+                'pixel-stability-v2+logitprofile+sidequad',
+            }
+        )
+        check(
+            f"{label} feature_space_version in {sorted(expected_feature_spaces)}",
+            feature_space in expected_feature_spaces,
+            f"feature_space_version={feature_space}",
+        )
+        if expect_tda:
             check(
-                f"{label} feature_space_version=pixel-v1",
-                data.get('feature_space_version') == 'pixel-v1',
+                f"{label} training source profile split",
+                data.get('training_source_split') in ('profile', 'test-profile'),
+                f"training_source_split={data.get('training_source_split')}",
             )
-        else:
-            check(f"{label} grad norm disabled", not bool(data.get('use_grad_norm', False)))
+            check(
+                f"{label} PGD training steps == 40",
+                int(data.get('pgd_train_steps') or -1) == 40,
+                f"pgd_train_steps={data.get('pgd_train_steps')}",
+            )
+            check(
+                f"{label} Square training max_iter == 500",
+                int(data.get('square_train_max_iter') or -1) == 500,
+                f"square_train_max_iter={data.get('square_train_max_iter')}",
+            )
+            counts = data.get('training_attack_counts') or {}
+            attacks = set(data.get('training_attacks') or counts.keys())
+            cw_aware = 'CW' in attacks
+            if cw_aware:
+                required_attacks = {'FGSM', 'PGD', 'Square', 'CW'}
+                check(
+                    f"{label} CW-aware attack mix",
+                    required_attacks.issubset(attacks),
+                    f"training_attacks={sorted(attacks)}",
+                )
+                requested = data.get('requested_oversample_weights') or {}
+                expected_weights = {'FGSM': 1.5, 'PGD': 1.0, 'Square': 1.0, 'CW': 0.5}
+                check(
+                    f"{label} approved CW-aware weights",
+                    all(_float_close(requested.get(k), v) for k, v in expected_weights.items()),
+                    f"requested_oversample_weights={requested}",
+                )
+                if counts:
+                    total = sum(int(v) for v in counts.values())
+                    denom = sum(expected_weights.values())
+                    weighted_counts_ok = all(
+                        abs(int(counts.get(k, -999999)) - round(total * expected_weights[k] / denom)) <= 1
+                        for k in expected_weights
+                    )
+                    check(
+                        f"{label} CW-aware weighted attack counts",
+                        weighted_counts_ok,
+                        f"training_attack_counts={counts}",
+                    )
+            else:
+                check(f"{label} balanced attack flag", bool(data.get('balanced_attacks', False)))
+                if counts:
+                    vals = [int(v) for v in counts.values()]
+                    check(
+                        f"{label} balanced attack counts",
+                        max(vals) - min(vals) <= 1,
+                        f"training_attack_counts={counts}",
+                    )
+            check(f"{label} stability features enabled", bool(data.get('use_stability_features', False)))
+            check(
+                f"{label} stability_feature_count == 8",
+                int(data.get('stability_feature_count') or 0) == 8,
+                f"stability_feature_count={data.get('stability_feature_count')}",
+            )
+            use_sidequad = bool(data.get('use_side_quadratic_features', False))
+            use_logit_profile = bool(data.get('use_logit_profile_features', False))
+            expected_n_features = 54 if use_logit_profile else 46
+            if feature_space in {
+                'pixel-stability-v2+sidequad',
+                'pixel-stability-v2+logitprofile+sidequad',
+            }:
+                check(f"{label} side-quadratic flag enabled", use_sidequad)
+                if use_logit_profile:
+                    check(
+                        f"{label} logit-profile count == 8",
+                        int(data.get('logit_profile_feature_count') or 0) == 8,
+                        f"logit_profile_feature_count={data.get('logit_profile_feature_count')}",
+                    )
+                check(
+                    f"{label} side-quadratic raw contract preserved",
+                    int(data.get('n_features') or 0) == expected_n_features,
+                    f"n_features={data.get('n_features')}, expected={expected_n_features}",
+                )
+                check(
+                    f"{label} side-quadratic model input expanded",
+                    int(data.get('logistic_input_dim') or 0) > int(data.get('n_features') or 0),
+                    (
+                        f"logistic_input_dim={data.get('logistic_input_dim')}, "
+                        f"n_features={data.get('n_features')}"
+                    ),
+                )
+                check(
+                    f"{label} side-quadratic starts at side-channel block",
+                    int(data.get('quadratic_feature_start') or -1) == 36,
+                    f"quadratic_feature_start={data.get('quadratic_feature_start')}",
+                )
+                check(
+                    f"{label} attack heads disabled for current winner",
+                    data.get('attack_head_mode', 'off') in ('off', None),
+                    f"attack_head_mode={data.get('attack_head_mode')}",
+                )
+            else:
+                check(f"{label} side-quadratic flag disabled", not use_sidequad)
         check(f"{label} use_tda={expect_tda}", bool(data.get('use_tda', True)) is expect_tda)
         if expect_tda:
-            check(f"{label} n_features >= 38", int(data.get('n_features') or 0) >= 38)
+            expected_n = 54 if bool(data.get('use_logit_profile_features', False)) else 46
+            check(
+                f"{label} n_features == {expected_n}",
+                int(data.get('n_features') or 0) == expected_n,
+                f"n_features={data.get('n_features')}",
+            )
 
 
 print("\n=== Check 4: experts ===")

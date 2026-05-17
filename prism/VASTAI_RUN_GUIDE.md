@@ -28,6 +28,15 @@
 > each multi-seed run — explicit ✅/❌ per metric, so you know immediately
 > whether to continue or stop the instance.
 
+> **Current Vast.ai-ready detector (2026-05-17).** `run_vastai_full.sh`
+> now defaults to `configs/vastai_cw_full.yaml` and trains the promoted
+> CW-aware weighted detector: `n_train=2500`, profile split, FGSM `1.5x`,
+> PGD `1.0x`, Square `1.0x`, CW-L2 `0.5x`, CW train/eval `40x5`,
+> logit-profile + stability-v2 + side-quadratic features, grad-norm off,
+> and conformal L1 factor `0.85`. Local evidence is archived in
+> `experiments/evaluation/cw_candidate_fgsm_l1/research_report_20260517.md`;
+> final publishable evidence still requires the full multi-seed Vast.ai run.
+
 ---
 
 ## Target Metrics
@@ -58,7 +67,10 @@ All TPR/FPR figures reported with Wilson 95 % CIs pooled across 5 seeds.
 >   ✅ L3           FPR=0.0030  target≤0.005
 >   ✅ Latency      mean=52.1ms  target<100ms
 > ─────────────────────────────────────────────────────────────────
-> ✅ GATE RESULT: ALL TARGETS MET — results are publishable.
+> Gate result must be computed from fresh artifacts. The current local
+> fast-attack candidate is the 54-feature `logitprofile+sidequad` scorer; it
+> passed the local n=300 FGSM/PGD/Square diagnostic on 2026-05-15. CW-L2 and
+> AutoAttack remain deferred to Vast.ai and must be reported separately.
 > ```
 
 ---
@@ -77,7 +89,7 @@ PHASE 0 — TRAINING (all three launchers start simultaneously after Step 1)
 build_profile_testset.py         → reference_profiles.pkl  [Step 1, ~10 min]
         │
         ├──[foreground]──► train_ensemble_scorer.py         [Step 2,  ~30 min]
-        │                    (n=4000, CW+AA, fgsm-os=2.5)
+        │                    (n=2400, profile split, balanced FGSM/PGD/Square, logitprofile + stability-v2 + sidequad)
         │                    Step 2b: post-retrain verify gate
         ├──[background]──► train_ensemble_scorer.py --no-tda-features  [Step 2c, ~30 min]
         │                    → models/ensemble_no_tda.pkl
@@ -272,10 +284,10 @@ bash run_local_full.sh 100 --skip-train
 
 | Parameter | Local | Vast.ai |
 |-----------|-------|---------|
-| n-train (ensemble) | 500 | 4000 |
+| n-train (ensemble) | 500 | 2400 |
 | n-test (eval) | 100 | 1000 |
 | Seeds | 1 (seed=42) | 5 |
-| Attacks | FGSM + PGD + Square | + CW + AutoAttack |
+| Attacks | FGSM + PGD + Square | same fast gate first; CW + AutoAttack only after local promotion |
 | Campaign scenarios | 2 (clean + sustained_ρ=1.0) | 6 |
 | Ablation n | 50 / attack | 500 / attack |
 
@@ -302,16 +314,19 @@ mkdir -p logs models experiments/calibration experiments/evaluation
 python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 ```
 
-### 4.2 Retrain ensemble (CW + AutoAttack in training mix)
+### 4.2 Retrain ensemble (fast-attack gate; CW/AutoAttack deferred)
 
 ```bash
 python scripts/train_ensemble_scorer.py \
-  --n-train 4000 \
-  --fgsm-oversample 2.5 \
-  --include-cw \
-  --include-autoattack \
-  --cw-max-iter 30 \
-  --cw-bss 3 \
+  --n-train 2400 \
+  --source-split profile \
+  --balanced-attacks \
+  --pgd-train-steps 40 \
+  --square-train-max-iter 500 \
+  --selection-objective worst_case_tpr \
+  --use-stability-features \
+  --use-logit-profile-features \
+  --use-side-quadratic-features \
   --output models/ensemble_scorer.pkl \
   2>&1 | tee logs/retrain.log
 ```
@@ -325,32 +340,56 @@ d = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
 assert isinstance(d, dict), f'wrong pkl format: {type(d).__name__}'
 ta = list(d.get('training_attacks', []))
 ng = bool(d.get('use_grad_norm', False))
+se = bool(d.get('use_softmax_entropy', False))
+sf = bool(d.get('use_stability_features', False))
+lp = bool(d.get('use_logit_profile_features', False))
 # n_features now saved directly; fallback computes from flags for old pkls
 nf = d.get('n_features')
 if nf is None:
     base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
-    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('stability_feature_count', 8)) * int(d.get('use_stability_features', False)) + int(d.get('use_grad_norm', False))
+sq = bool(d.get('use_side_quadratic_features', False))
+model_dim = int(d.get('logistic_input_dim') or 0)
 print('training_attacks:', ta)
 print('use_grad_norm:', ng)
+print('use_softmax_entropy:', se)
+print('use_stability_features:', sf)
+print('use_logit_profile_features:', lp)
+print('use_side_quadratic_features:', sq)
 print('n_features:', nf)
-assert 'CW' in ta, 'ERROR: CW not in training mix!'
-assert 'AutoAttack' in ta, 'ERROR: AutoAttack not in training mix!'
+for required in ('FGSM', 'PGD', 'Square'):
+    assert required in ta, f'ERROR: {required} not in training mix!'
 assert not ng, 'ERROR: grad-norm must be OFF (regression risk)'
-assert nf == 37, f'ERROR: expected 37 features, got {nf}'
+assert se, 'ERROR: softmax entropy must be ON'
+assert sf, 'ERROR: stability features must be ON'
+assert lp, 'ERROR: logit-profile features must be ON'
+assert sq, 'ERROR: side-quadratic expansion must be ON for the current local winner'
+assert nf == 54, f'ERROR: expected 54 raw features, got {nf}'
+assert model_dim > nf, f'ERROR: side-quadratic model_dim={model_dim} must exceed raw n_features={nf}'
+assert d.get('feature_space_version') == 'pixel-stability-v2+logitprofile+sidequad', 'ERROR: wrong feature_space_version'
+assert d.get('training_source_split') in ('profile', 'test-profile'), 'ERROR: scorer must train on profile split'
+assert d.get('selection_objective') == 'worst_case_tpr', 'ERROR: scorer must select by worst-case TPR'
+assert int(d.get('pgd_train_steps', -1)) == 40, 'ERROR: pgd_train_steps must be 40'
+assert int(d.get('square_train_max_iter', -1)) == 500, 'ERROR: square_train_max_iter must be 500'
+assert d.get('attack_head_mode', 'off') in ('off', None), 'ERROR: attack heads must be off for current local winner'
 print('RETRAIN CHECK: PASS')
 "
 ```
 
 Expected output:
 ```
-training_attacks: ['FGSM', 'PGD', 'Square', 'CW', 'AutoAttack']
+training_attacks: ['FGSM', 'PGD', 'Square']
 use_grad_norm: False
-n_features: 37
+use_softmax_entropy: True
+use_stability_features: True
+use_logit_profile_features: True
+use_side_quadratic_features: True
+n_features: 54
 RETRAIN CHECK: PASS
 ```
 
 > [!IMPORTANT]
-> **FGSM Oversample:** **2.5** is the locked research-plan value (P0.3). Earlier commits tested 1.8/2.0 and dropped FGSM TPR from 0.87 to 0.806 — this is a regression, not an acceptable operating point. `sanity_checks.py` Check 6 enforces `fgsm_oversample >= 2.5`.
+> **Attack mix:** The canonical detector path uses balanced attack-family shares on the profile split. Non-default FGSM/PGD/Square oversampling is an explicit ablation and must not be silently mixed into the main artifact.
 > **Grad-Norm:** This feature was tested and **REVERTED** (April 22). It inflated calibration thresholds by 20%, dropping FGSM TPR to 63%. Do not enable it.
 
 ### 4.3 Calibrate + gate
@@ -462,18 +501,40 @@ d = pickle.load(open('models/ensemble_scorer.pkl', 'rb'))
 assert isinstance(d, dict), f'wrong pkl format: {type(d).__name__}'
 ta = list(d.get('training_attacks', []))
 ng = bool(d.get('use_grad_norm', False))
+se = bool(d.get('use_softmax_entropy', False))
+sf = bool(d.get('use_stability_features', False))
+lp = bool(d.get('use_logit_profile_features', False))
 nf = d.get('n_features')
 if nf is None:
     base = len(d.get('layer_names', [])) * len(d.get('dims', [])) * 6
-    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_grad_norm', False))
+    nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('stability_feature_count', 8)) * int(d.get('use_stability_features', False)) + int(d.get('use_grad_norm', False))
+sq = bool(d.get('use_side_quadratic_features', False))
+model_dim = int(d.get('logistic_input_dim') or 0)
 errors = []
-if 'CW' not in ta:          errors.append(f'CW missing: {ta}')
-if 'AutoAttack' not in ta:  errors.append(f'AutoAttack missing: {ta}')
+for required in ('FGSM', 'PGD', 'Square'):
+    if required not in ta: errors.append(f'{required} missing: {ta}')
 if ng:                       errors.append('use_grad_norm=True — must be OFF')
-if nf != 37:                 errors.append(f'n_features={nf}, expected 37')
+if not se:                   errors.append('use_softmax_entropy=False — must be ON')
+if not sf:                   errors.append('use_stability_features=False - must be ON')
+if not lp:                   errors.append('use_logit_profile_features=False - must be ON')
+if not sq:                   errors.append('use_side_quadratic_features=False - must be ON')
+if nf != 54:                 errors.append(f'n_features={nf}, expected 54')
+if model_dim <= int(nf or 0): errors.append(f'logistic_input_dim={model_dim}, expected > n_features={nf}')
+if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad':
+    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad')
+if d.get('training_source_split') not in ('profile', 'test-profile'):
+    errors.append(f'training_source_split={d.get(\"training_source_split\")}, expected profile/test-profile')
+if d.get('selection_objective') != 'worst_case_tpr':
+    errors.append(f'selection_objective={d.get(\"selection_objective\")}, expected worst_case_tpr')
+if int(d.get('pgd_train_steps', -1)) != 40:
+    errors.append(f'pgd_train_steps={d.get(\"pgd_train_steps\")}, expected 40')
+if int(d.get('square_train_max_iter', -1)) != 500:
+    errors.append(f'square_train_max_iter={d.get(\"square_train_max_iter\")}, expected 500')
+if d.get('attack_head_mode', 'off') not in ('off', None):
+    errors.append(f'attack_head_mode={d.get(\"attack_head_mode\")}, expected off')
 if errors:
     print('FAIL:', errors); sys.exit(1)
-print(f'PASS  training_attacks={ta}  n_features={nf}')
+print(f'PASS  training_attacks={ta}  n_features={nf}  model_dim={model_dim}')
 "
 
 # 3. If PASS → continue from Step 3 directly
@@ -487,9 +548,11 @@ and re-run Step 2 (~40 min):
 ```bash
 rm models/ensemble_scorer.pkl
 python scripts/train_ensemble_scorer.py \
-  --n-train 4000 --fgsm-oversample 2.5 \
-  --include-cw --include-autoattack \
-  --cw-max-iter 30 --cw-bss 3 \
+  --n-train 2400 --source-split profile \
+  --balanced-attacks \
+  --pgd-train-steps 40 --square-train-max-iter 500 \
+  --selection-objective worst_case_tpr \
+  --use-stability-features --use-logit-profile-features --use-side-quadratic-features \
   --output models/ensemble_scorer.pkl \
   2>&1 | tee logs/step2_retrain.log
 ```
@@ -556,7 +619,8 @@ TARGET METRIC GATE
   ✅ L3           FPR=0.0030  target≤0.005
   ✅ Latency      mean=52.1ms  target<100ms
 ─────────────────────────────────────────────────────────────────
-✅ GATE RESULT: ALL TARGETS MET — results are publishable.
+Gate result: only mark publishable after the fast gate and deferred CW/AutoAttack
+gate both pass on fresh artifacts.
 =================================================================
 ```
 
@@ -610,8 +674,8 @@ scp -P <port> \
 > `prism_results/archive_pre_research_plan/` is frozen pre-research-plan state
 > and is **not** authoritative.
 
-- [ ] Retrain check passed: `training_attacks` includes `CW` and `AutoAttack`
-- [ ] Sanity Check 6 (FGSM-oversample regression gate): `fgsm_oversample >= 2.5`, `use_grad_norm == False`
+- [ ] Retrain check passed: `training_attacks` includes `FGSM`, `PGD`, and `Square`; CW/AutoAttack are still deferred until this fast gate passes
+- [ ] Sanity Check 6 (feature contract): balanced attack counts, `use_stability_features == True`, `use_logit_profile_features == True`, `use_side_quadratic_features == True`, `use_grad_norm == False`, `n_features == 54`, `logistic_input_dim > n_features`
 - [ ] FPR gate: all three tiers PASS in `experiments/calibration/ensemble_fpr_report.json`
 - [ ] CW results — pooled TPR ≥ 0.85 across 5 seeds
 - [ ] Fast-attack results — FGSM ≥ 0.85, PGD ≥ 0.90, Square ≥ 0.85, AA ≥ 0.90
@@ -632,11 +696,11 @@ scp -P <port> \
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Step 2b: `training_attacks: []` | Stale code on instance (used `getattr` on dict pkl) | `git pull`, then re-run Step 2b check — see §4b |
-| Step 2b: `n_features=0, expected 37` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
+| Step 2b: `n_features=0, expected 54` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
 | Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
 | FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds. See `regression_analysis_20260422.md`. |
-| FGSM TPR ~80 % | Training mix dilution | Ensure `--fgsm-oversample 2.5` (locked research-plan value). 1.8/2.0 is a regression and fails sanity Check 6. |
-| CW TPR ~10 % | Ensemble not retrained with CW | Run retrain verify check (§4.2); re-run `train_ensemble_scorer.py --include-cw` |
+| PGD TPR collapse | Stability features missing or stale calibrator | Ensure `--use-stability-features`, retrain, then rerun `calibrate_ensemble.py` before evaluation. |
+| FGSM/Square plateau below target | Feature lower-tail overlap under the FPR constraint | Keep CW/AA deferred; run a new feature-family ablation before remote slow attacks. |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
 | CW shows no output | gen_chunk was too large | Fixed: defaults to 64 for CW for full GPU occupancy (batch_size=128). Use `--cw-chunk` to configure. |
 | Latency ❌ in log | CPU-only run (expected ~140 ms on CPU) | On GPU, latency is ~50 ms ✅ — this is a non-issue on Vast.ai |
@@ -678,7 +742,7 @@ PHASE 0 — TRAINING (wall-clock ≈ 30 min; was 85 min sequential)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  1.    [FG]  Build reference profiles            scripts/build_profile_testset.py
  2.    [FG]  Train ensemble scorer               scripts/train_ensemble_scorer.py
-                                                   --fgsm-oversample 2.5 --include-cw --include-autoattack
+                                                   --source-split profile --balanced-attacks --pgd-train-steps 40 --square-train-max-iter 500 --use-stability-features --use-logit-profile-features --use-side-quadratic-features
  2c.   [BG]  Train ensemble-no-TDA variant       scripts/train_ensemble_scorer.py --no-tda-features
                                                    → models/ensemble_no_tda.pkl   (P0.6)
  2d.   [BG]  Train differentiated experts        scripts/train_experts.py
@@ -749,7 +813,7 @@ test accuracy floors below 0.75.
 
 | Config | Value | Rationale |
 |---|---|---|
-| FGSM oversample | **2.5** | Restores pre-regression value (commits `dadf2cf` → `cf854f0` dropped to 1.8/2.0; FGSM TPR fell from 0.87 to 0.806) |
+| Attack mix | **Balanced FGSM/PGD/Square first; CW/AA only after fast-gate promotion** | Prevents aggregate AUC from hiding a weak attack family; non-default oversampling is ablation-only |
 | CW iter | **40** | RobustBench detector-eval norm; balances ℓ₂ attack strength vs. GPU-hours |
 | CW binary search steps | **5** | Standard Carlini 2017 parameterization |
 | CW batch size | **256** | Fills a single 24 GB card; reduces wall-clock ~6× vs. bs=32 |
@@ -767,7 +831,7 @@ Existing gates (§5 of main guide) remain in force. New gates:
 |---|---|---|---|
 | **P0.1** CW-L2 TPR (pooled 5-seed) | ≥ 0.85 | `results_cw_n1000_ms5.json` | Report honestly; discuss in FGSM-shortfall section. Do **not** drop ℓ₂ from threat model. |
 | **P0.2** Baselines complete | 4 methods × 5 seeds × N attacks | `results_baselines_*.json` | Block submission — no detection paper ships without reproduced baselines on matched splits. |
-| **P0.3** FGSM TPR (pooled) | ≥ 0.85 | `results_fast_n1000_ms5.json` | **Blocks NeurIPS/ICLR submission.** If the new 2.5-oversample run misses 0.85, investigate training-mix / calibration regression — do **not** accept the old 0.806 number or cherry-pick seed 42. Fallback is the AAAI/UAI venue path with an honest FGSM-shortfall section. |
+| **P0.3** FGSM TPR (pooled) | ≥ 0.85 | `results_fast_n1000_ms5.json` | **Blocks NeurIPS/ICLR submission.** If the balanced profile-split run misses 0.85, investigate feature separability / calibration regression. Do **not** accept the old 0.806 number or cherry-pick seed 42. |
 | **P0.4** Campaign ASR gap (sustained ρ=1.0, L0-off − L0-on) | ≥ 10 pp | `results_campaign_*.json` | Demote C3 (SACD) to appendix; cut from contributions list. |
 | **P0.4** Clean-stream L0 false-alarm | ≤ 1 % | `results_campaign_clean_only_*.json` | Retune BOCPD priors (`mu0`, `beta0`) in `configs/default.yaml::campaign`; re-run. |
 | **P0.5** TAMSH recovery gap (TAMSH − passthrough, L3-triggered) | ≥ 15 pp | `results_recovery_*.json` | Demote C4 (TAMSH) to appendix; cut from contributions list. |
