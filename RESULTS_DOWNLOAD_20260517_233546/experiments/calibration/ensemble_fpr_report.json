@@ -1,0 +1,46 @@
+{
+  "n_val": 1000,
+  "dataset": "cifar10",
+  "val_split": "CIFAR10 test idx 7000-7999",
+  "level_distribution": {
+    "PASS": 911,
+    "L2": 21,
+    "L3_REJECT": 3,
+    "L1": 65
+  },
+  "tiers": {
+    "L1": {
+      "FP": 89,
+      "n": 1000,
+      "FPR": 0.089,
+      "CI_95": [
+        0.072888,
+        0.108258
+      ],
+      "target": 0.1,
+      "passed": true
+    },
+    "L2": {
+      "FP": 24,
+      "n": 1000,
+      "FPR": 0.024,
+      "CI_95": [
+        0.01618,
+        0.035463
+      ],
+      "target": 0.03,
+      "passed": true
+    },
+    "L3": {
+      "FP": 3,
+      "n": 1000,
+      "FPR": 0.003,
+      "CI_95": [
+        0.001021,
+        0.008783
+      ],
+      "target": 0.005,
+      "passed": true
+    }
+  }
+}

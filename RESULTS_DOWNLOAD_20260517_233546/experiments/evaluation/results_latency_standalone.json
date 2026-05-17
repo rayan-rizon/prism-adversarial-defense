@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "n_test": 200,
+    "n_actual": 200,
+    "eval_split": "CIFAR10 test idx 8000-9999",
+    "seed": 42,
+    "attacks": [],
+    "latency": {
+      "mean_ms": 35.52,
+      "std_ms": 35.01,
+      "min_ms": 29.72,
+      "max_ms": 527.54,
+      "p50_ms": 32.37,
+      "p95_ms": 37.76,
+      "n": 200,
+      "target_ms": 100,
+      "pass": true
+    },
+    "device": "cuda",
+    "ensemble": {
+      "use_dct": true,
+      "use_grad_norm": false,
+      "use_softmax_entropy": true,
+      "use_logit_profile_features": true,
+      "logit_profile_feature_count": 8,
+      "use_stability_features": true,
+      "stability_feature_count": 8,
+      "training_attacks": [
+        "FGSM",
+        "PGD",
+        "Square",
+        "CW"
+      ],
+      "training_n": 2500,
+      "training_eps": 0.03137254901960784,
+      "training_source_split": "profile",
+      "training_source_description": "CIFAR10 test profile split [0-4999]",
+      "n_features": 54,
+      "logistic_input_dim": 225,
+      "use_side_quadratic_features": true,
+      "quadratic_feature_start": 36,
+      "feature_space_version": "pixel-stability-v2+logitprofile+sidequad",
+      "selection_objective": "worst_case_tpr",
+      "fgsm_oversample": 1.5,
+      "pgd_oversample": 1.0,
+      "square_oversample": 1.0,
+      "requested_oversample_weights": {
+        "FGSM": 1.5,
+        "PGD": 1.0,
+        "Square": 1.0,
+        "CW": 0.5
+      },
+      "square_train_max_iter": 500,
+      "attack_head_mode": "off",
+      "score_channel_aggregation": "max",
+      "active_attack_heads": [],
+      "score_channel_mode": null,
+      "score_channel_validation": null,
+      "training_attack_counts": {
+        "FGSM": 937,
+        "PGD": 625,
+        "Square": 625,
+        "CW": 313
+      },
+      "per_attack_validation_metrics": {
+        "alpha": 0.2,
+        "auc": 0.969092,
+        "clean_threshold": 2.2574355602264404,
+        "clean_fpr": 0.098,
+        "per_attack_tpr": {
+          "CW": 0.958904109589041,
+          "FGSM": 0.8488372093023255,
+          "PGD": 0.9854014598540146,
+          "Square": 0.8983050847457628
+        },
+        "worst_case_tpr": 0.8488372093023255,
+        "mean_attack_tpr": 0.9228619658727861
+      }
+    }
+  }
+}

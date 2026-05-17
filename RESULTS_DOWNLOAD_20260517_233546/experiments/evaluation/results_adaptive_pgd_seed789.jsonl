@@ -1,0 +1,3 @@
+{"FN": 21, "FP": 10, "TN": 90, "TP": 79, "TPR": 0.79, "event": "progress", "key": "AdaptivePGD_lambda_0.0", "lambda": 0.0, "n_total": 1000, "processed": 100, "timestamp": 1779036317.7876177}
+{"FN": 42, "FP": 18, "TN": 182, "TP": 158, "TPR": 0.79, "event": "progress", "key": "AdaptivePGD_lambda_0.0", "lambda": 0.0, "n_total": 1000, "processed": 200, "timestamp": 1779037541.8389792}
+{"FN": 68, "FP": 30, "TN": 270, "TP": 232, "TPR": 0.773333, "event": "progress", "key": "AdaptivePGD_lambda_0.0", "lambda": 0.0, "n_total": 1000, "processed": 300, "timestamp": 1779038711.400835}
