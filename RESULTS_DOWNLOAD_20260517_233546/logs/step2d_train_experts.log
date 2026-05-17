@@ -1,0 +1,711 @@
+Device: cuda
+Training on 2000 images from CIFAR10 CAL split
+Using dataset ground-truth labels as expert targets...
+Pre-generating adversarial training pools...
+  clean...
+  fgsm...
+  pgd...
+PGD - Batches:   0%|          | 0/63 [00:00<?, ?it/s]PGD - Batches:   2%|▏         | 1/63 [00:00<00:14,  4.36it/s]PGD - Batches:   5%|▍         | 3/63 [00:00<00:07,  8.48it/s]PGD - Batches:   8%|▊         | 5/63 [00:00<00:05, 10.02it/s]PGD - Batches:  11%|█         | 7/63 [00:00<00:05, 11.00it/s]PGD - Batches:  14%|█▍        | 9/63 [00:00<00:04, 12.21it/s]PGD - Batches:  17%|█▋        | 11/63 [00:00<00:03, 13.05it/s]PGD - Batches:  21%|██        | 13/63 [00:01<00:03, 13.71it/s]PGD - Batches:  24%|██▍       | 15/63 [00:01<00:03, 14.11it/s]PGD - Batches:  27%|██▋       | 17/63 [00:01<00:03, 14.48it/s]PGD - Batches:  30%|███       | 19/63 [00:01<00:03, 14.53it/s]PGD - Batches:  33%|███▎      | 21/63 [00:01<00:03, 13.98it/s]PGD - Batches:  37%|███▋      | 23/63 [00:01<00:03, 13.23it/s]PGD - Batches:  40%|███▉      | 25/63 [00:01<00:02, 12.95it/s]PGD - Batches:  43%|████▎     | 27/63 [00:02<00:02, 12.68it/s]PGD - Batches:  46%|████▌     | 29/63 [00:02<00:02, 12.47it/s]PGD - Batches:  49%|████▉     | 31/63 [00:02<00:02, 12.30it/s]PGD - Batches:  52%|█████▏    | 33/63 [00:02<00:02, 12.74it/s]PGD - Batches:  56%|█████▌    | 35/63 [00:02<00:02, 12.62it/s]PGD - Batches:  59%|█████▊    | 37/63 [00:02<00:02, 12.62it/s]PGD - Batches:  62%|██████▏   | 39/63 [00:03<00:01, 13.37it/s]PGD - Batches:  65%|██████▌   | 41/63 [00:03<00:01, 13.92it/s]PGD - Batches:  68%|██████▊   | 43/63 [00:03<00:01, 14.23it/s]PGD - Batches:  71%|███████▏  | 45/63 [00:03<00:01, 14.35it/s]PGD - Batches:  75%|███████▍  | 47/63 [00:03<00:01, 13.76it/s]PGD - Batches:  78%|███████▊  | 49/63 [00:03<00:01, 13.20it/s]PGD - Batches:  81%|████████  | 51/63 [00:03<00:00, 12.74it/s]PGD - Batches:  84%|████████▍ | 53/63 [00:04<00:00, 12.26it/s]PGD - Batches:  87%|████████▋ | 55/63 [00:04<00:00, 12.49it/s]PGD - Batches:  90%|█████████ | 57/63 [00:04<00:00, 12.73it/s]PGD - Batches:  94%|█████████▎| 59/63 [00:04<00:00, 13.25it/s]PGD - Batches:  97%|█████████▋| 61/63 [00:04<00:00, 13.44it/s]PGD - Batches: 100%|██████████| 63/63 [00:04<00:00, 13.65it/s]                                                                square...
+SquareAttack - restarts:   0%|          | 0/1 [00:00<?, ?it/s]
+SquareAttack - iterations:   0%|          | 0/1000 [00:00<?, ?it/s][A
+SquareAttack - iterations:   0%|          | 1/1000 [00:00<03:54,  4.26it/s][A
+SquareAttack - iterations:   0%|          | 2/1000 [00:00<03:51,  4.31it/s][A
+SquareAttack - iterations:   0%|          | 3/1000 [00:00<03:54,  4.25it/s][A
+SquareAttack - iterations:   0%|          | 4/1000 [00:00<03:53,  4.27it/s][A
+SquareAttack - iterations:   0%|          | 5/1000 [00:01<03:52,  4.27it/s][A
+SquareAttack - iterations:   1%|          | 6/1000 [00:01<03:53,  4.25it/s][A
+SquareAttack - iterations:   1%|          | 7/1000 [00:01<03:51,  4.29it/s][A
+SquareAttack - iterations:   1%|          | 8/1000 [00:01<03:47,  4.35it/s][A
+SquareAttack - iterations:   1%|          | 9/1000 [00:02<03:45,  4.40it/s][A
+SquareAttack - iterations:   1%|          | 10/1000 [00:02<03:45,  4.39it/s][A
+SquareAttack - iterations:   1%|          | 11/1000 [00:02<03:42,  4.44it/s][A
+SquareAttack - iterations:   1%|          | 12/1000 [00:02<03:42,  4.44it/s][A
+SquareAttack - iterations:   1%|▏         | 13/1000 [00:02<03:43,  4.42it/s][A
+SquareAttack - iterations:   1%|▏         | 14/1000 [00:03<03:40,  4.48it/s][A
+SquareAttack - iterations:   2%|▏         | 15/1000 [00:03<03:37,  4.53it/s][A
+SquareAttack - iterations:   2%|▏         | 16/1000 [00:03<03:35,  4.56it/s][A
+SquareAttack - iterations:   2%|▏         | 17/1000 [00:03<03:34,  4.58it/s][A
+SquareAttack - iterations:   2%|▏         | 18/1000 [00:04<03:32,  4.62it/s][A
+SquareAttack - iterations:   2%|▏         | 19/1000 [00:04<03:34,  4.58it/s][A
+SquareAttack - iterations:   2%|▏         | 20/1000 [00:04<03:34,  4.57it/s][A
+SquareAttack - iterations:   2%|▏         | 21/1000 [00:04<03:35,  4.55it/s][A
+SquareAttack - iterations:   2%|▏         | 22/1000 [00:04<03:34,  4.57it/s][A
+SquareAttack - iterations:   2%|▏         | 23/1000 [00:05<03:34,  4.56it/s][A
+SquareAttack - iterations:   2%|▏         | 24/1000 [00:05<03:30,  4.64it/s][A
+SquareAttack - iterations:   2%|▎         | 25/1000 [00:05<03:26,  4.72it/s][A
+SquareAttack - iterations:   3%|▎         | 26/1000 [00:05<03:24,  4.77it/s][A
+SquareAttack - iterations:   3%|▎         | 27/1000 [00:05<03:22,  4.81it/s][A
+SquareAttack - iterations:   3%|▎         | 28/1000 [00:06<03:18,  4.90it/s][A
+SquareAttack - iterations:   3%|▎         | 29/1000 [00:06<03:16,  4.95it/s][A
+SquareAttack - iterations:   3%|▎         | 30/1000 [00:06<03:15,  4.95it/s][A
+SquareAttack - iterations:   3%|▎         | 31/1000 [00:06<03:16,  4.94it/s][A
+SquareAttack - iterations:   3%|▎         | 32/1000 [00:06<03:15,  4.96it/s][A
+SquareAttack - iterations:   3%|▎         | 33/1000 [00:07<03:14,  4.97it/s][A
+SquareAttack - iterations:   3%|▎         | 34/1000 [00:07<03:17,  4.90it/s][A
+SquareAttack - iterations:   4%|▎         | 35/1000 [00:07<03:16,  4.90it/s][A
+SquareAttack - iterations:   4%|▎         | 36/1000 [00:07<03:18,  4.86it/s][A
+SquareAttack - iterations:   4%|▎         | 37/1000 [00:08<03:18,  4.86it/s][A
+SquareAttack - iterations:   4%|▍         | 38/1000 [00:08<03:15,  4.93it/s][A
+SquareAttack - iterations:   4%|▍         | 39/1000 [00:08<03:12,  5.00it/s][A
+SquareAttack - iterations:   4%|▍         | 40/1000 [00:08<03:10,  5.03it/s][A
+SquareAttack - iterations:   4%|▍         | 41/1000 [00:08<03:07,  5.10it/s][A
+SquareAttack - iterations:   4%|▍         | 42/1000 [00:08<03:07,  5.12it/s][A
+SquareAttack - iterations:   4%|▍         | 43/1000 [00:09<03:06,  5.13it/s][A
+SquareAttack - iterations:   4%|▍         | 44/1000 [00:09<03:04,  5.18it/s][A
+SquareAttack - iterations:   4%|▍         | 45/1000 [00:09<03:03,  5.19it/s][A
+SquareAttack - iterations:   5%|▍         | 46/1000 [00:09<03:08,  5.07it/s][A
+SquareAttack - iterations:   5%|▍         | 47/1000 [00:09<03:08,  5.06it/s][A
+SquareAttack - iterations:   5%|▍         | 48/1000 [00:10<03:10,  5.01it/s][A
+SquareAttack - iterations:   5%|▍         | 49/1000 [00:10<03:09,  5.02it/s][A
+SquareAttack - iterations:   5%|▌         | 50/1000 [00:10<03:07,  5.06it/s][A
+SquareAttack - iterations:   5%|▌         | 51/1000 [00:10<03:09,  5.00it/s][A
+SquareAttack - iterations:   5%|▌         | 52/1000 [00:10<03:09,  5.00it/s][A
+SquareAttack - iterations:   5%|▌         | 53/1000 [00:11<03:12,  4.92it/s][A
+SquareAttack - iterations:   5%|▌         | 54/1000 [00:11<03:11,  4.94it/s][A
+SquareAttack - iterations:   6%|▌         | 55/1000 [00:11<03:09,  4.99it/s][A
+SquareAttack - iterations:   6%|▌         | 56/1000 [00:11<03:06,  5.07it/s][A
+SquareAttack - iterations:   6%|▌         | 57/1000 [00:11<03:04,  5.10it/s][A
+SquareAttack - iterations:   6%|▌         | 58/1000 [00:12<03:03,  5.13it/s][A
+SquareAttack - iterations:   6%|▌         | 59/1000 [00:12<03:01,  5.17it/s][A
+SquareAttack - iterations:   6%|▌         | 60/1000 [00:12<03:01,  5.18it/s][A
+SquareAttack - iterations:   6%|▌         | 61/1000 [00:12<03:01,  5.18it/s][A
+SquareAttack - iterations:   6%|▌         | 62/1000 [00:12<03:00,  5.19it/s][A
+SquareAttack - iterations:   6%|▋         | 63/1000 [00:13<02:59,  5.22it/s][A
+SquareAttack - iterations:   6%|▋         | 64/1000 [00:13<02:58,  5.24it/s][A
+SquareAttack - iterations:   6%|▋         | 65/1000 [00:13<02:57,  5.28it/s][A
+SquareAttack - iterations:   7%|▋         | 66/1000 [00:13<02:57,  5.26it/s][A
+SquareAttack - iterations:   7%|▋         | 67/1000 [00:13<02:56,  5.28it/s][A
+SquareAttack - iterations:   7%|▋         | 68/1000 [00:14<02:57,  5.26it/s][A
+SquareAttack - iterations:   7%|▋         | 69/1000 [00:14<02:56,  5.28it/s][A
+SquareAttack - iterations:   7%|▋         | 70/1000 [00:14<02:56,  5.27it/s][A
+SquareAttack - iterations:   7%|▋         | 71/1000 [00:14<02:55,  5.29it/s][A
+SquareAttack - iterations:   7%|▋         | 72/1000 [00:14<02:54,  5.31it/s][A
+SquareAttack - iterations:   7%|▋         | 73/1000 [00:14<02:54,  5.32it/s][A
+SquareAttack - iterations:   7%|▋         | 74/1000 [00:15<02:52,  5.38it/s][A
+SquareAttack - iterations:   8%|▊         | 75/1000 [00:15<02:49,  5.44it/s][A
+SquareAttack - iterations:   8%|▊         | 76/1000 [00:15<02:52,  5.35it/s][A
+SquareAttack - iterations:   8%|▊         | 77/1000 [00:15<02:51,  5.40it/s][A
+SquareAttack - iterations:   8%|▊         | 78/1000 [00:15<02:49,  5.43it/s][A
+SquareAttack - iterations:   8%|▊         | 79/1000 [00:16<02:49,  5.45it/s][A
+SquareAttack - iterations:   8%|▊         | 80/1000 [00:16<02:47,  5.51it/s][A
+SquareAttack - iterations:   8%|▊         | 81/1000 [00:16<02:46,  5.52it/s][A
+SquareAttack - iterations:   8%|▊         | 82/1000 [00:16<02:45,  5.55it/s][A
+SquareAttack - iterations:   8%|▊         | 83/1000 [00:16<02:45,  5.54it/s][A
+SquareAttack - iterations:   8%|▊         | 84/1000 [00:16<02:44,  5.57it/s][A
+SquareAttack - iterations:   8%|▊         | 85/1000 [00:17<02:43,  5.59it/s][A
+SquareAttack - iterations:   9%|▊         | 86/1000 [00:17<02:44,  5.55it/s][A
+SquareAttack - iterations:   9%|▊         | 87/1000 [00:17<02:45,  5.52it/s][A
+SquareAttack - iterations:   9%|▉         | 88/1000 [00:17<02:43,  5.58it/s][A
+SquareAttack - iterations:   9%|▉         | 89/1000 [00:17<02:42,  5.61it/s][A
+SquareAttack - iterations:   9%|▉         | 90/1000 [00:18<02:40,  5.67it/s][A
+SquareAttack - iterations:   9%|▉         | 91/1000 [00:18<02:42,  5.59it/s][A
+SquareAttack - iterations:   9%|▉         | 92/1000 [00:18<02:42,  5.58it/s][A
+SquareAttack - iterations:   9%|▉         | 93/1000 [00:18<02:42,  5.59it/s][A
+SquareAttack - iterations:   9%|▉         | 94/1000 [00:18<02:40,  5.66it/s][A
+SquareAttack - iterations:  10%|▉         | 95/1000 [00:18<02:37,  5.76it/s][A
+SquareAttack - iterations:  10%|▉         | 96/1000 [00:19<02:34,  5.84it/s][A
+SquareAttack - iterations:  10%|▉         | 97/1000 [00:19<02:35,  5.82it/s][A
+SquareAttack - iterations:  10%|▉         | 98/1000 [00:19<02:34,  5.84it/s][A
+SquareAttack - iterations:  10%|▉         | 99/1000 [00:19<02:34,  5.84it/s][A
+SquareAttack - iterations:  10%|█         | 100/1000 [00:19<02:33,  5.85it/s][A
+SquareAttack - iterations:  10%|█         | 101/1000 [00:19<02:33,  5.87it/s][A
+SquareAttack - iterations:  10%|█         | 102/1000 [00:20<02:34,  5.80it/s][A
+SquareAttack - iterations:  10%|█         | 103/1000 [00:20<02:34,  5.79it/s][A
+SquareAttack - iterations:  10%|█         | 104/1000 [00:20<02:32,  5.88it/s][A
+SquareAttack - iterations:  10%|█         | 105/1000 [00:20<02:30,  5.94it/s][A
+SquareAttack - iterations:  11%|█         | 106/1000 [00:20<02:28,  6.01it/s][A
+SquareAttack - iterations:  11%|█         | 107/1000 [00:20<02:31,  5.89it/s][A
+SquareAttack - iterations:  11%|█         | 108/1000 [00:21<02:29,  5.95it/s][A
+SquareAttack - iterations:  11%|█         | 109/1000 [00:21<02:28,  5.98it/s][A
+SquareAttack - iterations:  11%|█         | 110/1000 [00:21<02:28,  5.99it/s][A
+SquareAttack - iterations:  11%|█         | 111/1000 [00:21<02:29,  5.95it/s][A
+SquareAttack - iterations:  11%|█         | 112/1000 [00:21<02:27,  6.00it/s][A
+SquareAttack - iterations:  11%|█▏        | 113/1000 [00:21<02:26,  6.04it/s][A
+SquareAttack - iterations:  11%|█▏        | 114/1000 [00:22<02:24,  6.11it/s][A
+SquareAttack - iterations:  12%|█▏        | 115/1000 [00:22<02:18,  6.39it/s][A
+SquareAttack - iterations:  12%|█▏        | 116/1000 [00:22<02:15,  6.54it/s][A
+SquareAttack - iterations:  12%|█▏        | 117/1000 [00:22<02:12,  6.65it/s][A
+SquareAttack - iterations:  12%|█▏        | 118/1000 [00:22<02:08,  6.85it/s][A
+SquareAttack - iterations:  12%|█▏        | 119/1000 [00:22<02:07,  6.93it/s][A
+SquareAttack - iterations:  12%|█▏        | 120/1000 [00:22<02:06,  6.97it/s][A
+SquareAttack - iterations:  12%|█▏        | 121/1000 [00:23<02:05,  7.02it/s][A
+SquareAttack - iterations:  12%|█▏        | 122/1000 [00:23<02:03,  7.13it/s][A
+SquareAttack - iterations:  12%|█▏        | 123/1000 [00:23<02:02,  7.16it/s][A
+SquareAttack - iterations:  12%|█▏        | 124/1000 [00:23<02:01,  7.22it/s][A
+SquareAttack - iterations:  12%|█▎        | 125/1000 [00:23<02:01,  7.18it/s][A
+SquareAttack - iterations:  13%|█▎        | 126/1000 [00:23<02:01,  7.22it/s][A
+SquareAttack - iterations:  13%|█▎        | 127/1000 [00:23<01:59,  7.33it/s][A
+SquareAttack - iterations:  13%|█▎        | 128/1000 [00:24<02:01,  7.16it/s][A
+SquareAttack - iterations:  13%|█▎        | 129/1000 [00:24<02:01,  7.19it/s][A
+SquareAttack - iterations:  13%|█▎        | 130/1000 [00:24<02:00,  7.20it/s][A
+SquareAttack - iterations:  13%|█▎        | 131/1000 [00:24<02:00,  7.22it/s][A
+SquareAttack - iterations:  13%|█▎        | 132/1000 [00:24<01:58,  7.32it/s][A
+SquareAttack - iterations:  13%|█▎        | 133/1000 [00:24<02:00,  7.22it/s][A
+SquareAttack - iterations:  13%|█▎        | 134/1000 [00:24<02:00,  7.16it/s][A
+SquareAttack - iterations:  14%|█▎        | 135/1000 [00:25<01:59,  7.23it/s][A
+SquareAttack - iterations:  14%|█▎        | 136/1000 [00:25<01:57,  7.33it/s][A
+SquareAttack - iterations:  14%|█▎        | 137/1000 [00:25<01:58,  7.29it/s][A
+SquareAttack - iterations:  14%|█▍        | 138/1000 [00:25<01:58,  7.30it/s][A
+SquareAttack - iterations:  14%|█▍        | 139/1000 [00:25<01:57,  7.31it/s][A
+SquareAttack - iterations:  14%|█▍        | 140/1000 [00:25<01:56,  7.36it/s][A
+SquareAttack - iterations:  14%|█▍        | 141/1000 [00:25<01:55,  7.41it/s][A
+SquareAttack - iterations:  14%|█▍        | 142/1000 [00:25<01:55,  7.46it/s][A
+SquareAttack - iterations:  14%|█▍        | 143/1000 [00:26<01:54,  7.51it/s][A
+SquareAttack - iterations:  14%|█▍        | 144/1000 [00:26<01:53,  7.52it/s][A
+SquareAttack - iterations:  14%|█▍        | 145/1000 [00:26<01:52,  7.57it/s][A
+SquareAttack - iterations:  15%|█▍        | 146/1000 [00:26<01:52,  7.60it/s][A
+SquareAttack - iterations:  15%|█▍        | 147/1000 [00:26<01:51,  7.67it/s][A
+SquareAttack - iterations:  15%|█▍        | 148/1000 [00:26<01:51,  7.62it/s][A
+SquareAttack - iterations:  15%|█▍        | 149/1000 [00:26<01:51,  7.63it/s][A
+SquareAttack - iterations:  15%|█▌        | 150/1000 [00:27<01:52,  7.55it/s][A
+SquareAttack - iterations:  15%|█▌        | 151/1000 [00:27<01:51,  7.62it/s][A
+SquareAttack - iterations:  15%|█▌        | 152/1000 [00:27<01:50,  7.65it/s][A
+SquareAttack - iterations:  15%|█▌        | 153/1000 [00:27<01:49,  7.77it/s][A
+SquareAttack - iterations:  15%|█▌        | 154/1000 [00:27<01:47,  7.85it/s][A
+SquareAttack - iterations:  16%|█▌        | 155/1000 [00:27<01:47,  7.87it/s][A
+SquareAttack - iterations:  16%|█▌        | 156/1000 [00:27<01:46,  7.90it/s][A
+SquareAttack - iterations:  16%|█▌        | 157/1000 [00:27<01:49,  7.73it/s][A
+SquareAttack - iterations:  16%|█▌        | 158/1000 [00:28<01:49,  7.70it/s][A
+SquareAttack - iterations:  16%|█▌        | 159/1000 [00:28<01:48,  7.73it/s][A
+SquareAttack - iterations:  16%|█▌        | 160/1000 [00:28<01:47,  7.81it/s][A
+SquareAttack - iterations:  16%|█▌        | 161/1000 [00:28<01:45,  7.92it/s][A
+SquareAttack - iterations:  16%|█▌        | 162/1000 [00:28<01:44,  8.00it/s][A
+SquareAttack - iterations:  16%|█▋        | 163/1000 [00:28<01:44,  7.98it/s][A
+SquareAttack - iterations:  16%|█▋        | 164/1000 [00:28<01:44,  8.01it/s][A
+SquareAttack - iterations:  16%|█▋        | 165/1000 [00:28<01:43,  8.06it/s][A
+SquareAttack - iterations:  17%|█▋        | 166/1000 [00:29<01:43,  8.06it/s][A
+SquareAttack - iterations:  17%|█▋        | 167/1000 [00:29<01:43,  8.04it/s][A
+SquareAttack - iterations:  17%|█▋        | 168/1000 [00:29<01:43,  8.02it/s][A
+SquareAttack - iterations:  17%|█▋        | 169/1000 [00:29<01:42,  8.09it/s][A
+SquareAttack - iterations:  17%|█▋        | 170/1000 [00:29<01:42,  8.12it/s][A
+SquareAttack - iterations:  17%|█▋        | 171/1000 [00:29<01:42,  8.10it/s][A
+SquareAttack - iterations:  17%|█▋        | 172/1000 [00:29<01:42,  8.07it/s][A
+SquareAttack - iterations:  17%|█▋        | 173/1000 [00:29<01:42,  8.09it/s][A
+SquareAttack - iterations:  17%|█▋        | 174/1000 [00:30<01:42,  8.09it/s][A
+SquareAttack - iterations:  18%|█▊        | 175/1000 [00:30<01:44,  7.90it/s][A
+SquareAttack - iterations:  18%|█▊        | 176/1000 [00:30<01:43,  7.97it/s][A
+SquareAttack - iterations:  18%|█▊        | 177/1000 [00:30<01:44,  7.88it/s][A
+SquareAttack - iterations:  18%|█▊        | 178/1000 [00:30<01:44,  7.89it/s][A
+SquareAttack - iterations:  18%|█▊        | 179/1000 [00:30<01:42,  7.98it/s][A
+SquareAttack - iterations:  18%|█▊        | 180/1000 [00:30<01:43,  7.95it/s][A
+SquareAttack - iterations:  18%|█▊        | 181/1000 [00:30<01:41,  8.10it/s][A
+SquareAttack - iterations:  18%|█▊        | 182/1000 [00:31<01:39,  8.26it/s][A
+SquareAttack - iterations:  18%|█▊        | 183/1000 [00:31<01:38,  8.32it/s][A
+SquareAttack - iterations:  18%|█▊        | 184/1000 [00:31<01:37,  8.37it/s][A
+SquareAttack - iterations:  18%|█▊        | 185/1000 [00:31<01:36,  8.48it/s][A
+SquareAttack - iterations:  19%|█▊        | 186/1000 [00:31<01:35,  8.49it/s][A
+SquareAttack - iterations:  19%|█▊        | 187/1000 [00:31<01:36,  8.45it/s][A
+SquareAttack - iterations:  19%|█▉        | 188/1000 [00:31<01:36,  8.42it/s][A
+SquareAttack - iterations:  19%|█▉        | 189/1000 [00:31<01:36,  8.38it/s][A
+SquareAttack - iterations:  19%|█▉        | 190/1000 [00:31<01:35,  8.47it/s][A
+SquareAttack - iterations:  19%|█▉        | 191/1000 [00:32<01:34,  8.52it/s][A
+SquareAttack - iterations:  19%|█▉        | 192/1000 [00:32<01:34,  8.57it/s][A
+SquareAttack - iterations:  19%|█▉        | 193/1000 [00:32<01:33,  8.64it/s][A
+SquareAttack - iterations:  19%|█▉        | 194/1000 [00:32<01:32,  8.74it/s][A
+SquareAttack - iterations:  20%|█▉        | 195/1000 [00:32<01:32,  8.68it/s][A
+SquareAttack - iterations:  20%|█▉        | 196/1000 [00:32<01:33,  8.61it/s][A
+SquareAttack - iterations:  20%|█▉        | 197/1000 [00:32<01:33,  8.63it/s][A
+SquareAttack - iterations:  20%|█▉        | 198/1000 [00:32<01:32,  8.68it/s][A
+SquareAttack - iterations:  20%|█▉        | 199/1000 [00:33<01:32,  8.68it/s][A
+SquareAttack - iterations:  20%|██        | 200/1000 [00:33<01:32,  8.61it/s][A
+SquareAttack - iterations:  20%|██        | 201/1000 [00:33<01:31,  8.69it/s][A
+SquareAttack - iterations:  20%|██        | 202/1000 [00:33<01:31,  8.74it/s][A
+SquareAttack - iterations:  20%|██        | 203/1000 [00:33<01:30,  8.79it/s][A
+SquareAttack - iterations:  20%|██        | 204/1000 [00:33<01:31,  8.66it/s][A
+SquareAttack - iterations:  20%|██        | 205/1000 [00:33<01:31,  8.65it/s][A
+SquareAttack - iterations:  21%|██        | 206/1000 [00:33<01:31,  8.70it/s][A
+SquareAttack - iterations:  21%|██        | 207/1000 [00:33<01:32,  8.62it/s][A
+SquareAttack - iterations:  21%|██        | 208/1000 [00:34<01:30,  8.71it/s][A
+SquareAttack - iterations:  21%|██        | 209/1000 [00:34<01:30,  8.73it/s][A
+SquareAttack - iterations:  21%|██        | 210/1000 [00:34<01:30,  8.75it/s][A
+SquareAttack - iterations:  21%|██        | 211/1000 [00:34<01:30,  8.71it/s][A
+SquareAttack - iterations:  21%|██        | 212/1000 [00:34<01:29,  8.77it/s][A
+SquareAttack - iterations:  21%|██▏       | 213/1000 [00:34<01:29,  8.83it/s][A
+SquareAttack - iterations:  21%|██▏       | 214/1000 [00:34<01:29,  8.79it/s][A
+SquareAttack - iterations:  22%|██▏       | 215/1000 [00:34<01:29,  8.77it/s][A
+SquareAttack - iterations:  22%|██▏       | 216/1000 [00:34<01:30,  8.69it/s][A
+SquareAttack - iterations:  22%|██▏       | 217/1000 [00:35<01:29,  8.76it/s][A
+SquareAttack - iterations:  22%|██▏       | 218/1000 [00:35<01:28,  8.81it/s][A
+SquareAttack - iterations:  22%|██▏       | 219/1000 [00:35<01:29,  8.73it/s][A
+SquareAttack - iterations:  22%|██▏       | 220/1000 [00:35<01:29,  8.72it/s][A
+SquareAttack - iterations:  22%|██▏       | 221/1000 [00:35<01:28,  8.78it/s][A
+SquareAttack - iterations:  22%|██▏       | 222/1000 [00:35<01:28,  8.76it/s][A
+SquareAttack - iterations:  22%|██▏       | 223/1000 [00:35<01:29,  8.67it/s][A
+SquareAttack - iterations:  22%|██▏       | 224/1000 [00:35<01:27,  8.83it/s][A
+SquareAttack - iterations:  22%|██▎       | 225/1000 [00:35<01:28,  8.77it/s][A
+SquareAttack - iterations:  23%|██▎       | 226/1000 [00:36<01:27,  8.82it/s][A
+SquareAttack - iterations:  23%|██▎       | 227/1000 [00:36<01:25,  9.02it/s][A
+SquareAttack - iterations:  23%|██▎       | 228/1000 [00:36<01:25,  9.01it/s][A
+SquareAttack - iterations:  23%|██▎       | 229/1000 [00:36<01:23,  9.18it/s][A
+SquareAttack - iterations:  23%|██▎       | 230/1000 [00:36<01:24,  9.13it/s][A
+SquareAttack - iterations:  23%|██▎       | 231/1000 [00:36<01:23,  9.22it/s][A
+SquareAttack - iterations:  23%|██▎       | 232/1000 [00:36<01:24,  9.11it/s][A
+SquareAttack - iterations:  23%|██▎       | 233/1000 [00:36<01:24,  9.07it/s][A
+SquareAttack - iterations:  23%|██▎       | 234/1000 [00:36<01:24,  9.11it/s][A
+SquareAttack - iterations:  24%|██▎       | 235/1000 [00:37<01:23,  9.12it/s][A
+SquareAttack - iterations:  24%|██▎       | 236/1000 [00:37<01:25,  8.90it/s][A
+SquareAttack - iterations:  24%|██▎       | 237/1000 [00:37<01:25,  8.97it/s][A
+SquareAttack - iterations:  24%|██▍       | 238/1000 [00:37<01:25,  8.96it/s][A
+SquareAttack - iterations:  24%|██▍       | 239/1000 [00:37<01:22,  9.19it/s][A
+SquareAttack - iterations:  24%|██▍       | 240/1000 [00:37<01:23,  9.15it/s][A
+SquareAttack - iterations:  24%|██▍       | 241/1000 [00:37<01:22,  9.19it/s][A
+SquareAttack - iterations:  24%|██▍       | 242/1000 [00:37<01:22,  9.15it/s][A
+SquareAttack - iterations:  24%|██▍       | 243/1000 [00:37<01:21,  9.26it/s][A
+SquareAttack - iterations:  24%|██▍       | 244/1000 [00:38<01:22,  9.11it/s][A
+SquareAttack - iterations:  24%|██▍       | 245/1000 [00:38<01:21,  9.26it/s][A
+SquareAttack - iterations:  25%|██▍       | 246/1000 [00:38<01:23,  9.07it/s][A
+SquareAttack - iterations:  25%|██▍       | 247/1000 [00:38<01:22,  9.18it/s][A
+SquareAttack - iterations:  25%|██▍       | 248/1000 [00:38<01:21,  9.25it/s][A
+SquareAttack - iterations:  25%|██▍       | 249/1000 [00:38<01:22,  9.15it/s][A
+SquareAttack - iterations:  25%|██▌       | 250/1000 [00:38<01:20,  9.27it/s][A
+SquareAttack - iterations:  25%|██▌       | 251/1000 [00:38<01:20,  9.33it/s][A
+SquareAttack - iterations:  25%|██▌       | 252/1000 [00:38<01:19,  9.38it/s][A
+SquareAttack - iterations:  25%|██▌       | 253/1000 [00:39<01:19,  9.41it/s][A
+SquareAttack - iterations:  25%|██▌       | 254/1000 [00:39<01:19,  9.43it/s][A
+SquareAttack - iterations:  26%|██▌       | 255/1000 [00:39<01:18,  9.46it/s][A
+SquareAttack - iterations:  26%|██▌       | 256/1000 [00:39<01:18,  9.54it/s][A
+SquareAttack - iterations:  26%|██▌       | 257/1000 [00:39<01:19,  9.39it/s][A
+SquareAttack - iterations:  26%|██▌       | 258/1000 [00:39<01:19,  9.36it/s][A
+SquareAttack - iterations:  26%|██▌       | 259/1000 [00:39<01:18,  9.46it/s][A
+SquareAttack - iterations:  26%|██▌       | 260/1000 [00:39<01:19,  9.31it/s][A
+SquareAttack - iterations:  26%|██▌       | 261/1000 [00:39<01:18,  9.36it/s][A
+SquareAttack - iterations:  26%|██▌       | 262/1000 [00:39<01:19,  9.31it/s][A
+SquareAttack - iterations:  26%|██▋       | 263/1000 [00:40<01:17,  9.47it/s][A
+SquareAttack - iterations:  26%|██▋       | 264/1000 [00:40<01:18,  9.42it/s][A
+SquareAttack - iterations:  26%|██▋       | 265/1000 [00:40<01:16,  9.55it/s][A
+SquareAttack - iterations:  27%|██▋       | 266/1000 [00:40<01:16,  9.60it/s][A
+SquareAttack - iterations:  27%|██▋       | 267/1000 [00:40<01:16,  9.61it/s][A
+SquareAttack - iterations:  27%|██▋       | 268/1000 [00:40<01:16,  9.58it/s][A
+SquareAttack - iterations:  27%|██▋       | 269/1000 [00:40<01:15,  9.65it/s][A
+SquareAttack - iterations:  27%|██▋       | 270/1000 [00:40<01:15,  9.61it/s][A
+SquareAttack - iterations:  27%|██▋       | 271/1000 [00:40<01:15,  9.61it/s][A
+SquareAttack - iterations:  27%|██▋       | 272/1000 [00:41<01:15,  9.63it/s][A
+SquareAttack - iterations:  27%|██▋       | 273/1000 [00:41<01:15,  9.66it/s][A
+SquareAttack - iterations:  27%|██▋       | 274/1000 [00:41<01:14,  9.69it/s][A
+SquareAttack - iterations:  28%|██▊       | 275/1000 [00:41<01:14,  9.68it/s][A
+SquareAttack - iterations:  28%|██▊       | 276/1000 [00:41<01:15,  9.61it/s][A
+SquareAttack - iterations:  28%|██▊       | 277/1000 [00:41<01:15,  9.58it/s][A
+SquareAttack - iterations:  28%|██▊       | 278/1000 [00:41<01:14,  9.69it/s][A
+SquareAttack - iterations:  28%|██▊       | 279/1000 [00:41<01:14,  9.73it/s][A
+SquareAttack - iterations:  28%|██▊       | 280/1000 [00:41<01:14,  9.66it/s][A
+SquareAttack - iterations:  28%|██▊       | 281/1000 [00:41<01:15,  9.58it/s][A
+SquareAttack - iterations:  28%|██▊       | 282/1000 [00:42<01:14,  9.60it/s][A
+SquareAttack - iterations:  28%|██▊       | 283/1000 [00:42<01:14,  9.65it/s][A
+SquareAttack - iterations:  28%|██▊       | 284/1000 [00:42<01:14,  9.64it/s][A
+SquareAttack - iterations:  28%|██▊       | 285/1000 [00:42<01:13,  9.73it/s][A
+SquareAttack - iterations:  29%|██▊       | 286/1000 [00:42<01:14,  9.57it/s][A
+SquareAttack - iterations:  29%|██▊       | 287/1000 [00:42<01:14,  9.54it/s][A
+SquareAttack - iterations:  29%|██▉       | 288/1000 [00:42<01:13,  9.64it/s][A
+SquareAttack - iterations:  29%|██▉       | 290/1000 [00:42<01:13,  9.68it/s][A
+SquareAttack - iterations:  29%|██▉       | 291/1000 [00:42<01:13,  9.68it/s][A
+SquareAttack - iterations:  29%|██▉       | 292/1000 [00:43<01:12,  9.72it/s][A
+SquareAttack - iterations:  29%|██▉       | 293/1000 [00:43<01:13,  9.68it/s][A
+SquareAttack - iterations:  29%|██▉       | 294/1000 [00:43<01:13,  9.64it/s][A
+SquareAttack - iterations:  30%|██▉       | 296/1000 [00:43<01:12,  9.71it/s][A
+SquareAttack - iterations:  30%|██▉       | 297/1000 [00:43<01:12,  9.72it/s][A
+SquareAttack - iterations:  30%|██▉       | 298/1000 [00:43<01:12,  9.72it/s][A
+SquareAttack - iterations:  30%|██▉       | 299/1000 [00:43<01:11,  9.79it/s][A
+SquareAttack - iterations:  30%|███       | 300/1000 [00:43<01:11,  9.78it/s][A
+SquareAttack - iterations:  30%|███       | 302/1000 [00:44<01:10,  9.84it/s][A
+SquareAttack - iterations:  30%|███       | 303/1000 [00:44<01:11,  9.76it/s][A
+SquareAttack - iterations:  30%|███       | 305/1000 [00:44<01:11,  9.72it/s][A
+SquareAttack - iterations:  31%|███       | 306/1000 [00:44<01:11,  9.76it/s][A
+SquareAttack - iterations:  31%|███       | 307/1000 [00:44<01:10,  9.81it/s][A
+SquareAttack - iterations:  31%|███       | 309/1000 [00:44<01:09,  9.91it/s][A
+SquareAttack - iterations:  31%|███       | 311/1000 [00:45<01:08, 10.02it/s][A
+SquareAttack - iterations:  31%|███▏      | 313/1000 [00:45<01:08, 10.09it/s][A
+SquareAttack - iterations:  32%|███▏      | 315/1000 [00:45<01:07, 10.10it/s][A
+SquareAttack - iterations:  32%|███▏      | 317/1000 [00:45<01:07, 10.10it/s][A
+SquareAttack - iterations:  32%|███▏      | 319/1000 [00:45<01:07, 10.16it/s][A
+SquareAttack - iterations:  32%|███▏      | 321/1000 [00:46<01:06, 10.19it/s][A
+SquareAttack - iterations:  32%|███▏      | 323/1000 [00:46<01:06, 10.21it/s][A
+SquareAttack - iterations:  32%|███▎      | 325/1000 [00:46<01:06, 10.22it/s][A
+SquareAttack - iterations:  33%|███▎      | 327/1000 [00:46<01:05, 10.24it/s][A
+SquareAttack - iterations:  33%|███▎      | 329/1000 [00:46<01:05, 10.25it/s][A
+SquareAttack - iterations:  33%|███▎      | 331/1000 [00:46<01:05, 10.21it/s][A
+SquareAttack - iterations:  33%|███▎      | 333/1000 [00:47<01:05, 10.23it/s][A
+SquareAttack - iterations:  34%|███▎      | 335/1000 [00:47<01:05, 10.14it/s][A
+SquareAttack - iterations:  34%|███▎      | 337/1000 [00:47<01:05, 10.19it/s][A
+SquareAttack - iterations:  34%|███▍      | 339/1000 [00:47<01:04, 10.26it/s][A
+SquareAttack - iterations:  34%|███▍      | 341/1000 [00:47<01:04, 10.28it/s][A
+SquareAttack - iterations:  34%|███▍      | 343/1000 [00:48<01:03, 10.31it/s][A
+SquareAttack - iterations:  34%|███▍      | 345/1000 [00:48<01:03, 10.35it/s][A
+SquareAttack - iterations:  35%|███▍      | 347/1000 [00:48<01:03, 10.36it/s][A
+SquareAttack - iterations:  35%|███▍      | 349/1000 [00:48<01:02, 10.35it/s][A
+SquareAttack - iterations:  35%|███▌      | 351/1000 [00:48<01:02, 10.39it/s][A
+SquareAttack - iterations:  35%|███▌      | 353/1000 [00:49<01:02, 10.28it/s][A
+SquareAttack - iterations:  36%|███▌      | 355/1000 [00:49<01:02, 10.32it/s][A
+SquareAttack - iterations:  36%|███▌      | 357/1000 [00:49<01:01, 10.39it/s][A
+SquareAttack - iterations:  36%|███▌      | 359/1000 [00:49<01:01, 10.45it/s][A
+SquareAttack - iterations:  36%|███▌      | 361/1000 [00:49<01:01, 10.46it/s][A
+SquareAttack - iterations:  36%|███▋      | 363/1000 [00:50<01:00, 10.49it/s][A
+SquareAttack - iterations:  36%|███▋      | 365/1000 [00:50<01:00, 10.54it/s][A
+SquareAttack - iterations:  37%|███▋      | 367/1000 [00:50<00:59, 10.58it/s][A
+SquareAttack - iterations:  37%|███▋      | 369/1000 [00:50<00:59, 10.56it/s][A
+SquareAttack - iterations:  37%|███▋      | 371/1000 [00:50<00:59, 10.53it/s][A
+SquareAttack - iterations:  37%|███▋      | 373/1000 [00:51<01:00, 10.41it/s][A
+SquareAttack - iterations:  38%|███▊      | 375/1000 [00:51<00:59, 10.50it/s][A
+SquareAttack - iterations:  38%|███▊      | 377/1000 [00:51<00:59, 10.50it/s][A
+SquareAttack - iterations:  38%|███▊      | 379/1000 [00:51<00:58, 10.59it/s][A
+SquareAttack - iterations:  38%|███▊      | 381/1000 [00:51<00:58, 10.63it/s][A
+SquareAttack - iterations:  38%|███▊      | 383/1000 [00:51<00:57, 10.69it/s][A
+SquareAttack - iterations:  38%|███▊      | 385/1000 [00:52<00:57, 10.74it/s][A
+SquareAttack - iterations:  39%|███▊      | 387/1000 [00:52<00:56, 10.82it/s][A
+SquareAttack - iterations:  39%|███▉      | 389/1000 [00:52<00:56, 10.79it/s][A
+SquareAttack - iterations:  39%|███▉      | 391/1000 [00:52<00:56, 10.79it/s][A
+SquareAttack - iterations:  39%|███▉      | 393/1000 [00:52<00:56, 10.74it/s][A
+SquareAttack - iterations:  40%|███▉      | 395/1000 [00:53<00:56, 10.73it/s][A
+SquareAttack - iterations:  40%|███▉      | 397/1000 [00:53<00:56, 10.76it/s][A
+SquareAttack - iterations:  40%|███▉      | 399/1000 [00:53<00:56, 10.66it/s][A
+SquareAttack - iterations:  40%|████      | 401/1000 [00:53<00:55, 10.71it/s][A
+SquareAttack - iterations:  40%|████      | 403/1000 [00:53<00:55, 10.75it/s][A
+SquareAttack - iterations:  40%|████      | 405/1000 [00:53<00:55, 10.79it/s][A
+SquareAttack - iterations:  41%|████      | 407/1000 [00:54<00:55, 10.77it/s][A
+SquareAttack - iterations:  41%|████      | 409/1000 [00:54<00:54, 10.77it/s][A
+SquareAttack - iterations:  41%|████      | 411/1000 [00:54<00:55, 10.59it/s][A
+SquareAttack - iterations:  41%|████▏     | 413/1000 [00:54<00:55, 10.61it/s][A
+SquareAttack - iterations:  42%|████▏     | 415/1000 [00:54<00:54, 10.66it/s][A
+SquareAttack - iterations:  42%|████▏     | 417/1000 [00:55<00:54, 10.77it/s][A
+SquareAttack - iterations:  42%|████▏     | 419/1000 [00:55<00:53, 10.77it/s][A
+SquareAttack - iterations:  42%|████▏     | 421/1000 [00:55<00:53, 10.86it/s][A
+SquareAttack - iterations:  42%|████▏     | 423/1000 [00:55<00:52, 10.91it/s][A
+SquareAttack - iterations:  42%|████▎     | 425/1000 [00:55<00:52, 10.94it/s][A
+SquareAttack - iterations:  43%|████▎     | 427/1000 [00:56<00:52, 10.93it/s][A
+SquareAttack - iterations:  43%|████▎     | 429/1000 [00:56<00:52, 10.93it/s][A
+SquareAttack - iterations:  43%|████▎     | 431/1000 [00:56<00:52, 10.89it/s][A
+SquareAttack - iterations:  43%|████▎     | 433/1000 [00:56<00:51, 10.92it/s][A
+SquareAttack - iterations:  44%|████▎     | 435/1000 [00:56<00:51, 10.96it/s][A
+SquareAttack - iterations:  44%|████▎     | 437/1000 [00:56<00:50, 11.10it/s][A
+SquareAttack - iterations:  44%|████▍     | 439/1000 [00:57<00:50, 11.16it/s][A
+SquareAttack - iterations:  44%|████▍     | 441/1000 [00:57<00:49, 11.28it/s][A
+SquareAttack - iterations:  44%|████▍     | 443/1000 [00:57<00:49, 11.28it/s][A
+SquareAttack - iterations:  44%|████▍     | 445/1000 [00:57<00:49, 11.25it/s][A
+SquareAttack - iterations:  45%|████▍     | 447/1000 [00:57<00:48, 11.35it/s][A
+SquareAttack - iterations:  45%|████▍     | 449/1000 [00:57<00:48, 11.34it/s][A
+SquareAttack - iterations:  45%|████▌     | 451/1000 [00:58<00:48, 11.36it/s][A
+SquareAttack - iterations:  45%|████▌     | 453/1000 [00:58<00:48, 11.37it/s][A
+SquareAttack - iterations:  46%|████▌     | 455/1000 [00:58<00:48, 11.31it/s][A
+SquareAttack - iterations:  46%|████▌     | 457/1000 [00:58<00:47, 11.33it/s][A
+SquareAttack - iterations:  46%|████▌     | 459/1000 [00:58<00:47, 11.33it/s][A
+SquareAttack - iterations:  46%|████▌     | 461/1000 [00:59<00:47, 11.45it/s][A
+SquareAttack - iterations:  46%|████▋     | 463/1000 [00:59<00:46, 11.49it/s][A
+SquareAttack - iterations:  46%|████▋     | 465/1000 [00:59<00:46, 11.46it/s][A
+SquareAttack - iterations:  47%|████▋     | 467/1000 [00:59<00:46, 11.48it/s][A
+SquareAttack - iterations:  47%|████▋     | 469/1000 [00:59<00:46, 11.50it/s][A
+SquareAttack - iterations:  47%|████▋     | 471/1000 [00:59<00:46, 11.48it/s][A
+SquareAttack - iterations:  47%|████▋     | 473/1000 [01:00<00:46, 11.38it/s][A
+SquareAttack - iterations:  48%|████▊     | 475/1000 [01:00<00:46, 11.39it/s][A
+SquareAttack - iterations:  48%|████▊     | 477/1000 [01:00<00:45, 11.42it/s][A
+SquareAttack - iterations:  48%|████▊     | 479/1000 [01:00<00:45, 11.46it/s][A
+SquareAttack - iterations:  48%|████▊     | 481/1000 [01:00<00:44, 11.56it/s][A
+SquareAttack - iterations:  48%|████▊     | 483/1000 [01:00<00:44, 11.60it/s][A
+SquareAttack - iterations:  48%|████▊     | 485/1000 [01:01<00:44, 11.58it/s][A
+SquareAttack - iterations:  49%|████▊     | 487/1000 [01:01<00:44, 11.64it/s][A
+SquareAttack - iterations:  49%|████▉     | 489/1000 [01:01<00:44, 11.59it/s][A
+SquareAttack - iterations:  49%|████▉     | 491/1000 [01:01<00:43, 11.61it/s][A
+SquareAttack - iterations:  49%|████▉     | 493/1000 [01:01<00:43, 11.66it/s][A
+SquareAttack - iterations:  50%|████▉     | 495/1000 [01:01<00:43, 11.61it/s][A
+SquareAttack - iterations:  50%|████▉     | 497/1000 [01:02<00:43, 11.55it/s][A
+SquareAttack - iterations:  50%|████▉     | 499/1000 [01:02<00:43, 11.49it/s][A
+SquareAttack - iterations:  50%|█████     | 501/1000 [01:02<00:43, 11.49it/s][A
+SquareAttack - iterations:  50%|█████     | 503/1000 [01:02<00:42, 11.57it/s][A
+SquareAttack - iterations:  50%|█████     | 505/1000 [01:02<00:42, 11.60it/s][A
+SquareAttack - iterations:  51%|█████     | 507/1000 [01:03<00:42, 11.61it/s][A
+SquareAttack - iterations:  51%|█████     | 509/1000 [01:03<00:42, 11.63it/s][A
+SquareAttack - iterations:  51%|█████     | 511/1000 [01:03<00:41, 11.66it/s][A
+SquareAttack - iterations:  51%|█████▏    | 513/1000 [01:03<00:41, 11.64it/s][A
+SquareAttack - iterations:  52%|█████▏    | 515/1000 [01:03<00:41, 11.63it/s][A
+SquareAttack - iterations:  52%|█████▏    | 517/1000 [01:03<00:41, 11.66it/s][A
+SquareAttack - iterations:  52%|█████▏    | 519/1000 [01:04<00:41, 11.69it/s][A
+SquareAttack - iterations:  52%|█████▏    | 521/1000 [01:04<00:41, 11.68it/s][A
+SquareAttack - iterations:  52%|█████▏    | 523/1000 [01:04<00:40, 11.64it/s][A
+SquareAttack - iterations:  52%|█████▎    | 525/1000 [01:04<00:41, 11.55it/s][A
+SquareAttack - iterations:  53%|█████▎    | 527/1000 [01:04<00:40, 11.55it/s][A
+SquareAttack - iterations:  53%|█████▎    | 529/1000 [01:04<00:40, 11.56it/s][A
+SquareAttack - iterations:  53%|█████▎    | 531/1000 [01:05<00:40, 11.59it/s][A
+SquareAttack - iterations:  53%|█████▎    | 533/1000 [01:05<00:40, 11.64it/s][A
+SquareAttack - iterations:  54%|█████▎    | 535/1000 [01:05<00:39, 11.70it/s][A
+SquareAttack - iterations:  54%|█████▎    | 537/1000 [01:05<00:39, 11.76it/s][A
+SquareAttack - iterations:  54%|█████▍    | 539/1000 [01:05<00:38, 11.89it/s][A
+SquareAttack - iterations:  54%|█████▍    | 541/1000 [01:05<00:38, 11.83it/s][A
+SquareAttack - iterations:  54%|█████▍    | 543/1000 [01:06<00:38, 11.79it/s][A
+SquareAttack - iterations:  55%|█████▍    | 545/1000 [01:06<00:38, 11.77it/s][A
+SquareAttack - iterations:  55%|█████▍    | 547/1000 [01:06<00:38, 11.84it/s][A
+SquareAttack - iterations:  55%|█████▍    | 549/1000 [01:06<00:37, 11.88it/s][A
+SquareAttack - iterations:  55%|█████▌    | 551/1000 [01:06<00:37, 11.92it/s][A
+SquareAttack - iterations:  55%|█████▌    | 553/1000 [01:06<00:37, 12.00it/s][A
+SquareAttack - iterations:  56%|█████▌    | 555/1000 [01:07<00:37, 11.98it/s][A
+SquareAttack - iterations:  56%|█████▌    | 557/1000 [01:07<00:36, 11.98it/s][A
+SquareAttack - iterations:  56%|█████▌    | 559/1000 [01:07<00:36, 12.01it/s][A
+SquareAttack - iterations:  56%|█████▌    | 561/1000 [01:07<00:36, 12.04it/s][A
+SquareAttack - iterations:  56%|█████▋    | 563/1000 [01:07<00:36, 12.06it/s][A
+SquareAttack - iterations:  56%|█████▋    | 565/1000 [01:07<00:36, 11.91it/s][A
+SquareAttack - iterations:  57%|█████▋    | 567/1000 [01:08<00:36, 11.90it/s][A
+SquareAttack - iterations:  57%|█████▋    | 569/1000 [01:08<00:36, 11.94it/s][A
+SquareAttack - iterations:  57%|█████▋    | 571/1000 [01:08<00:35, 11.95it/s][A
+SquareAttack - iterations:  57%|█████▋    | 573/1000 [01:08<00:35, 12.04it/s][A
+SquareAttack - iterations:  57%|█████▊    | 575/1000 [01:08<00:35, 12.08it/s][A
+SquareAttack - iterations:  58%|█████▊    | 577/1000 [01:08<00:35, 12.06it/s][A
+SquareAttack - iterations:  58%|█████▊    | 579/1000 [01:09<00:34, 12.11it/s][A
+SquareAttack - iterations:  58%|█████▊    | 581/1000 [01:09<00:34, 12.11it/s][A
+SquareAttack - iterations:  58%|█████▊    | 583/1000 [01:09<00:34, 12.14it/s][A
+SquareAttack - iterations:  58%|█████▊    | 585/1000 [01:09<00:34, 12.02it/s][A
+SquareAttack - iterations:  59%|█████▊    | 587/1000 [01:09<00:34, 12.06it/s][A
+SquareAttack - iterations:  59%|█████▉    | 589/1000 [01:09<00:33, 12.10it/s][A
+SquareAttack - iterations:  59%|█████▉    | 591/1000 [01:10<00:33, 12.11it/s][A
+SquareAttack - iterations:  59%|█████▉    | 593/1000 [01:10<00:33, 12.12it/s][A
+SquareAttack - iterations:  60%|█████▉    | 595/1000 [01:10<00:33, 12.15it/s][A
+SquareAttack - iterations:  60%|█████▉    | 597/1000 [01:10<00:33, 12.18it/s][A
+SquareAttack - iterations:  60%|█████▉    | 599/1000 [01:10<00:33, 12.10it/s][A
+SquareAttack - iterations:  60%|██████    | 601/1000 [01:10<00:32, 12.09it/s][A
+SquareAttack - iterations:  60%|██████    | 603/1000 [01:11<00:32, 12.11it/s][A
+SquareAttack - iterations:  60%|██████    | 605/1000 [01:11<00:32, 12.18it/s][A
+SquareAttack - iterations:  61%|██████    | 607/1000 [01:11<00:32, 12.14it/s][A
+SquareAttack - iterations:  61%|██████    | 609/1000 [01:11<00:32, 12.14it/s][A
+SquareAttack - iterations:  61%|██████    | 611/1000 [01:11<00:32, 12.14it/s][A
+SquareAttack - iterations:  61%|██████▏   | 613/1000 [01:11<00:31, 12.16it/s][A
+SquareAttack - iterations:  62%|██████▏   | 615/1000 [01:12<00:31, 12.11it/s][A
+SquareAttack - iterations:  62%|██████▏   | 617/1000 [01:12<00:31, 12.10it/s][A
+SquareAttack - iterations:  62%|██████▏   | 619/1000 [01:12<00:31, 12.10it/s][A
+SquareAttack - iterations:  62%|██████▏   | 621/1000 [01:12<00:31, 12.17it/s][A
+SquareAttack - iterations:  62%|██████▏   | 623/1000 [01:12<00:30, 12.16it/s][A
+SquareAttack - iterations:  62%|██████▎   | 625/1000 [01:12<00:30, 12.18it/s][A
+SquareAttack - iterations:  63%|██████▎   | 627/1000 [01:13<00:30, 12.17it/s][A
+SquareAttack - iterations:  63%|██████▎   | 629/1000 [01:13<00:30, 12.13it/s][A
+SquareAttack - iterations:  63%|██████▎   | 631/1000 [01:13<00:30, 12.12it/s][A
+SquareAttack - iterations:  63%|██████▎   | 633/1000 [01:13<00:30, 12.16it/s][A
+SquareAttack - iterations:  64%|██████▎   | 635/1000 [01:13<00:30, 12.16it/s][A
+SquareAttack - iterations:  64%|██████▎   | 637/1000 [01:13<00:29, 12.10it/s][A
+SquareAttack - iterations:  64%|██████▍   | 639/1000 [01:14<00:29, 12.13it/s][A
+SquareAttack - iterations:  64%|██████▍   | 641/1000 [01:14<00:29, 12.13it/s][A
+SquareAttack - iterations:  64%|██████▍   | 643/1000 [01:14<00:29, 12.14it/s][A
+SquareAttack - iterations:  64%|██████▍   | 645/1000 [01:14<00:29, 12.14it/s][A
+SquareAttack - iterations:  65%|██████▍   | 647/1000 [01:14<00:28, 12.19it/s][A
+SquareAttack - iterations:  65%|██████▍   | 649/1000 [01:14<00:28, 12.12it/s][A
+SquareAttack - iterations:  65%|██████▌   | 651/1000 [01:15<00:28, 12.15it/s][A
+SquareAttack - iterations:  65%|██████▌   | 653/1000 [01:15<00:28, 12.22it/s][A
+SquareAttack - iterations:  66%|██████▌   | 655/1000 [01:15<00:28, 12.29it/s][A
+SquareAttack - iterations:  66%|██████▌   | 657/1000 [01:15<00:28, 12.20it/s][A
+SquareAttack - iterations:  66%|██████▌   | 659/1000 [01:15<00:27, 12.18it/s][A
+SquareAttack - iterations:  66%|██████▌   | 661/1000 [01:15<00:27, 12.25it/s][A
+SquareAttack - iterations:  66%|██████▋   | 663/1000 [01:16<00:27, 12.26it/s][A
+SquareAttack - iterations:  66%|██████▋   | 665/1000 [01:16<00:27, 12.22it/s][A
+SquareAttack - iterations:  67%|██████▋   | 667/1000 [01:16<00:27, 12.23it/s][A
+SquareAttack - iterations:  67%|██████▋   | 669/1000 [01:16<00:26, 12.32it/s][A
+SquareAttack - iterations:  67%|██████▋   | 671/1000 [01:16<00:26, 12.24it/s][A
+SquareAttack - iterations:  67%|██████▋   | 673/1000 [01:16<00:26, 12.20it/s][A
+SquareAttack - iterations:  68%|██████▊   | 675/1000 [01:16<00:26, 12.23it/s][A
+SquareAttack - iterations:  68%|██████▊   | 677/1000 [01:17<00:26, 12.29it/s][A
+SquareAttack - iterations:  68%|██████▊   | 679/1000 [01:17<00:26, 12.30it/s][A
+SquareAttack - iterations:  68%|██████▊   | 681/1000 [01:17<00:25, 12.28it/s][A
+SquareAttack - iterations:  68%|██████▊   | 683/1000 [01:17<00:25, 12.23it/s][A
+SquareAttack - iterations:  68%|██████▊   | 685/1000 [01:17<00:25, 12.21it/s][A
+SquareAttack - iterations:  69%|██████▊   | 687/1000 [01:17<00:25, 12.20it/s][A
+SquareAttack - iterations:  69%|██████▉   | 689/1000 [01:18<00:25, 12.21it/s][A
+SquareAttack - iterations:  69%|██████▉   | 691/1000 [01:18<00:25, 12.30it/s][A
+SquareAttack - iterations:  69%|██████▉   | 693/1000 [01:18<00:24, 12.33it/s][A
+SquareAttack - iterations:  70%|██████▉   | 695/1000 [01:18<00:24, 12.32it/s][A
+SquareAttack - iterations:  70%|██████▉   | 697/1000 [01:18<00:24, 12.34it/s][A
+SquareAttack - iterations:  70%|██████▉   | 699/1000 [01:18<00:24, 12.37it/s][A
+SquareAttack - iterations:  70%|███████   | 701/1000 [01:19<00:24, 12.37it/s][A
+SquareAttack - iterations:  70%|███████   | 703/1000 [01:19<00:23, 12.42it/s][A
+SquareAttack - iterations:  70%|███████   | 705/1000 [01:19<00:23, 12.36it/s][A
+SquareAttack - iterations:  71%|███████   | 707/1000 [01:19<00:23, 12.38it/s][A
+SquareAttack - iterations:  71%|███████   | 709/1000 [01:19<00:23, 12.40it/s][A
+SquareAttack - iterations:  71%|███████   | 711/1000 [01:19<00:23, 12.32it/s][A
+SquareAttack - iterations:  71%|███████▏  | 713/1000 [01:20<00:23, 12.31it/s][A
+SquareAttack - iterations:  72%|███████▏  | 715/1000 [01:20<00:23, 12.30it/s][A
+SquareAttack - iterations:  72%|███████▏  | 717/1000 [01:20<00:22, 12.34it/s][A
+SquareAttack - iterations:  72%|███████▏  | 719/1000 [01:20<00:22, 12.43it/s][A
+SquareAttack - iterations:  72%|███████▏  | 721/1000 [01:20<00:22, 12.44it/s][A
+SquareAttack - iterations:  72%|███████▏  | 723/1000 [01:20<00:22, 12.38it/s][A
+SquareAttack - iterations:  72%|███████▎  | 725/1000 [01:21<00:22, 12.37it/s][A
+SquareAttack - iterations:  73%|███████▎  | 727/1000 [01:21<00:22, 12.35it/s][A
+SquareAttack - iterations:  73%|███████▎  | 729/1000 [01:21<00:21, 12.41it/s][A
+SquareAttack - iterations:  73%|███████▎  | 731/1000 [01:21<00:21, 12.40it/s][A
+SquareAttack - iterations:  73%|███████▎  | 733/1000 [01:21<00:21, 12.25it/s][A
+SquareAttack - iterations:  74%|███████▎  | 735/1000 [01:21<00:21, 12.28it/s][A
+SquareAttack - iterations:  74%|███████▎  | 737/1000 [01:22<00:21, 12.37it/s][A
+SquareAttack - iterations:  74%|███████▍  | 739/1000 [01:22<00:21, 12.38it/s][A
+SquareAttack - iterations:  74%|███████▍  | 741/1000 [01:22<00:20, 12.35it/s][A
+SquareAttack - iterations:  74%|███████▍  | 743/1000 [01:22<00:20, 12.33it/s][A
+SquareAttack - iterations:  74%|███████▍  | 745/1000 [01:22<00:20, 12.31it/s][A
+SquareAttack - iterations:  75%|███████▍  | 747/1000 [01:22<00:20, 12.34it/s][A
+SquareAttack - iterations:  75%|███████▍  | 749/1000 [01:22<00:20, 12.35it/s][A
+SquareAttack - iterations:  75%|███████▌  | 751/1000 [01:23<00:20, 12.33it/s][A
+SquareAttack - iterations:  75%|███████▌  | 753/1000 [01:23<00:20, 12.34it/s][A
+SquareAttack - iterations:  76%|███████▌  | 755/1000 [01:23<00:19, 12.32it/s][A
+SquareAttack - iterations:  76%|███████▌  | 757/1000 [01:23<00:19, 12.33it/s][A
+SquareAttack - iterations:  76%|███████▌  | 759/1000 [01:23<00:19, 12.44it/s][A
+SquareAttack - iterations:  76%|███████▌  | 761/1000 [01:23<00:19, 12.37it/s][A
+SquareAttack - iterations:  76%|███████▋  | 763/1000 [01:24<00:19, 12.36it/s][A
+SquareAttack - iterations:  76%|███████▋  | 765/1000 [01:24<00:18, 12.40it/s][A
+SquareAttack - iterations:  77%|███████▋  | 767/1000 [01:24<00:18, 12.38it/s][A
+SquareAttack - iterations:  77%|███████▋  | 769/1000 [01:24<00:18, 12.41it/s][A
+SquareAttack - iterations:  77%|███████▋  | 771/1000 [01:24<00:18, 12.22it/s][A
+SquareAttack - iterations:  77%|███████▋  | 773/1000 [01:24<00:18, 12.28it/s][A
+SquareAttack - iterations:  78%|███████▊  | 775/1000 [01:25<00:18, 12.35it/s][A
+SquareAttack - iterations:  78%|███████▊  | 777/1000 [01:25<00:17, 12.41it/s][A
+SquareAttack - iterations:  78%|███████▊  | 779/1000 [01:25<00:17, 12.39it/s][A
+SquareAttack - iterations:  78%|███████▊  | 781/1000 [01:25<00:17, 12.43it/s][A
+SquareAttack - iterations:  78%|███████▊  | 783/1000 [01:25<00:17, 12.40it/s][A
+SquareAttack - iterations:  78%|███████▊  | 785/1000 [01:25<00:17, 12.44it/s][A
+SquareAttack - iterations:  79%|███████▊  | 787/1000 [01:26<00:17, 12.40it/s][A
+SquareAttack - iterations:  79%|███████▉  | 789/1000 [01:26<00:17, 12.36it/s][A
+SquareAttack - iterations:  79%|███████▉  | 791/1000 [01:26<00:16, 12.36it/s][A
+SquareAttack - iterations:  79%|███████▉  | 793/1000 [01:26<00:16, 12.37it/s][A
+SquareAttack - iterations:  80%|███████▉  | 795/1000 [01:26<00:16, 12.51it/s][A
+SquareAttack - iterations:  80%|███████▉  | 797/1000 [01:26<00:16, 12.65it/s][A
+SquareAttack - iterations:  80%|███████▉  | 799/1000 [01:27<00:15, 12.77it/s][A
+SquareAttack - iterations:  80%|████████  | 801/1000 [01:27<00:15, 12.82it/s][A
+SquareAttack - iterations:  80%|████████  | 803/1000 [01:27<00:15, 12.77it/s][A
+SquareAttack - iterations:  80%|████████  | 805/1000 [01:27<00:15, 12.84it/s][A
+SquareAttack - iterations:  81%|████████  | 807/1000 [01:27<00:14, 12.92it/s][A
+SquareAttack - iterations:  81%|████████  | 809/1000 [01:27<00:14, 12.96it/s][A
+SquareAttack - iterations:  81%|████████  | 811/1000 [01:27<00:14, 13.01it/s][A
+SquareAttack - iterations:  81%|████████▏ | 813/1000 [01:28<00:14, 13.00it/s][A
+SquareAttack - iterations:  82%|████████▏ | 815/1000 [01:28<00:14, 13.04it/s][A
+SquareAttack - iterations:  82%|████████▏ | 817/1000 [01:28<00:14, 13.01it/s][A
+SquareAttack - iterations:  82%|████████▏ | 819/1000 [01:28<00:13, 13.02it/s][A
+SquareAttack - iterations:  82%|████████▏ | 821/1000 [01:28<00:13, 12.98it/s][A
+SquareAttack - iterations:  82%|████████▏ | 823/1000 [01:28<00:13, 13.03it/s][A
+SquareAttack - iterations:  82%|████████▎ | 825/1000 [01:29<00:13, 13.00it/s][A
+SquareAttack - iterations:  83%|████████▎ | 827/1000 [01:29<00:13, 12.93it/s][A
+SquareAttack - iterations:  83%|████████▎ | 829/1000 [01:29<00:13, 13.00it/s][A
+SquareAttack - iterations:  83%|████████▎ | 831/1000 [01:29<00:12, 13.08it/s][A
+SquareAttack - iterations:  83%|████████▎ | 833/1000 [01:29<00:12, 13.03it/s][A
+SquareAttack - iterations:  84%|████████▎ | 835/1000 [01:29<00:12, 13.09it/s][A
+SquareAttack - iterations:  84%|████████▎ | 837/1000 [01:29<00:12, 12.97it/s][A
+SquareAttack - iterations:  84%|████████▍ | 839/1000 [01:30<00:12, 12.92it/s][A
+SquareAttack - iterations:  84%|████████▍ | 841/1000 [01:30<00:12, 13.00it/s][A
+SquareAttack - iterations:  84%|████████▍ | 843/1000 [01:30<00:12, 13.02it/s][A
+SquareAttack - iterations:  84%|████████▍ | 845/1000 [01:30<00:11, 13.07it/s][A
+SquareAttack - iterations:  85%|████████▍ | 847/1000 [01:30<00:11, 13.07it/s][A
+SquareAttack - iterations:  85%|████████▍ | 849/1000 [01:30<00:11, 13.09it/s][A
+SquareAttack - iterations:  85%|████████▌ | 851/1000 [01:31<00:11, 13.11it/s][A
+SquareAttack - iterations:  85%|████████▌ | 853/1000 [01:31<00:11, 13.15it/s][A
+SquareAttack - iterations:  86%|████████▌ | 855/1000 [01:31<00:11, 13.06it/s][A
+SquareAttack - iterations:  86%|████████▌ | 857/1000 [01:31<00:10, 13.05it/s][A
+SquareAttack - iterations:  86%|████████▌ | 859/1000 [01:31<00:10, 13.02it/s][A
+SquareAttack - iterations:  86%|████████▌ | 861/1000 [01:31<00:10, 13.04it/s][A
+SquareAttack - iterations:  86%|████████▋ | 863/1000 [01:31<00:10, 13.05it/s][A
+SquareAttack - iterations:  86%|████████▋ | 865/1000 [01:32<00:10, 13.12it/s][A
+SquareAttack - iterations:  87%|████████▋ | 867/1000 [01:32<00:10, 13.12it/s][A
+SquareAttack - iterations:  87%|████████▋ | 869/1000 [01:32<00:09, 13.20it/s][A
+SquareAttack - iterations:  87%|████████▋ | 871/1000 [01:32<00:09, 13.15it/s][A
+SquareAttack - iterations:  87%|████████▋ | 873/1000 [01:32<00:09, 13.15it/s][A
+SquareAttack - iterations:  88%|████████▊ | 875/1000 [01:32<00:09, 13.17it/s][A
+SquareAttack - iterations:  88%|████████▊ | 877/1000 [01:32<00:09, 13.21it/s][A
+SquareAttack - iterations:  88%|████████▊ | 879/1000 [01:33<00:09, 13.21it/s][A
+SquareAttack - iterations:  88%|████████▊ | 881/1000 [01:33<00:08, 13.27it/s][A
+SquareAttack - iterations:  88%|████████▊ | 883/1000 [01:33<00:08, 13.13it/s][A
+SquareAttack - iterations:  88%|████████▊ | 885/1000 [01:33<00:08, 13.21it/s][A
+SquareAttack - iterations:  89%|████████▊ | 887/1000 [01:33<00:08, 13.21it/s][A
+SquareAttack - iterations:  89%|████████▉ | 889/1000 [01:33<00:08, 13.19it/s][A
+SquareAttack - iterations:  89%|████████▉ | 891/1000 [01:34<00:08, 13.29it/s][A
+SquareAttack - iterations:  89%|████████▉ | 893/1000 [01:34<00:08, 13.29it/s][A
+SquareAttack - iterations:  90%|████████▉ | 895/1000 [01:34<00:07, 13.21it/s][A
+SquareAttack - iterations:  90%|████████▉ | 897/1000 [01:34<00:07, 13.20it/s][A
+SquareAttack - iterations:  90%|████████▉ | 899/1000 [01:34<00:07, 13.21it/s][A
+SquareAttack - iterations:  90%|█████████ | 901/1000 [01:34<00:07, 13.26it/s][A
+SquareAttack - iterations:  90%|█████████ | 903/1000 [01:34<00:07, 13.18it/s][A
+SquareAttack - iterations:  90%|█████████ | 905/1000 [01:35<00:07, 13.21it/s][A
+SquareAttack - iterations:  91%|█████████ | 907/1000 [01:35<00:07, 13.11it/s][A
+SquareAttack - iterations:  91%|█████████ | 909/1000 [01:35<00:06, 13.17it/s][A
+SquareAttack - iterations:  91%|█████████ | 911/1000 [01:35<00:06, 13.10it/s][A
+SquareAttack - iterations:  91%|█████████▏| 913/1000 [01:35<00:06, 13.17it/s][A
+SquareAttack - iterations:  92%|█████████▏| 915/1000 [01:35<00:06, 13.13it/s][A
+SquareAttack - iterations:  92%|█████████▏| 917/1000 [01:36<00:06, 13.23it/s][A
+SquareAttack - iterations:  92%|█████████▏| 919/1000 [01:36<00:06, 13.17it/s][A
+SquareAttack - iterations:  92%|█████████▏| 921/1000 [01:36<00:05, 13.20it/s][A
+SquareAttack - iterations:  92%|█████████▏| 923/1000 [01:36<00:05, 13.18it/s][A
+SquareAttack - iterations:  92%|█████████▎| 925/1000 [01:36<00:05, 13.22it/s][A
+SquareAttack - iterations:  93%|█████████▎| 927/1000 [01:36<00:05, 13.52it/s][A
+SquareAttack - iterations:  93%|█████████▎| 929/1000 [01:36<00:05, 13.70it/s][A
+SquareAttack - iterations:  93%|█████████▎| 931/1000 [01:37<00:05, 13.70it/s][A
+SquareAttack - iterations:  93%|█████████▎| 933/1000 [01:37<00:04, 13.52it/s][A
+SquareAttack - iterations:  94%|█████████▎| 935/1000 [01:37<00:04, 13.60it/s][A
+SquareAttack - iterations:  94%|█████████▎| 937/1000 [01:37<00:04, 13.60it/s][A
+SquareAttack - iterations:  94%|█████████▍| 939/1000 [01:37<00:04, 13.57it/s][A
+SquareAttack - iterations:  94%|█████████▍| 941/1000 [01:37<00:04, 12.84it/s][A
+SquareAttack - iterations:  94%|█████████▍| 943/1000 [01:37<00:04, 13.22it/s][A
+SquareAttack - iterations:  94%|█████████▍| 945/1000 [01:38<00:04, 13.68it/s][A
+SquareAttack - iterations:  95%|█████████▍| 947/1000 [01:38<00:03, 13.35it/s][A
+SquareAttack - iterations:  95%|█████████▍| 949/1000 [01:38<00:03, 12.95it/s][A
+SquareAttack - iterations:  95%|█████████▌| 951/1000 [01:38<00:03, 13.21it/s][A
+SquareAttack - iterations:  95%|█████████▌| 953/1000 [01:38<00:03, 13.27it/s][A
+SquareAttack - iterations:  96%|█████████▌| 955/1000 [01:38<00:03, 12.45it/s][A
+SquareAttack - iterations:  96%|█████████▌| 957/1000 [01:39<00:03, 12.69it/s][A
+SquareAttack - iterations:  96%|█████████▌| 959/1000 [01:39<00:03, 13.04it/s][A
+SquareAttack - iterations:  96%|█████████▌| 961/1000 [01:39<00:02, 13.35it/s][A
+SquareAttack - iterations:  96%|█████████▋| 963/1000 [01:39<00:02, 12.61it/s][A
+SquareAttack - iterations:  96%|█████████▋| 965/1000 [01:39<00:02, 12.84it/s][A
+SquareAttack - iterations:  97%|█████████▋| 967/1000 [01:39<00:02, 13.01it/s][A
+SquareAttack - iterations:  97%|█████████▋| 969/1000 [01:39<00:02, 13.11it/s][A
+SquareAttack - iterations:  97%|█████████▋| 971/1000 [01:40<00:02, 13.17it/s][A
+SquareAttack - iterations:  97%|█████████▋| 973/1000 [01:40<00:02, 13.29it/s][A
+SquareAttack - iterations:  98%|█████████▊| 975/1000 [01:40<00:01, 13.36it/s][A
+SquareAttack - iterations:  98%|█████████▊| 977/1000 [01:40<00:01, 13.25it/s][A
+SquareAttack - iterations:  98%|█████████▊| 979/1000 [01:40<00:01, 13.33it/s][A
+SquareAttack - iterations:  98%|█████████▊| 981/1000 [01:40<00:01, 13.27it/s][A
+SquareAttack - iterations:  98%|█████████▊| 983/1000 [01:41<00:01, 13.25it/s][A
+SquareAttack - iterations:  98%|█████████▊| 985/1000 [01:41<00:01, 13.27it/s][A
+SquareAttack - iterations:  99%|█████████▊| 987/1000 [01:41<00:00, 13.22it/s][A
+SquareAttack - iterations:  99%|█████████▉| 989/1000 [01:41<00:00, 13.30it/s][A
+SquareAttack - iterations:  99%|█████████▉| 991/1000 [01:41<00:00, 13.29it/s][A
+SquareAttack - iterations:  99%|█████████▉| 993/1000 [01:41<00:00, 13.31it/s][A
+SquareAttack - iterations: 100%|█████████▉| 995/1000 [01:41<00:00, 13.33it/s][A
+SquareAttack - iterations: 100%|█████████▉| 997/1000 [01:42<00:00, 13.37it/s][A
+SquareAttack - iterations: 100%|█████████▉| 999/1000 [01:42<00:00, 13.36it/s][A
+                                                                             [ASquareAttack - restarts: 100%|██████████| 1/1 [01:42<00:00, 102.54s/it]SquareAttack - restarts: 100%|██████████| 1/1 [01:42<00:00, 102.54s/it]
+Expert input_dim=512, output_dim=10, hidden_dim=256
+
+============================================================
+Training expert0_clean on mix ['clean']
+============================================================
+  epoch 1/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 1/3:  13%|█▎        | 8/63 [00:00<00:00, 77.61it/s]  epoch 1/3:  63%|██████▎   | 40/63 [00:00<00:00, 216.15it/s]  epoch 1/3: 100%|██████████| 63/63 [00:00<00:00, 225.95it/s]
+    loss=0.2359  acc=0.9385
+  epoch 2/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 2/3:  49%|████▉     | 31/63 [00:00<00:00, 303.42it/s]  epoch 2/3: 100%|██████████| 63/63 [00:00<00:00, 308.93it/s]  epoch 2/3: 100%|██████████| 63/63 [00:00<00:00, 307.88it/s]
+    loss=0.1698  acc=0.9550
+  epoch 3/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 3/3:  54%|█████▍    | 34/63 [00:00<00:00, 327.42it/s]  epoch 3/3: 100%|██████████| 63/63 [00:00<00:00, 327.91it/s]
+    loss=0.1696  acc=0.9485
+  medoid(clean):   0%|          | 0/16 [00:00<?, ?it/s]  medoid(clean): 100%|██████████| 16/16 [00:00<00:00, 430.60it/s]
+  medoid diagram index: 14
+
+============================================================
+Training expert1_fgsm on mix ['fgsm']
+============================================================
+  epoch 1/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 1/3:  52%|█████▏    | 33/63 [00:00<00:00, 323.34it/s]  epoch 1/3: 100%|██████████| 63/63 [00:00<00:00, 316.46it/s]
+    loss=1.7082  acc=0.4200
+  epoch 2/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 2/3:  49%|████▉     | 31/63 [00:00<00:00, 308.31it/s]  epoch 2/3:  98%|█████████▊| 62/63 [00:00<00:00, 288.79it/s]  epoch 2/3: 100%|██████████| 63/63 [00:00<00:00, 290.87it/s]
+    loss=1.5494  acc=0.4835
+  epoch 3/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 3/3:  44%|████▍     | 28/63 [00:00<00:00, 277.82it/s]  epoch 3/3:  89%|████████▉ | 56/63 [00:00<00:00, 274.56it/s]  epoch 3/3: 100%|██████████| 63/63 [00:00<00:00, 274.69it/s]
+    loss=1.5433  acc=0.4800
+  medoid(fgsm):   0%|          | 0/16 [00:00<?, ?it/s]  medoid(fgsm): 100%|██████████| 16/16 [00:00<00:00, 482.24it/s]
+  medoid diagram index: 4
+
+============================================================
+Training expert2_pgd on mix ['pgd']
+============================================================
+  epoch 1/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 1/3:  44%|████▍     | 28/63 [00:00<00:00, 276.50it/s]  epoch 1/3:  89%|████████▉ | 56/63 [00:00<00:00, 273.02it/s]  epoch 1/3: 100%|██████████| 63/63 [00:00<00:00, 276.14it/s]
+    loss=2.1784  acc=0.2360
+  epoch 2/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 2/3:  44%|████▍     | 28/63 [00:00<00:00, 276.20it/s]  epoch 2/3:  89%|████████▉ | 56/63 [00:00<00:00, 272.73it/s]  epoch 2/3: 100%|██████████| 63/63 [00:00<00:00, 270.75it/s]
+    loss=2.1033  acc=0.2425
+  epoch 3/3:   0%|          | 0/63 [00:00<?, ?it/s]  epoch 3/3:  44%|████▍     | 28/63 [00:00<00:00, 277.43it/s]  epoch 3/3:  89%|████████▉ | 56/63 [00:00<00:00, 273.71it/s]  epoch 3/3: 100%|██████████| 63/63 [00:00<00:00, 275.59it/s]
+    loss=2.0780  acc=0.2625
+  medoid(pgd):   0%|          | 0/16 [00:00<?, ?it/s]  medoid(pgd): 100%|██████████| 16/16 [00:00<00:00, 474.66it/s]
+  medoid diagram index: 10
+
+============================================================
+Training expert3_mixed on mix ['clean', 'fgsm', 'pgd', 'square']
+============================================================
+  epoch 1/3:   0%|          | 0/94 [00:00<?, ?it/s]  epoch 1/3:  30%|██▉       | 28/94 [00:00<00:00, 278.26it/s]  epoch 1/3:  60%|█████▉    | 56/94 [00:00<00:00, 277.54it/s]  epoch 1/3:  89%|████████▉ | 84/94 [00:00<00:00, 277.65it/s]  epoch 1/3: 100%|██████████| 94/94 [00:00<00:00, 283.13it/s]
+    loss=1.6561  acc=0.4483
+  epoch 2/3:   0%|          | 0/94 [00:00<?, ?it/s]  epoch 2/3:  36%|███▌      | 34/94 [00:00<00:00, 330.71it/s]  epoch 2/3:  72%|███████▏  | 68/94 [00:00<00:00, 333.46it/s]  epoch 2/3: 100%|██████████| 94/94 [00:00<00:00, 330.70it/s]
+    loss=1.5762  acc=0.4693
+  epoch 3/3:   0%|          | 0/94 [00:00<?, ?it/s]  epoch 3/3:  35%|███▌      | 33/94 [00:00<00:00, 326.78it/s]  epoch 3/3:  70%|███████   | 66/94 [00:00<00:00, 293.53it/s]  epoch 3/3: 100%|██████████| 94/94 [00:00<00:00, 290.57it/s]
+    loss=1.5450  acc=0.4860
+  medoid(clean):   0%|          | 0/16 [00:00<?, ?it/s]  medoid(clean): 100%|██████████| 16/16 [00:00<00:00, 465.42it/s]
+  medoid diagram index: 7
+
+✅ Experts saved → models/experts.pkl

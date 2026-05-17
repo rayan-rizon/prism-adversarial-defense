@@ -1,0 +1,9 @@
+Device: cuda
+Evaluation: n_test=200, eval_split=test[8000-9999]
+Standard L∞ budget: ε = 0.0314 (8.0/255)
+
+Ensemble provenance: use_dct=True, training_attacks=['FGSM', 'PGD', 'Square', 'CW'], training_n=2500, n_features=54, logistic_input_dim=225
+
+Latency (200 images): mean=35.5ms  std=35.0ms  p95=37.8ms  ✅ < 100ms target
+
+Latency-only results saved → experiments/evaluation/results_latency_standalone.json

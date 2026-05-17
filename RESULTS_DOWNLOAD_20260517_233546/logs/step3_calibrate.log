@@ -1,0 +1,29 @@
+Device: cuda
+Cal split:  test idx 5000-6999  (n=2000)
+Val split:  test idx 7000-7999  (n=1000)
+Cal alpha factor (scalar fallback): 0.70 x published targets
+Per-tier cal alpha factors: L1=0.85, L2=0.70, L3=0.50
+Loaded PersistenceEnsembleScorer.
+
+Computing ensemble scores for calibration and validation splits...
+
+=== Ensemble Conformal Thresholds ===
+  [Cal alpha factor: 0.70 | Published: L1<=0.100, L2<=0.030, L3<=0.0050]
+  L1  cal_alpha=0.0850  pub_alpha=0.1000  threshold=2.655777
+  L2  cal_alpha=0.0210  pub_alpha=0.0300  threshold=4.176496
+  L3  cal_alpha=0.0025  pub_alpha=0.0050  threshold=6.654324
+
+=== FPR Verification on Val Split (strict, tol=0.0, target=published alpha) ===
+  L1: empirical FPR=0.0890  (pub target<=0.1000)  [PASS]
+  L2: empirical FPR=0.0240  (pub target<=0.0300)  [PASS]
+  L3: empirical FPR=0.0030  (pub target<=0.0050)  [PASS]
+
+  [OK] All ensemble FPR guarantees verified on val split.
+
+=== Base-TDA Calibrator Verification on Val Split ===
+  L1: empirical FPR=0.1050  (pub target<=0.1000)  [FAIL]
+  L2: empirical FPR=0.0260  (pub target<=0.0300)  [PASS]
+  L3: empirical FPR=0.0000  (pub target<=0.0050)  [PASS]
+
+Calibrator (ensemble) saved -> models/calibrator.pkl
+Calibrator (base TDA) saved -> models/calibrator_base.pkl
