@@ -49,6 +49,7 @@ class CampaignMonitor:
         score_scale: float = 1.0,
         cusum_drift: float = 0.25,
         cusum_threshold: Optional[float] = None,
+        cusum_k_consecutive: int = 1,
     ):
         """
         Args:
@@ -82,6 +83,7 @@ class CampaignMonitor:
         score_scale      = tcal.get('score_scale',      score_scale)
         cusum_drift      = tcal.get('cusum_drift',      cusum_drift)
         cusum_threshold  = tcal.get('cusum_threshold',  cusum_threshold)
+        cusum_k_consecutive = tcal.get('cusum_k_consecutive', cusum_k_consecutive)
         self._thresholds_source = thresholds_path if tcal else None
         self._thresholds_calibration = tcal.get('calibration_metrics') if tcal else None
 
@@ -99,7 +101,9 @@ class CampaignMonitor:
         self.cusum_threshold = (
             float(cusum_threshold) if cusum_threshold is not None else None
         )
+        self.cusum_k_consecutive = max(1, int(cusum_k_consecutive))
         self._cusum_score = 0.0
+        self._cusum_consec = 0
 
         self.bocpd = BayesianOnlineChangepoint(
             hazard_rate=hazard_rate,
@@ -126,6 +130,7 @@ class CampaignMonitor:
         self._step_counter = 0
         self._cooldown_until = 0
         self._cusum_score = 0.0
+        self._cusum_consec = 0
         self.alert_log.clear()
 
     def process_score(self, score: float, timestamp: Optional[float] = None) -> Dict:
@@ -157,11 +162,21 @@ class CampaignMonitor:
         self._cusum_score = max(
             0.0, self._cusum_score + centered_score - self.cusum_drift
         )
-        cusum_triggered = (
+        # k-consecutive guard: CUSUM must exceed threshold for k consecutive
+        # steps (after warmup + cooldown) before firing. Kills single-step
+        # noise spikes that overfit a particular calibration stream.
+        _cusum_over = (
             self.cusum_threshold is not None
             and self._cusum_score > self.cusum_threshold
             and self._step_counter > self.warmup_steps
             and self._step_counter > self._cooldown_until
+        )
+        if _cusum_over:
+            self._cusum_consec += 1
+        else:
+            self._cusum_consec = 0
+        cusum_triggered = (
+            _cusum_over and self._cusum_consec >= self.cusum_k_consecutive
         )
 
         # Primary detection: short-run probability spike or calibrated CUSUM.

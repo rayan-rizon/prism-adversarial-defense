@@ -202,6 +202,25 @@ def build_prism(cfg, model, device):
     else:
         prism.moe = None
 
+    # F3 runtime channel-mask. Applied only to the canonical ensemble arm
+    # (not TDA-only or Ensemble-no-TDA, which load different scorers).
+    mask_channel = cfg.get('mask_channel')
+    if mask_channel and not cfg.get('ensemble_no_tda') and not cfg.get('tda_only'):
+        scorer = getattr(prism, 'ensemble_scorer', None) or getattr(prism, 'scorer', None)
+        if scorer is not None and hasattr(scorer, 'channel_index_range'):
+            idx = scorer.channel_index_range(mask_channel)
+            if not idx:
+                raise ValueError(
+                    f"mask_channel={mask_channel!r} requested but the loaded "
+                    f"scorer reports no slot for it. Check the canonical "
+                    f"artifact has this channel enabled."
+                )
+            scorer.feature_zero_indices = idx
+    if cfg.get('disable_side_quadratic') and not cfg.get('ensemble_no_tda') and not cfg.get('tda_only'):
+        scorer = getattr(prism, 'ensemble_scorer', None) or getattr(prism, 'scorer', None)
+        if scorer is not None and hasattr(scorer, 'use_side_quadratic_features'):
+            scorer.use_side_quadratic_features = False
+
     return prism
 
 
@@ -379,11 +398,26 @@ def run_ablation_multiseed(
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(__file__))
 
+    # F3 ablation: "No MoE" dropped — MoE only fires in L3 recovery, has zero
+    # effect on IID detection by construction (Δ=0, p=1.0 across all attacks).
+    # Replaced with channel-mask ablations: weights remain jointly trained,
+    # the named side-channel is zeroed at inference. Honest framing required
+    # in the paper ("channel-mask ablation, not retrain ablation").
+    # F3 ablation: "No MoE" dropped — MoE only fires in L3 recovery, has zero
+    # effect on IID detection by construction. Replaced with channel-mask
+    # arms: weights remain jointly trained, named side-channel zeroed at
+    # inference. Paper text must label this as "channel-mask ablation".
+    # No-SideQuadratic requires a retrained variant (scaler is 245-dim) —
+    # add via scripts/train_ensemble_scorer.py --no-side-quadratic when
+    # running on Vast.ai; omitted from the runtime-mask sweep.
     configs = {
-        'Full PRISM':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
-        'No MoE':          {'use_ensemble': True,  'use_moe': False, 'tda_only': False},
-        'Ensemble-no-TDA': {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
-        'TDA only':        {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
+        'Full PRISM':           {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
+        'No-LogitProfile':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'logit_profile'},
+        'No-StabilityV2':       {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'stability'},
+        'No-GradNorm':          {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'grad_norm'},
+        'No-DCT':               {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'dct'},
+        'Ensemble-no-TDA':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
+        'TDA only':             {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -722,11 +756,26 @@ def main():
     adv_cache = batch_generate_adversarials(attacks, all_imgs_pixel)
 
     # ── Configurations ────────────────────────────────────────────────────────
+    # F3 ablation: "No MoE" dropped — MoE only fires in L3 recovery, has zero
+    # effect on IID detection by construction (Δ=0, p=1.0 across all attacks).
+    # Replaced with channel-mask ablations: weights remain jointly trained,
+    # the named side-channel is zeroed at inference. Honest framing required
+    # in the paper ("channel-mask ablation, not retrain ablation").
+    # F3 ablation: "No MoE" dropped — MoE only fires in L3 recovery, has zero
+    # effect on IID detection by construction. Replaced with channel-mask
+    # arms: weights remain jointly trained, named side-channel zeroed at
+    # inference. Paper text must label this as "channel-mask ablation".
+    # No-SideQuadratic requires a retrained variant (scaler is 245-dim) —
+    # add via scripts/train_ensemble_scorer.py --no-side-quadratic when
+    # running on Vast.ai; omitted from the runtime-mask sweep.
     configs = {
-        'Full PRISM':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
-        'No MoE':          {'use_ensemble': True,  'use_moe': False, 'tda_only': False},
-        'Ensemble-no-TDA': {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
-        'TDA only':        {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
+        'Full PRISM':           {'use_ensemble': True,  'use_moe': True,  'tda_only': False},
+        'No-LogitProfile':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'logit_profile'},
+        'No-StabilityV2':       {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'stability'},
+        'No-GradNorm':          {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'grad_norm'},
+        'No-DCT':               {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'mask_channel': 'dct'},
+        'Ensemble-no-TDA':      {'use_ensemble': True,  'use_moe': True,  'tda_only': False, 'ensemble_no_tda': True},
+        'TDA only':             {'use_ensemble': False, 'use_moe': False, 'tda_only': True},
     }
 
     # ── Run ablation ──────────────────────────────────────────────────────────

@@ -167,6 +167,7 @@ def _simulate_stream(scores, tier_thresh_L3, cell, l0_factor=0.8):
         score_scale=cell.get('score_scale', 1.0),
         cusum_drift=cell.get('cusum_drift', 0.25),
         cusum_threshold=cell.get('cusum_threshold'),
+        cusum_k_consecutive=cell.get('cusum_k_consecutive', 1),
     )
     n_pass_on = 0
     n_pass_off = 0
@@ -284,27 +285,47 @@ def calibrate_l0_thresholds(
     # Recovery calibration: use a CUSUM over centered scorer output rather than
     # an L3-only score stream. This lets L0 react to sustained low-grade score
     # drift even when single PGD/AA examples rarely exceed the L3 threshold.
+    # NOTE: drift=0.0 removed. With no leak the CUSUM monotonically accumulates
+    # on any positive clean residual, which overfit a particular calibration
+    # stream and exploded false-alarms on longer eval streams. Floor at 0.10.
+    # cusum_k_consecutive added so a single noise spike cannot trigger L0.
     grid = []
-    for drift in (0.00, 0.10, 0.25, 0.50, 0.75):
+    for drift in (0.10, 0.25, 0.50, 0.75, 1.00):
         for threshold in (5.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0):
             for ws in (20, 35, 50, 75, 100):
-                grid.append({
-                    'detection_mode': 'cusum',
-                    'score_center': score_center,
-                    'score_scale': score_scale,
-                    'cusum_drift': drift,
-                    'cusum_threshold': threshold,
-                    'warmup_steps': ws,
-                })
+                for k_consec in (1, 3, 5):
+                    grid.append({
+                        'detection_mode': 'cusum',
+                        'score_center': score_center,
+                        'score_scale': score_scale,
+                        'cusum_drift': drift,
+                        'cusum_threshold': threshold,
+                        'warmup_steps': ws,
+                        'cusum_k_consecutive': k_consec,
+                    })
 
-    FPR_BUDGET = 0.01
+    # Tighter than the 0.01 used previously: the eval gate is 0.01 on
+    # per-step CADG firing under L0 amplification, so the L0 trigger fraction
+    # itself must be << 0.01 to leave headroom.
+    FPR_BUDGET = 0.005
+
+    # Held-out clean stream from the second half of `clean_scores` — never
+    # touched by the grid's main clean probe — used to reject cells that pass
+    # the primary budget by luck on the first slice only.
+    holdout_clean = clean_scores[len(clean_scores) // 2:]
+    HOLDOUT_FPR_BUDGET = 0.01
     results = []
     best = None
     print(f"\nGrid search: {len(grid)} cells  FPR budget <= {FPR_BUDGET:.2%}")
     for cell in grid:
-        # Clean stream → false-alarm probe
+        # Primary clean stream → in-sample false-alarm probe
         _, _, clean_l0_frac = _simulate_stream(
             clean_scores, tier_thresh_L3, cell,
+        )
+        # Held-out clean stream (second half) → generalization probe.
+        # Rejects cells whose CUSUM only stays bounded on the first slice.
+        _, _, holdout_l0_frac = _simulate_stream(
+            holdout_clean, tier_thresh_L3, cell,
         )
         # Sustained stream → ASR gap (l0_off vs l0_on, adv portion only)
         n_pass_on, n_pass_off, _ = _simulate_stream(
@@ -324,6 +345,7 @@ def calibrate_l0_thresholds(
             score_scale=cell.get('score_scale', 1.0),
             cusum_drift=cell.get('cusum_drift', 0.25),
             cusum_threshold=cell.get('cusum_threshold'),
+            cusum_k_consecutive=cell.get('cusum_k_consecutive', 1),
         )
         for i, s in enumerate(sustained_stream):
             state = monitor.process_score(float(s))
@@ -343,24 +365,42 @@ def calibrate_l0_thresholds(
         row = {
             **cell,
             'clean_l0_active_frac': round(float(clean_l0_frac), 4),
+            'holdout_l0_active_frac': round(float(holdout_l0_frac), 4),
             'asr_off': round(float(asr_off), 4),
             'asr_on':  round(float(asr_on),  4),
             'asr_gap_pp': round(float(asr_gap_pp), 2),
-            'feasible': clean_l0_frac <= FPR_BUDGET,
+            'feasible': (
+                clean_l0_frac <= FPR_BUDGET
+                and holdout_l0_frac <= HOLDOUT_FPR_BUDGET
+            ),
         }
         results.append(row)
-        if row['feasible'] and (best is None or row['asr_gap_pp'] > best['asr_gap_pp']):
-            best = row
+        # Selection: max asr_gap_pp; tie-break prefers larger drift then larger
+        # k_consec → more robust to stream-length / distribution shift.
+        if row['feasible']:
+            if (best is None
+                or row['asr_gap_pp'] > best['asr_gap_pp']
+                or (row['asr_gap_pp'] == best['asr_gap_pp']
+                    and row['cusum_drift'] > best['cusum_drift'])
+                or (row['asr_gap_pp'] == best['asr_gap_pp']
+                    and row['cusum_drift'] == best['cusum_drift']
+                    and row['cusum_k_consecutive'] > best['cusum_k_consecutive'])):
+                best = row
 
-    results.sort(key=lambda r: (-r['feasible'], -r['asr_gap_pp']))
+    results.sort(key=lambda r: (-r['feasible'], -r['asr_gap_pp'],
+                                -r.get('cusum_drift', 0.0),
+                                -r.get('cusum_k_consecutive', 1)))
     print("\nTop 8 cells:")
-    print(f"  {'feas':>5} {'mode':>6} {'drift':>6} {'thr':>6} {'ws':>4} {'clean_fp':>9} "
+    print(f"  {'feas':>5} {'mode':>6} {'drift':>6} {'thr':>6} {'ws':>4} {'k':>3} "
+          f"{'clean_fp':>9} {'hold_fp':>8} "
           f"{'asr_off':>8} {'asr_on':>8} {'gap_pp':>7}")
     for r in results[:8]:
         print(f"  {str(r['feasible']):>5} {r.get('detection_mode', 'bocpd'):>6} "
               f"{r.get('cusum_drift', 0.0):>6.2f} "
               f"{r.get('cusum_threshold', 0.0):>6.1f} {r['warmup_steps']:>4d} "
+              f"{r.get('cusum_k_consecutive', 1):>3d} "
               f"{r['clean_l0_active_frac']:>9.4f} "
+              f"{r.get('holdout_l0_active_frac', 0.0):>8.4f} "
               f"{r['asr_off']:>8.4f} {r['asr_on']:>8.4f} {r['asr_gap_pp']:>7.2f}")
 
     if best is None:
@@ -371,8 +411,10 @@ def calibrate_l0_thresholds(
     print(f"\n[OK] Selected cell: mode={best.get('detection_mode', 'bocpd')}, "
           f"cusum_drift={best.get('cusum_drift', 0.0):.2f}, "
           f"cusum_threshold={best.get('cusum_threshold', 0.0):.1f}, "
-          f"warmup_steps={best['warmup_steps']}  "
+          f"warmup_steps={best['warmup_steps']}, "
+          f"k_consec={best.get('cusum_k_consecutive', 1)}  "
           f"(clean FPR={best['clean_l0_active_frac']:.4f}, "
+          f"holdout FPR={best.get('holdout_l0_active_frac', 0.0):.4f}, "
           f"ASR gap={best['asr_gap_pp']:.2f}pp).")
 
     payload = {
@@ -381,6 +423,7 @@ def calibrate_l0_thresholds(
         'score_scale':      best.get('score_scale', score_scale),
         'cusum_drift':      best.get('cusum_drift', 0.25),
         'cusum_threshold':  best.get('cusum_threshold'),
+        'cusum_k_consecutive': best.get('cusum_k_consecutive', 1),
         'hazard_rate':      best.get('hazard_rate', 1 / 30),
         'alert_run_prob':   best.get('alert_run_prob', 0.60),
         'warmup_steps':     best['warmup_steps'],

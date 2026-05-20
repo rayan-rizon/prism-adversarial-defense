@@ -1,0 +1,232 @@
+{
+  "Full PRISM": {
+    "config": "Full PRISM",
+    "FGSM": {
+      "TPR": 0.9,
+      "TPR_CI_95": [
+        0.7864,
+        0.9565
+      ],
+      "FPR": 0.12,
+      "FPR_CI_95": [
+        0.0562,
+        0.2381
+      ],
+      "F1": 0.8911,
+      "TP": 45,
+      "FP": 6,
+      "FN": 5,
+      "TN": 44,
+      "clean_levels": {
+        "PASS": 44,
+        "L1": 5,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L2": 24,
+        "L1": 14,
+        "PASS": 5,
+        "L3": 7
+      }
+    },
+    "mean_TPR": 0.9,
+    "mean_FPR": 0.12
+  },
+  "No-LogitProfile": {
+    "config": "No-LogitProfile",
+    "FGSM": {
+      "TPR": 1.0,
+      "TPR_CI_95": [
+        0.9286,
+        1.0
+      ],
+      "FPR": 0.94,
+      "FPR_CI_95": [
+        0.8378,
+        0.9794
+      ],
+      "F1": 0.6803,
+      "TP": 50,
+      "FP": 47,
+      "FN": 0,
+      "TN": 3,
+      "clean_levels": {
+        "L3": 17,
+        "L2": 16,
+        "L1": 14,
+        "PASS": 3
+      },
+      "adv_levels": {
+        "L2": 18,
+        "L3": 30,
+        "L1": 2
+      }
+    },
+    "mean_TPR": 1.0,
+    "mean_FPR": 0.94
+  },
+  "No-StabilityV2": {
+    "config": "No-StabilityV2",
+    "FGSM": {
+      "TPR": 0.94,
+      "TPR_CI_95": [
+        0.8378,
+        0.9794
+      ],
+      "FPR": 0.12,
+      "FPR_CI_95": [
+        0.0562,
+        0.2381
+      ],
+      "F1": 0.9126,
+      "TP": 47,
+      "FP": 6,
+      "FN": 3,
+      "TN": 44,
+      "clean_levels": {
+        "PASS": 44,
+        "L1": 5,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L2": 23,
+        "PASS": 3,
+        "L3": 16,
+        "L1": 8
+      }
+    },
+    "mean_TPR": 0.94,
+    "mean_FPR": 0.12
+  },
+  "No-GradNorm": {
+    "config": "No-GradNorm",
+    "FGSM": {
+      "TPR": 0.98,
+      "TPR_CI_95": [
+        0.895,
+        0.9965
+      ],
+      "FPR": 0.26,
+      "FPR_CI_95": [
+        0.1587,
+        0.3955
+      ],
+      "F1": 0.875,
+      "TP": 49,
+      "FP": 13,
+      "FN": 1,
+      "TN": 37,
+      "clean_levels": {
+        "PASS": 37,
+        "L3": 2,
+        "L1": 5,
+        "L2": 6
+      },
+      "adv_levels": {
+        "L3": 31,
+        "L2": 9,
+        "L1": 9,
+        "PASS": 1
+      }
+    },
+    "mean_TPR": 0.98,
+    "mean_FPR": 0.26
+  },
+  "No-DCT": {
+    "config": "No-DCT",
+    "FGSM": {
+      "TPR": 0.78,
+      "TPR_CI_95": [
+        0.6476,
+        0.8725
+      ],
+      "FPR": 0.14,
+      "FPR_CI_95": [
+        0.0695,
+        0.2619
+      ],
+      "F1": 0.8125,
+      "TP": 39,
+      "FP": 7,
+      "FN": 11,
+      "TN": 43,
+      "clean_levels": {
+        "PASS": 43,
+        "L3": 2,
+        "L1": 4,
+        "L2": 1
+      },
+      "adv_levels": {
+        "L3": 15,
+        "L1": 8,
+        "L2": 16,
+        "PASS": 11
+      }
+    },
+    "mean_TPR": 0.78,
+    "mean_FPR": 0.14
+  },
+  "Ensemble-no-TDA": {
+    "config": "Ensemble-no-TDA",
+    "FGSM": {
+      "TPR": 0.44,
+      "TPR_CI_95": [
+        0.3116,
+        0.5769
+      ],
+      "FPR": 0.08,
+      "FPR_CI_95": [
+        0.0315,
+        0.1884
+      ],
+      "F1": 0.5789,
+      "TP": 22,
+      "FP": 4,
+      "FN": 28,
+      "TN": 46,
+      "clean_levels": {
+        "PASS": 46,
+        "L1": 3,
+        "L3": 1
+      },
+      "adv_levels": {
+        "L1": 18,
+        "L2": 3,
+        "PASS": 28,
+        "L3": 1
+      }
+    },
+    "mean_TPR": 0.44,
+    "mean_FPR": 0.08
+  },
+  "TDA only": {
+    "config": "TDA only",
+    "FGSM": {
+      "TPR": 0.0,
+      "TPR_CI_95": [
+        0.0,
+        0.0714
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0435,
+        0.2136
+      ],
+      "F1": 0.0,
+      "TP": 0,
+      "FP": 5,
+      "FN": 50,
+      "TN": 45,
+      "clean_levels": {
+        "PASS": 45,
+        "L1": 4,
+        "L2": 1
+      },
+      "adv_levels": {
+        "PASS": 50
+      }
+    },
+    "mean_TPR": 0.0,
+    "mean_FPR": 0.1
+  }
+}

@@ -208,6 +208,13 @@ class PersistenceEnsembleScorer:
         # logistic prob directly in that case.
         self.use_tda = use_tda
 
+        # F3 channel-mask ablation: list of raw-feature indices to zero before
+        # logistic scoring. Used by run_ablation_paper.py to isolate a feature
+        # channel without retraining. NOTE: weights remain trained jointly, so
+        # this is a runtime mask, not a true retrained ablation; the ablation
+        # script labels each arm "channel-mask: <NAME>".
+        self.feature_zero_indices: Optional[List[int]] = None
+
     @property
     def n_features(self) -> int:
         """Feature vector dimension: 6 stats x dims x layers plus enabled side-channel features.
@@ -220,6 +227,27 @@ class PersistenceEnsembleScorer:
                 + (self.logit_profile_feature_count if self.use_logit_profile_features else 0)
                 + (self.stability_feature_count if self.use_stability_features else 0)
                 + (1 if self.use_grad_norm else 0))
+
+    def channel_index_range(self, channel: str) -> List[int]:
+        """Return raw-feature indices for a named side-channel (for F3 mask).
+        Order matches extract_feature_vector(): TDA(36), DCT, softmax_entropy,
+        logit_profile, stability, grad_norm. Returns [] when channel disabled."""
+        cursor = len(self.layer_names) * len(self.dims) * 6 if self.use_tda else 0
+        spans: Dict[str, Tuple[int, int]] = {}
+        if self.use_dct:
+            spans['dct'] = (cursor, cursor + 1); cursor += 1
+        if self.use_softmax_entropy:
+            spans['softmax_entropy'] = (cursor, cursor + 1); cursor += 1
+        if self.use_logit_profile_features:
+            n = self.logit_profile_feature_count
+            spans['logit_profile'] = (cursor, cursor + n); cursor += n
+        if self.use_stability_features:
+            n = self.stability_feature_count
+            spans['stability'] = (cursor, cursor + n); cursor += n
+        if self.use_grad_norm:
+            spans['grad_norm'] = (cursor, cursor + 1); cursor += 1
+        span = spans.get(channel)
+        return list(range(span[0], span[1])) if span else []
 
     def extract_features(
         self,
@@ -317,6 +345,11 @@ class PersistenceEnsembleScorer:
         """Raw linear logit before sigmoid."""
         if not self._logistic_fitted:
             return 0.0
+        if self.feature_zero_indices:
+            feat = np.array(feat, dtype=np.float32, copy=True)
+            idx = [i for i in self.feature_zero_indices if 0 <= i < feat.shape[-1]]
+            if idx:
+                feat[..., idx] = 0.0
         feat_norm = self._normalise(feat)
         return float(np.dot(self.logistic_weights, feat_norm) + self.logistic_bias)
 
@@ -1020,7 +1053,7 @@ class PersistenceEnsembleScorer:
 
         if not self.use_tda:
             logger.info("tune_alpha: skipped (use_tda=False, alpha remains %.3f)", self.alpha)
-            return {'selected_alpha': self.alpha, 'grid': list(grid), 'aucs': [], 'skipped': True}
+            return {'selected_alpha': self.alpha, 'grid': list(grid), 'aucs': [], 'skipped': True, 'selection_objective': 'none (TDA disabled)'}
 
         X = np.vstack([clean_features, adv_features])
         w = np.concatenate([clean_w_scores, adv_w_scores])
