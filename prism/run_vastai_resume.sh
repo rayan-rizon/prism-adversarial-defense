@@ -7,15 +7,67 @@
 # =============================================================================
 
 set -euo pipefail
-cd /workspace/prism-repo/prism
+
+# Resolve PRISM root robustly for both common Vast.ai layouts:
+#   /workspace/prism-repo/prism
+#   /workspace/prism-repo/prism/prism
+if [ -d /workspace/prism-repo/prism/prism/src ] && [ -f /workspace/prism-repo/prism/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism/prism
+elif [ -d /workspace/prism-repo/prism/src ] && [ -f /workspace/prism-repo/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism
+elif [ -d "$(pwd)/src" ] && [ -f "$(pwd)/requirements.txt" ]; then
+  PRISM_ROOT="$(pwd)"
+elif [ -d "$(dirname "$0")/src" ] && [ -f "$(dirname "$0")/requirements.txt" ]; then
+  PRISM_ROOT="$(cd "$(dirname "$0")" && pwd)"
+else
+  echo "ERROR: Could not locate PRISM root (expected src/ and requirements.txt)."
+  echo "       Checked: /workspace/prism-repo/prism, /workspace/prism-repo/prism/prism, cwd, script dir."
+  exit 1
+fi
+cd "$PRISM_ROOT"
+
+# Ensure local package imports always work for resumed runs too.
+unset PYTHONSAFEPATH || true
+export PYTHONPATH="$PRISM_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+# Resolve key entrypoints as absolute paths so execution is robust even if
+# callers invoke this script from an unexpected working directory.
+EVAL_FULL_PY="$PRISM_ROOT/experiments/evaluation/run_evaluation_full.py"
+ADAPTIVE_PGD_PY="$PRISM_ROOT/experiments/evaluation/run_adaptive_pgd.py"
+ABLATION_PY="$PRISM_ROOT/experiments/ablation/run_ablation_paper.py"
+CALIBRATE_L0_PY="$PRISM_ROOT/scripts/calibrate_l0_thresholds.py"
+BUILD_TABLES_PY="$PRISM_ROOT/scripts/build_paper_tables.py"
+ANALYZE_RESULTS_PY="$PRISM_ROOT/scripts/analyze_results.py"
+CAMPAIGN_REAL_PY="$PRISM_ROOT/experiments/campaign/run_campaign_real.py"
+
+for required in \
+  "$EVAL_FULL_PY" \
+  "$ADAPTIVE_PGD_PY" \
+  "$ABLATION_PY" \
+  "$CALIBRATE_L0_PY" \
+  "$BUILD_TABLES_PY" \
+  "$ANALYZE_RESULTS_PY" \
+  "$CAMPAIGN_REAL_PY"; do
+  if [ ! -f "$required" ]; then
+    echo "ERROR: missing required script: $required"
+    echo "       Resolved PRISM_ROOT: $PRISM_ROOT"
+    exit 1
+  fi
+done
 
 SEEDS="42 123 456 789 999"
 N_TEST=1000
 
-CW_MAX_ITER=40
-CW_BSS=5
+# Research-standard CW (post-audit 2026-05-18): max_iter=100, bss=9, κ=1.0.
+CW_MAX_ITER=100
+CW_BSS=9
+CW_CONFIDENCE=1.0
 CW_CHUNK=128
 CW_ENGINE=torch
+
+# Research-standard PGD (RobustBench): 50 iter × 10 random restarts.
+PGD_MAX_ITER=50
+PGD_RESTARTS=10
 
 ADAPTIVE_LAMBDAS="0.0 0.5 1.0 2.0 5.0 10.0"
 ADAPTIVE_STEPS=100
@@ -34,13 +86,14 @@ mkdir -p logs models experiments/calibration experiments/evaluation experiments/
 echo "============================================================"
 echo "PRISM Vast.ai Resume — $(date)"
 echo "Instance: $(hostname)"
+echo "Repo root: $PRISM_ROOT"
 echo "Resuming from Step 4b (Steps 0-4 already complete)"
 echo "============================================================"
 
 # ── Step 4b: Standalone Latency Benchmark ─────────────────────────────────────
 echo ""
 echo "=== Step 4b: Standalone Latency Benchmark ==="
-python experiments/evaluation/run_evaluation_full.py \
+python "$EVAL_FULL_PY" \
   --n-test 200 \
   --latency-only \
   --output experiments/evaluation/results_latency_standalone.json \
@@ -60,10 +113,12 @@ echo "  Step 7 : Ablation (FGSM+PGD+Square+CW via torch engine)"
 echo ""
 
 # ── Step 5A: CW ──────────────────────────────────────────────────────────────
-python experiments/evaluation/run_evaluation_full.py \
+# Research-standard CW: max_iter=100, bss=9, κ=1.0 (Carlini & Wagner S&P 2017).
+python "$EVAL_FULL_PY" \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
   --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
+  --cw-confidence $CW_CONFIDENCE \
   --cw-engine $CW_ENGINE \
   --skip-latency \
   --checkpoint-interval 100 \
@@ -73,10 +128,12 @@ PID_CW=$!
 echo "  Step 5A CW started (PID=$PID_CW)"
 
 # ── Step 5B: Fast attacks ─────────────────────────────────────────────────────
-python experiments/evaluation/run_evaluation_full.py \
+# Research-standard PGD: max_iter=50, num_random_init=10 (RobustBench convention).
+python "$EVAL_FULL_PY" \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
   --gen-chunk 128 --square-max-iter 5000 \
+  --pgd-max-iter $PGD_MAX_ITER --pgd-restarts $PGD_RESTARTS \
   --aa-version standard --aa-chunk 64 \
   --skip-latency \
   --checkpoint-interval 100 \
@@ -91,8 +148,8 @@ echo "  Launching Step 6 adaptive PGD seeds..."
 STEP6_PIDS=""
 STEP6_SEEDS=""
 for s in $SEEDS; do
-  if python experiments/evaluation/run_adaptive_pgd.py --help 2>&1 | grep -q -- '--pgd-restarts'; then
-    python experiments/evaluation/run_adaptive_pgd.py \
+  if python "$ADAPTIVE_PGD_PY" --help 2>&1 | grep -q -- '--pgd-restarts'; then
+    python "$ADAPTIVE_PGD_PY" \
       --n-test $N_TEST --seed $s \
       --lambdas $ADAPTIVE_LAMBDAS \
       --pgd-steps $ADAPTIVE_STEPS \
@@ -105,7 +162,7 @@ for s in $SEEDS; do
       --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
       2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
   else
-    python experiments/evaluation/run_adaptive_pgd.py \
+    python "$ADAPTIVE_PGD_PY" \
       --n-test $N_TEST --seed $s \
       --output experiments/evaluation/results_adaptive_pgd_seed${s}.json \
       2>&1 | tee logs/step6_adaptive_pgd_seed${s}.log &
@@ -118,7 +175,7 @@ done
 
 # ── Step 7: Ablation ─────────────────────────────────────────────────────────
 echo ""
-python experiments/ablation/run_ablation_paper.py \
+python "$ABLATION_PY" \
   --n $N_TEST \
   --multi-seed --seeds $SEEDS \
   --attacks FGSM PGD Square CW \
@@ -130,7 +187,7 @@ echo "  Step 7 ablation started (PID=$PID_ABLATION)"
 # ── Step 6b: L0 threshold calibration ────────────────────────────────────────
 echo ""
 echo "  Step 6b: L0 threshold calibration launched in parallel"
-python scripts/calibrate_l0_thresholds.py \
+python "$CALIBRATE_L0_PY" \
   --n-clean 500 \
   --n-adv   500 \
   > logs/step6b_l0_calibration.log 2>&1 &
@@ -235,7 +292,7 @@ echo "Step 6b exit: $STEP6B_EXIT"
 
 echo ""
 echo "=== Step 7a: Build Paper Tables ==="
-python scripts/build_paper_tables.py \
+python "$BUILD_TABLES_PY" \
   --results-dir experiments/evaluation \
   --output-dir experiments/evaluation \
   2>&1 | tee logs/step7a_paper_tables.log
@@ -243,7 +300,7 @@ echo "Step 7a exit: $?"
 
 echo ""
 echo "=== Step 7b: Analyze Results ==="
-python scripts/analyze_results.py \
+python "$ANALYZE_RESULTS_PY" \
   --results-dir experiments/evaluation \
   --output-dir experiments/evaluation \
   2>&1 | tee logs/step7b_analyze.log
@@ -251,7 +308,7 @@ echo "Step 7b exit: $?"
 
 echo ""
 echo "=== Step 7c: Campaign Detection Eval ==="
-python experiments/campaign/run_campaign_real.py \
+python "$CAMPAIGN_REAL_PY" \
   --n-test $N_TEST \
   --output experiments/evaluation/results_campaign.json \
   2>&1 | tee logs/step7c_campaign.log

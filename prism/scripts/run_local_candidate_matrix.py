@@ -81,6 +81,35 @@ CANDIDATES = {
         ],
         grad_norm=True,
     ),
+    "E": Candidate(
+        key="E",
+        label="E_55_logitprofile_gradnorm_attackheads_fgsm2p5_pgd2p5",
+        train_args=[
+            "--fgsm-oversample", "2.5",
+            "--pgd-oversample", "2.5",
+            "--use-stability-features",
+            "--use-logit-profile-features",
+            "--use-side-quadratic-features",
+            "--use-grad-norm",
+            "--attack-heads",
+            "--score-channel-aggregation", "max",
+        ],
+        grad_norm=True,
+    ),
+    "F": Candidate(
+        key="F",
+        label="F_55_logitprofile_gradnorm_fgsm2p5_pgd2p5_square1p5",
+        train_args=[
+            "--fgsm-oversample", "2.5",
+            "--pgd-oversample", "2.5",
+            "--square-oversample", "1.5",
+            "--use-stability-features",
+            "--use-logit-profile-features",
+            "--use-side-quadratic-features",
+            "--use-grad-norm",
+        ],
+        grad_norm=True,
+    ),
 }
 
 
@@ -186,15 +215,14 @@ def summarize_candidate(
         }
 
     fpr_tiers = fpr_report.get("tiers", {})
-    fpr_summary = {
-        tier: {
-            "FPR": float(fpr_tiers.get(tier, {}).get("FPR", 1.0)),
+    fpr_summary = {}
+    for tier, target in FPR_TARGETS.items():
+        fpr = float(fpr_tiers.get(tier, {}).get("FPR", 1.0))
+        fpr_summary[tier] = {
+            "FPR": fpr,
             "target": target,
-            "passed": bool(fpr_tiers.get(tier, {}).get("passed", False))
-            and float(fpr_tiers.get(tier, {}).get("FPR", 1.0)) <= target,
+            "passed": fpr <= target + 1e-12,
         }
-        for tier, target in FPR_TARGETS.items()
-    }
     latency = eval_report.get("_meta", {}).get("latency", {})
     pooled_lower = wilson_lower(total_tp, total_adv)
 
@@ -247,9 +275,9 @@ def parse_candidates(values: Iterable[str]) -> List[Candidate]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--candidates", nargs="+", default=["A", "B", "C"],
-                        help="Candidate keys to run: A B C D")
-    parser.add_argument("--n-train", type=int, default=900,
+    parser.add_argument("--candidates", nargs="+", default=["A", "B", "C", "D", "E", "F"],
+                        help="Candidate keys to run: A B C D E F")
+    parser.add_argument("--n-train", type=int, default=1500,
                         help="Adversarial training budget per candidate. Use 1500+ for promotion diagnostics when feasible.")
     parser.add_argument("--n-test", type=int, default=100,
                         help="Evaluation samples per attack for the local candidate pass.")
@@ -262,9 +290,9 @@ def main() -> int:
     parser.add_argument("--checkpoint-interval", type=int, default=25)
     parser.add_argument("--out-dir", default="experiments/evaluation/candidate_matrix")
     parser.add_argument("--keep-winner", action=argparse.BooleanOptionalAction, default=True,
-                        help="Copy the selected non-grad-norm winner back to canonical model/calibrator paths.")
-    parser.add_argument("--allow-grad-norm-winner", action="store_true",
-                        help="Allow candidate C to become canonical. This requires updating sanity and launchers afterward.")
+                        help="Copy the selected winner back to canonical model/calibrator paths.")
+    parser.add_argument("--allow-grad-norm-winner", action=argparse.BooleanOptionalAction, default=True,
+                        help="Allow the grad-norm winner to become canonical. Disable only for legacy no-grad-norm reproductions.")
     args = parser.parse_args()
 
     candidates = parse_candidates(args.candidates)

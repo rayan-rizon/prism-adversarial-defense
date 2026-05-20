@@ -1,6 +1,6 @@
 # PRISM Vast.ai Full Test Readiness
 
-Date: 2026-05-17
+Date: 2026-05-19
 
 ## Active protocol
 
@@ -10,18 +10,19 @@ Date: 2026-05-17
 - Test samples: `n=1000` per attack per seed
 - Attack set: FGSM, PGD, Square, CW-L2, AutoAttack
 - Canonical Square budget: `5000` queries
-- CW-L2: torch engine, `max_iter=40`, `bss=5`
-- Feature contract: 54 raw features, logit-profile + stability-v2 + side-quadratic, grad-norm off
-- Training mix: FGSM `1.5x`, PGD `1.0x`, Square `1.0x`, CW `0.5x`
+- CW-L2: torch engine, `max_iter=100`, `bss=9`, `confidence=1.0`
+- Feature contract: 55 raw features, logit-profile + stability-v2 + side-quadratic + grad-norm
+- Training mix: balanced FGSM/PGD/Square; CW and AutoAttack are evaluation-only on Vast.ai
 - Conformal validation gates: L1 `<=0.10`, L2 `<=0.03`, L3 `<=0.005`
 
-## Local evidence kept
+## Current local evidence
 
-- `experiments/evaluation/cw_candidate_fgsm_l1/research_report_20260517.md`
-- `experiments/calibration/cw_candidate_fgsm_l1/fpr_report_l1_085.json`
-- `experiments/evaluation/cw_candidate_fgsm_l1/smoke_fast_fgsm_l1_n300_seed42_square500.json`
-- `experiments/evaluation/cw_candidate_fgsm_l1/smoke_cw_fgsm_l1_n300_seed42_cw40_bss5.json`
-- `experiments/evaluation/cw_candidate_fgsm_l1/latency_only_n200_seed42.json`
+- `experiments/calibration/ensemble_fpr_report.json`: L1 `0.074`, L2 `0.026`, L3 `0.003`; all pass
+- `experiments/evaluation/results_fast_local_n300_seed42_square5000_l2tight.json`: FGSM `0.8833`, PGD `0.9867`, Square `0.8767`; all fast gates pass with canonical Square `5000`
+- `experiments/evaluation/results_cw_local_n100_seed42_vastparams.json`: CW-L2 `0.9500` TPR with torch `max_iter=100`, `bss=9`, `confidence=1.0`; FPR tiers pass
+- `experiments/evaluation/results_autoattack_local_n100_seed42_standard.json`: AutoAttack standard `1.0000` TPR; FPR tiers pass
+- `experiments/evaluation/results_latency_standalone.json`: mean latency `72.91ms`; pass
+- `sanity_checks.py`: all available artifact/contract checks pass
 
 ## Canonical local artifacts
 
@@ -32,15 +33,16 @@ Date: 2026-05-17
 - `models/cifar_resnet18.pt`
 - `models/cifar_resnet18.acc.json`
 
-The canonical scorer was promoted from the CW-aware candidate and has metadata:
-FGSM/PGD/Square/CW training attacks, counts `937/625/625/313`, weights
-`1.5/1.0/1.0/0.5`, feature-space `pixel-stability-v2+logitprofile+sidequad`.
+The canonical scorer is promoted from the balanced fast-attack candidate and
+has metadata: FGSM/PGD/Square training attacks, balanced counts, feature-space
+`pixel-stability-v2+logitprofile+sidequad+gradnorm`. CW and AutoAttack remain
+in the Vast.ai evaluation stages.
 
-## Removed as stale
+## Stale-data policy
 
-Rejected candidate arms, old smoke outputs, local failed gate JSONs, cache
-directories, and transient logs were removed. Vast.ai will regenerate logs and
-full result JSONs from the current launcher.
+Rejected candidate arms and old smoke outputs are diagnostic only. Vast.ai
+will regenerate logs and full result JSONs from the current launcher; the gate
+checker uses only the current configured artifacts and fresh Vast result files.
 
 ## Post-run gate command
 

@@ -44,15 +44,14 @@ conformal:
   # verified on the val split against the published alpha (exchangeability
   # slack buffer to absorb cal/val distribution shift).
   cal_alpha_factor: 0.7    # legacy scalar; retained as fallback when per-tier map is absent
-  # Per-tier calibration alpha multipliers. L1 uses 75% of the published alpha
-  # because the logit-profile side-channel candidate measured 10.3% held-out
-  # L1 FPR at 80%. L2 keeps moderate slack; L3 stays tightened because its tail is sparse
-  # (≈7 clean samples at the 99.65 pct on n=2000 cal split), so the same
-  # cal→eval rank shift produces large relative FPR movement.
+  # Per-tier calibration alpha multipliers. L1 stays slightly tighter than the
+  # published alpha to absorb cal→eval drift on the promoted 55-feature arm.
+  # L2 keeps moderate slack; L3 stays tightened because its tail is sparse,
+  # so the same rank shift produces large relative FPR movement.
   tier_cal_alpha_factors:
     L1: 0.75
-    L2: 0.70
-    L3: 0.50
+    L2: 0.55
+    L3: 0.52
 
 # CIFAR-10 test-set split indices — single source of truth.
 # ANY script that references these must import from src.config, never hardcode.

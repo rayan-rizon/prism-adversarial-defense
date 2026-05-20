@@ -15,7 +15,29 @@
 # and re-run from Step 3.
 
 set -euo pipefail
-cd /workspace/prism-repo/prism
+
+# Resolve PRISM root robustly for both common Vast.ai layouts:
+#   /workspace/prism-repo/prism
+#   /workspace/prism-repo/prism/prism
+if [ -d /workspace/prism-repo/prism/prism/src ] && [ -f /workspace/prism-repo/prism/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism/prism
+elif [ -d /workspace/prism-repo/prism/src ] && [ -f /workspace/prism-repo/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism
+elif [ -d "$(pwd)/src" ] && [ -f "$(pwd)/requirements.txt" ]; then
+  PRISM_ROOT="$(pwd)"
+elif [ -d "$(dirname "$0")/src" ] && [ -f "$(dirname "$0")/requirements.txt" ]; then
+  PRISM_ROOT="$(cd "$(dirname "$0")" && pwd)"
+else
+  echo "ERROR: Could not locate PRISM root (expected src/ and requirements.txt)."
+  echo "       Checked: /workspace/prism-repo/prism, /workspace/prism-repo/prism/prism, cwd, script dir."
+  exit 1
+fi
+cd "$PRISM_ROOT"
+
+# Ensure local package imports (e.g., from src.models...) always work,
+# even when Python runs with safe-path mode enabled by the image.
+unset PYTHONSAFEPATH || true
+export PYTHONPATH="$PRISM_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 CONFIG=configs/cifar100.yaml
 TAG=cifar100
@@ -23,10 +45,15 @@ TAG=cifar100
 SEEDS="42 123 456 789 999"
 N_TEST=1000
 
-# CW-L2 research-plan P0.1 config (same as CIFAR-10 run)
-CW_MAX_ITER=40
-CW_BSS=5
+# Research-standard CW (post-audit 2026-05-18): max_iter=100, bss=9, κ=1.0.
+CW_MAX_ITER=100
+CW_BSS=9
+CW_CONFIDENCE=1.0
 CW_CHUNK=128
+
+# Research-standard PGD (RobustBench): 50 iter × 10 random restarts.
+PGD_MAX_ITER=50
+PGD_RESTARTS=10
 
 ADAPTIVE_LAMBDAS="0.0 0.5 1.0 2.0 5.0 10.0"
 ADAPTIVE_STEPS=100
@@ -36,6 +63,7 @@ FGSM_OVERSAMPLE=2.5
 echo "============================================================"
 echo "PRISM Vast.ai CIFAR-100 Pipeline — $(date)"
 echo "Config: $CONFIG"
+echo "Repo root: $PRISM_ROOT"
 echo "Instance: $(hostname)"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
@@ -231,6 +259,7 @@ python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
   --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
+  --cw-confidence $CW_CONFIDENCE \
   --cw-engine torch \
   --skip-latency \
   --checkpoint-interval 100 \
@@ -243,6 +272,7 @@ python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
   --gen-chunk 128 --square-max-iter 5000 \
+  --pgd-max-iter $PGD_MAX_ITER --pgd-restarts $PGD_RESTARTS \
   --aa-version standard --aa-chunk 64 \
   --skip-latency \
   --checkpoint-interval 100 \

@@ -71,7 +71,7 @@ def _get_defaults() -> dict:
             'conformal': {
                 'alphas': {'L1': 0.10, 'L2': 0.03, 'L3': 0.005},
                 'cal_alpha_factor': 0.7,
-                'tier_cal_alpha_factors': {'L1': 0.90, 'L2': 0.70, 'L3': 0.50},
+                'tier_cal_alpha_factors': {'L1': 0.75, 'L2': 0.55, 'L3': 0.52},
             },
             'data': {
                 'mean': [0.4914, 0.4822, 0.4465],

@@ -1,6 +1,7 @@
 # PRISM Vast.ai full-test configuration.
-# Canonical CIFAR-10 artifact paths, with the CW-aware L1 calibration factor
-# that passed local FPR and attack smoke gates on 2026-05-17.
+# Canonical CIFAR-10 artifact paths. CW and AutoAttack remain evaluation-only
+# on Vast.ai; the detector is fitted on balanced FGSM/PGD/Square profile-split
+# attacks, then calibrated with strict per-tier validation gates.
 
 model:
   name: cifar_resnet18
@@ -30,9 +31,9 @@ conformal:
   validation_size: 5000
   cal_alpha_factor: 0.7
   tier_cal_alpha_factors:
-    L1: 0.85
-    L2: 0.70
-    L3: 0.50
+    L1: 0.75
+    L2: 0.55
+    L3: 0.52
 
 splits:
   profile_idx: [0, 5000]

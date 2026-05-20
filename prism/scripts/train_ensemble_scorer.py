@@ -683,6 +683,8 @@ def train_ensemble_scorer(
         feature_space_version += '+logitprofile'
     if use_side_quadratic_features:
         feature_space_version += '+sidequad'
+    if use_grad_norm:
+        feature_space_version += '+gradnorm'
     ensemble = PersistenceEnsembleScorer(
         base_scorer=base_scorer,
         layer_names=LAYER_NAMES,
@@ -964,8 +966,9 @@ if __name__ == '__main__':
                              'separate output pkl so the main ensemble is unaffected.')
     parser.add_argument('--use-grad-norm', action='store_true',
                         help='Append input-gradient L2 norm as a feature. '
-                             'Experimental 39-feature ablation only; the main '
-                             'artifact keeps this disabled due prior regression.')
+                             'Promoted 55-feature research arm; keep it off '
+                             'only when reproducing the legacy no-grad-norm '
+                             'ablation.')
     parser.add_argument('--use-stability-features', action='store_true',
                         help='Append deterministic logit-stability features '
                              'from fixed pixel transforms. The default current '

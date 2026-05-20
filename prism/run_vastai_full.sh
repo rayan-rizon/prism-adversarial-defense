@@ -31,7 +31,29 @@
 # Exit codes: 0=success, 1=gate failure, 2=eval failure
 
 set -euo pipefail
-cd /workspace/prism-repo/prism
+
+# Resolve PRISM root robustly for both common Vast.ai layouts:
+#   /workspace/prism-repo/prism
+#   /workspace/prism-repo/prism/prism
+if [ -d /workspace/prism-repo/prism/prism/src ] && [ -f /workspace/prism-repo/prism/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism/prism
+elif [ -d /workspace/prism-repo/prism/src ] && [ -f /workspace/prism-repo/prism/requirements.txt ]; then
+  PRISM_ROOT=/workspace/prism-repo/prism
+elif [ -d "$(pwd)/src" ] && [ -f "$(pwd)/requirements.txt" ]; then
+  PRISM_ROOT="$(pwd)"
+elif [ -d "$(dirname "$0")/src" ] && [ -f "$(dirname "$0")/requirements.txt" ]; then
+  PRISM_ROOT="$(cd "$(dirname "$0")" && pwd)"
+else
+  echo "ERROR: Could not locate PRISM root (expected src/ and requirements.txt)."
+  echo "       Checked: /workspace/prism-repo/prism, /workspace/prism-repo/prism/prism, cwd, script dir."
+  exit 1
+fi
+cd "$PRISM_ROOT"
+
+# Ensure local package imports (e.g., from src.config import ...) always work,
+# even when Python runs with safe-path mode enabled by the image.
+unset PYTHONSAFEPATH || true
+export PYTHONPATH="$PRISM_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 PRISM_CONFIG="${PRISM_CONFIG:-configs/vastai_cw_full.yaml}"
 export PRISM_CONFIG
@@ -39,14 +61,24 @@ export PRISM_CONFIG
 SEEDS="42 123 456 789 999"
 N_TEST=1000
 
-# CW-L2 research-plan config (P0.1): 40 iter × 5 binary-search steps × batch 256.
-# This is the RobustBench detector-evaluation standard; balances ℓ₂ attack
-# strength against GPU-hours. Pre-research-plan values (max_iter=100, bss=9)
-# are preserved in the legacy block below for reference.
-CW_MAX_ITER=40
-CW_BSS=5
-CW_CHUNK=128   # bs=256 for research-plan P0.1 (was 64 for bs=128 legacy)
+# CW-L2 research-standard config (post-audit 2026-05-18): 100 iter × 9 bss × κ=1.0.
+# Matches Carlini & Wagner (S&P 2017) canonical settings and the NeurIPS-grade
+# bar called out in the pre-submission audit. Prior fast-CW values
+# (max_iter=40, bss=5, κ=0) underestimated attack strength versus prior work
+# and were a flagged reviewer-risk item. The native torch engine absorbs the
+# ~3-5× wallclock increase (still gated by Step 5A in the parallelism map).
+CW_MAX_ITER=100
+CW_BSS=9
+CW_CONFIDENCE=1.0
+CW_CHUNK=128   # bs=256 (was 64 for bs=128 legacy)
 CW_ENGINE=torch
+
+# PGD research-standard (RobustBench): 50 iter × 10 random restarts. Prior
+# config (max_iter=40, num_random_init=1) was below the field convention and
+# flagged in the pre-submission audit. Function-level defaults already match
+# these values; passed explicitly for provenance in the eval logs/manifest.
+PGD_MAX_ITER=50
+PGD_RESTARTS=10
 
 # Adaptive-PGD expanded sweep (P1.4): λ ∈ {0, 0.5, 1, 2, 5, 10} with 100-step /
 # 10-restart PGD variant. EOT=1 (hash subsample is deterministic; one EOT pass
@@ -55,22 +87,20 @@ ADAPTIVE_LAMBDAS="0.0 0.5 1.0 2.0 5.0 10.0"
 ADAPTIVE_STEPS=100
 ADAPTIVE_RESTARTS=10
 
-# The canonical detector path uses the locally promoted CW-aware weighted mix.
-# FGSM is oversampled to protect the fast gate; CW is included to remove the
-# prior out-of-distribution CW score collapse. Detector-head training uses the
-# disjoint profile split so scorer fitting, conformal calibration, validation,
-# and held-out eval all follow the same split protocol.
-ENSEMBLE_N_TRAIN=2500
+# The canonical detector path uses the locally promoted fast-attack mix:
+# balanced FGSM/PGD/Square training on the disjoint profile split with grad-norm on.
+# CW and AutoAttack remain in the Vast.ai evaluation stages, but they are not
+# used to fit the scorer. Detector-head training still uses the same profile
+# split so scorer fitting, conformal calibration, validation, and held-out eval
+# all follow the same split protocol.
+ENSEMBLE_N_TRAIN=1500
 ENSEMBLE_SOURCE_SPLIT=profile
 ENSEMBLE_GEN_CHUNK=512
-FGSM_OVERSAMPLE=1.5
-PGD_OVERSAMPLE=1.0
-SQUARE_OVERSAMPLE=1.0
-CW_OVERSAMPLE=0.5
 
 echo "============================================================"
 echo "PRISM Vast.ai Full Pipeline — $(date)"
 echo "Instance: $(hostname)"
+echo "Repo root: $PRISM_ROOT"
 echo "Config: $PRISM_CONFIG"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
@@ -113,6 +143,16 @@ print('  All required modules import OK.')
   pip install --no-cache-dir -r requirements.txt
   python -c "import torch, ripser, art, autoattack" || { echo "ERROR: dependencies still missing"; exit 1; }
 }
+
+# Explicit AutoAttack pre-flight. Step 5B requests AutoAttack; the eval script
+# now hard-fails if the package is missing, but failing here (before training
+# burns ~30min of GPU on Steps 0a/2/3) is the friendlier behavior.
+python -c "import autoattack" 2>/dev/null || {
+  echo "ERROR: 'autoattack' package not importable but Step 5B requires it."
+  echo "       pip install autoattack"
+  echo "       Aborting pre-flight rather than discover this 30+ min into the run."
+  exit 1
+}
 echo "Pre-flight: PASS"
 
 # ── Environment ──────────────────────────────────────────────────────────────
@@ -120,9 +160,32 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export NVIDIA_TF32_OVERRIDE=1
 export TORCH_CUDNN_V8_API_ENABLED=1
 export PYTHONUNBUFFERED=1
+export PYTHONUTF8=1
 export OMP_NUM_THREADS=4
 
 mkdir -p logs models experiments/calibration experiments/evaluation experiments/ablation
+
+# Clear generated artifacts from prior runs so this launch cannot accidentally
+# reuse stale scorer, calibrator, or gate outputs. Keep the backbone checkpoint
+# in place; Step 0a validates and refreshes it if needed.
+rm -f models/ensemble_scorer.pkl \
+      models/ensemble_no_tda.pkl \
+      models/calibrator.pkl \
+      models/calibrator_no_tda.pkl \
+      models/calibrator_base.pkl \
+      models/experts.pkl \
+      experiments/calibration/ensemble_fpr_report.json \
+      experiments/calibration/score_audit_val_n200.json \
+      experiments/evaluation/results_latency_standalone.json \
+      experiments/evaluation/results_cw_n*_ms5*.json \
+      experiments/evaluation/results_fast_n*_ms5*.json \
+      experiments/evaluation/results_adaptive_pgd_seed*.json \
+      experiments/evaluation/results_adaptive_pgd_seed*.jsonl \
+      experiments/evaluation/results_baselines_seed*.json \
+      experiments/campaign/results_campaign_seed*.json \
+      experiments/recovery/results_recovery_seed*.json \
+      experiments/ablation/results_ablation_multiseed.json \
+      logs/step*.log
 
 # ── Verify GPU + PyTorch ─────────────────────────────────────────────────────
 echo ""
@@ -154,11 +217,10 @@ python -c "
 from src.config import TIER_CAL_ALPHA_FACTORS, CAL_ALPHA_FACTOR
 print(f'cal_alpha_factor (scalar): {CAL_ALPHA_FACTOR}')
 print(f'tier_cal_alpha_factors: {TIER_CAL_ALPHA_FACTORS}')
-assert TIER_CAL_ALPHA_FACTORS.get('L3', CAL_ALPHA_FACTOR) <= 0.55, \
-  f'L3 factor must be <= 0.55, got {TIER_CAL_ALPHA_FACTORS.get(\"L3\")}'
-assert TIER_CAL_ALPHA_FACTORS.get('L1', CAL_ALPHA_FACTOR) <= 0.85, \
-  f'L1 factor must be <= 0.85, got {TIER_CAL_ALPHA_FACTORS.get(\"L1\")}'
-print('PREFLIGHT PASS: per-tier L1<=0.85 and L3<=0.55 confirmed')
+expected_tier_factors = {'L1': 0.75, 'L2': 0.55, 'L3': 0.52}
+assert TIER_CAL_ALPHA_FACTORS == expected_tier_factors, \
+  f'TIER_CAL_ALPHA_FACTORS={TIER_CAL_ALPHA_FACTORS}, expected {expected_tier_factors}'
+print('PREFLIGHT PASS: per-tier calibration factors match D-55 contract')
 "
 
 # ── Step 0a: Pretrain the CIFAR-10 ResNet-18 backbone ────────────────────────
@@ -240,21 +302,22 @@ fi
 #   4. Wait Step 2c + 2d before no-TDA calibration and Phase 1 LOCK.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Step 2: Retrain ensemble (CW-aware weighted full-gate artifact) ───────────
+# ── Step 2: Retrain ensemble (balanced full-gate artifact) ────────
 echo ""
 echo "=== Steps 2 + 2c + 2d: Parallel Training Launch ==="
-echo "  Step 2  : ensemble (n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, FGSM=$FGSM_OVERSAMPLE, PGD=$PGD_OVERSAMPLE, Square=$SQUARE_OVERSAMPLE, CW=$CW_OVERSAMPLE, logitprofile+sidequad, worst-case TPR) — foreground"
+echo "  Step 2  : ensemble (n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, balanced FGSM/PGD/Square, logitprofile+sidequad+gradnorm, worst-case TPR) — foreground"
 echo "  Step 2c : ensemble-no-TDA variant — background"
 echo "  Step 2d : differentiated experts — background"
 echo ""
 
-# Current recovery run uses the CW-aware weighted attack mix and selects alpha
-# by worst-case held-out TPR at clean FPR<=10%, not aggregate AUC. Grad norm
-# stays disabled. The canonical raw feature contract is now 54 features:
+# Current recovery run uses the balanced fast-attack mix and
+# selects alpha by worst-case held-out TPR at clean FPR<=10%, not aggregate
+# AUC. Grad norm is enabled for the promoted 55-feature contract:
 # 36 TDA + DCT + softmax entropy + eight logit-profile features +
-# eight deterministic stability-v2 features. The current local winner also
-# uses side-quadratic expansion inside the fitted scorer. CW-L2 and AutoAttack
-# are included in the full Vast.ai gate after local fast/CW smoke passed.
+# eight deterministic stability-v2 features + grad-norm. The current local
+# winner also uses side-quadratic expansion inside the fitted scorer. CW-L2 and
+# AutoAttack remain in the full Vast.ai gate after the fast-attack training
+# smoke passes.
 
 # ── Step 2c: launched in background (independent of Step 2) ───────────────────
 # train_ensemble_scorer.py with --no-tda-features → models/ensemble_no_tda.pkl.
@@ -265,15 +328,9 @@ if python scripts/train_ensemble_scorer.py --help 2>&1 | grep -q -- '--no-tda-fe
     --config "$PRISM_CONFIG" \
     --n-train $ENSEMBLE_N_TRAIN \
     --source-split $ENSEMBLE_SOURCE_SPLIT \
-    --include-cw \
-    --fgsm-oversample $FGSM_OVERSAMPLE \
-    --pgd-oversample $PGD_OVERSAMPLE \
-    --square-oversample $SQUARE_OVERSAMPLE \
-    --cw-oversample $CW_OVERSAMPLE \
+    --balanced-attacks \
     --pgd-train-steps 40 \
     --square-train-max-iter 500 \
-    --cw-max-iter $CW_MAX_ITER \
-    --cw-bss $CW_BSS \
     --gen-chunk $ENSEMBLE_GEN_CHUNK \
     --selection-objective worst_case_tpr \
     --use-stability-features \
@@ -305,25 +362,20 @@ fi
 
 # ── Step 2: foreground (gates Step 3) ─────────────────────────────────────────
 echo ""
-echo "=== Step 2: Retrain Ensemble [n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, CW-aware weighted FGSM/PGD/Square/CW, logitprofile+sidequad, worst-case TPR] ==="
+echo "=== Step 2: Retrain Ensemble [n=$ENSEMBLE_N_TRAIN, source=$ENSEMBLE_SOURCE_SPLIT, balanced FGSM/PGD/Square, logitprofile+sidequad+gradnorm, worst-case TPR] ==="
 python scripts/train_ensemble_scorer.py \
   --config "$PRISM_CONFIG" \
   --n-train $ENSEMBLE_N_TRAIN \
   --source-split $ENSEMBLE_SOURCE_SPLIT \
-  --include-cw \
-  --fgsm-oversample $FGSM_OVERSAMPLE \
-  --pgd-oversample $PGD_OVERSAMPLE \
-  --square-oversample $SQUARE_OVERSAMPLE \
-  --cw-oversample $CW_OVERSAMPLE \
+  --balanced-attacks \
   --pgd-train-steps 40 \
   --square-train-max-iter 500 \
-  --cw-max-iter $CW_MAX_ITER \
-  --cw-bss $CW_BSS \
   --gen-chunk $ENSEMBLE_GEN_CHUNK \
   --selection-objective worst_case_tpr \
   --use-stability-features \
   --use-logit-profile-features \
   --use-side-quadratic-features \
+  --use-grad-norm \
   --output models/ensemble_scorer.pkl \
   2>&1 > >(tee logs/step2_retrain.log)
 STEP2_EXIT=${PIPESTATUS[0]:-$?}
@@ -337,7 +389,7 @@ if [ "$STEP2_EXIT" -ne 0 ]; then
 fi
 
 # ── Step 2b: Post-retrain verification ────────────────────────────────────────
-# Verifies fast-attack training, pixel feature space, 54-feature raw contract,
+# Verifies fast-attack training, pixel feature space, 55-feature raw contract,
 # side-quadratic scorer expansion, and worst-case TPR alpha selection.
 echo ""
 echo "=== Step 2b: Retrain Verification ==="
@@ -364,11 +416,11 @@ if nf is None:
     nf   = base + int(d.get('use_dct', False)) + int(d.get('use_softmax_entropy', False)) + int(d.get('stability_feature_count', 8)) * int(d.get('use_stability_features', False)) + int(d.get('use_grad_norm', False))
 model_dim = int(d.get('logistic_input_dim') or 0)
 errors = []
-for required in ('FGSM', 'PGD', 'Square', 'CW'):
+for required in ('FGSM', 'PGD', 'Square'):
     if required not in ta:
         errors.append(f'{required} missing from training_attacks: {ta}')
-if ng:
-    errors.append('use_grad_norm=True — grad-norm is a separate 39-feature ablation, not the default artifact')
+if not ng:
+    errors.append('use_grad_norm=False — grad-norm is required for the promoted 55-feature artifact')
 if not se:
     errors.append('use_softmax_entropy=False — softmax-entropy must be ON for CW-L2 detection')
 if not sf:
@@ -379,10 +431,10 @@ if int(d.get('stability_feature_count', 0)) != 8:
     errors.append(f'stability_feature_count={d.get(\"stability_feature_count\")}, expected 8')
 if int(d.get('logit_profile_feature_count', 0)) != 8:
     errors.append(f'logit_profile_feature_count={d.get(\"logit_profile_feature_count\")}, expected 8')
-if nf != 54:
-    errors.append(f'n_features={nf}, expected 54 (36 TDA + DCT + entropy + 8 logit-profile + 8 stability-v2)')
-if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad':
-    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad')
+if nf != 55:
+    errors.append(f'n_features={nf}, expected 55 (36 TDA + DCT + entropy + 8 logit-profile + 8 stability-v2 + grad-norm)')
+if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad+gradnorm':
+    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad+gradnorm')
 if not sq:
     errors.append('use_side_quadratic_features=False - current local winner requires side-quadratic expansion')
 if model_dim <= int(nf or 0):
@@ -394,7 +446,13 @@ if d.get('selection_objective') != 'worst_case_tpr':
 if d.get('training_source_split') not in ('profile', 'test-profile'):
     errors.append(f'training_source_split={d.get(\"training_source_split\")}, expected profile/test-profile')
 requested = d.get('requested_oversample_weights') or {}
-expected_weights = {'FGSM': 1.5, 'PGD': 1.0, 'Square': 1.0, 'CW': 0.5}
+expected_weights = {'FGSM': 1.0, 'PGD': 1.0, 'Square': 1.0}
+if not bool(d.get('balanced_attacks', False)):
+    errors.append('balanced_attacks=False, expected balanced FGSM/PGD/Square training')
+if set(ta) != set(expected_weights):
+    errors.append(f'training_attacks={ta}, expected exactly {sorted(expected_weights)}')
+if 'CW' in requested:
+    errors.append(f'CW unexpectedly present in requested_oversample_weights: {requested}')
 for key, expected in expected_weights.items():
     try:
         actual = float(requested.get(key))
@@ -411,6 +469,8 @@ if counts:
         actual_count = int(counts.get(key, -999999))
         if abs(actual_count - expected_count) > 1:
             errors.append(f'{key} count={actual_count}, expected about {expected_count}; counts={counts}')
+    if set(counts) != set(expected_weights):
+        errors.append(f'training_attack_counts keys={sorted(counts)}, expected {sorted(expected_weights)}')
 if int(d.get('pgd_train_steps', -1)) != 40:
     errors.append(f'pgd_train_steps={d.get(\"pgd_train_steps\")}, expected 40')
 if int(d.get('square_train_max_iter', -1)) != 500:
@@ -611,18 +671,20 @@ python scripts/audit_score_distributions.py \
 
 echo ""
 echo "=== Steps 5+6+7: Full Parallel Launch [n=$N_TEST × 5 seeds] ==="
-echo "  Step 5A: CW-L2 (torch engine, max_iter=$CW_MAX_ITER, bss=$CW_BSS, ~25-35 min/seed)"
-echo "  Step 5B: FGSM + PGD + Square + AutoAttack"
+echo "  Step 5A: CW-L2 (torch engine, max_iter=$CW_MAX_ITER, bss=$CW_BSS, κ=$CW_CONFIDENCE)"
+echo "  Step 5B: FGSM + PGD ($PGD_MAX_ITER it, $PGD_RESTARTS restarts) + Square + AutoAttack"
 echo "  Step 6 : Adaptive PGD × 5 seeds"
 echo "  Step 7 : Ablation (FGSM+PGD+Square+CW via torch engine)"
 echo "  All launched simultaneously — CW eval is the wall-clock bottleneck."
 echo ""
 
 # ── Step 5A: CW ──────────────────────────────────────────────────────────────
+# Research-standard CW: max_iter=100, bss=9, κ=1.0 (Carlini & Wagner S&P 2017).
 python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks CW \
   --multi-seed --seeds $SEEDS \
   --cw-max-iter $CW_MAX_ITER --cw-bss $CW_BSS --cw-chunk $CW_CHUNK \
+  --cw-confidence $CW_CONFIDENCE \
   --cw-engine $CW_ENGINE \
   --skip-latency \
   --checkpoint-interval 100 \
@@ -632,10 +694,12 @@ PID_CW=$!
 echo "  Step 5A CW started (PID=$PID_CW)"
 
 # ── Step 5B: Fast attacks ─────────────────────────────────────────────────────
+# Research-standard PGD: max_iter=50, num_random_init=10 (RobustBench convention).
 python experiments/evaluation/run_evaluation_full.py \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
   --gen-chunk 128 --square-max-iter 5000 \
+  --pgd-max-iter $PGD_MAX_ITER --pgd-restarts $PGD_RESTARTS \
   --aa-version standard --aa-chunk 64 \
   --skip-latency \
   --checkpoint-interval 100 \
@@ -753,15 +817,30 @@ for f in files:
 print(f'Training attacks across result files: {ta_sets}')
 if len(ta_sets) == 1:
     ta = list(ta_sets)[0]
-    required_train = {'FGSM', 'PGD', 'Square', 'CW'}
+    required_train = {'FGSM', 'PGD', 'Square'}
     if required_train.issubset(set(ta)):
-        print('PROVENANCE CHECK PASS: all results use same CW-aware retrained ensemble')
+        print('PROVENANCE CHECK PASS: all results use same FGSM/PGD-rebalanced retrained ensemble')
     else:
-        print(f'WARNING: ensemble missing required training attacks {sorted(required_train)}: {ta}')
+        print(f'PROVENANCE CHECK FAIL: ensemble missing required training attacks {sorted(required_train)}: {ta}')
+        exit(1)
 else:
     print('PROVENANCE CHECK FAIL: different ensembles detected!')
     exit(1)
 "
+fi
+
+GATE_MISS_FULL=0
+if [ $STEP5_FAIL -eq 0 ]; then
+  echo ""
+  echo "=== Step 5: Full Attack Metric Gate ==="
+  python scripts/check_vastai_full_gate.py \
+    --fast-result experiments/evaluation/results_fast_n${N_TEST}_ms5.json \
+    --cw-result experiments/evaluation/results_cw_n${N_TEST}_ms5.json \
+    --latency-file experiments/evaluation/results_latency_standalone.json \
+    --calibration-report experiments/calibration/ensemble_fpr_report.json \
+    --expected-n-test "$N_TEST" \
+    --expected-seeds $SEEDS \
+    2>&1 | tee logs/step5_full_metric_gate.log || GATE_MISS_FULL=1
 fi
 
 # ── Wait order 2: Step 6 seeds ────────────────────────────────────────────────
@@ -1037,7 +1116,7 @@ out = {
   'seeds':                     [42, 123, 456, 789, 999],
   'eval_split':                'CIFAR-10 test idx 8000-9999',
   'eps_linf':                  8.0/255,
-  'cw_eval_params':            {'engine': '$CW_ENGINE', 'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'chunk': $CW_CHUNK, 'confidence': 0.0},
+  'cw_eval_params':            {'engine': '$CW_ENGINE', 'max_iter': $CW_MAX_ITER, 'bss': $CW_BSS, 'chunk': $CW_CHUNK, 'confidence': $CW_CONFIDENCE},
   'adaptive_pgd_params':       {'lambdas': [float(x) for x in '$ADAPTIVE_LAMBDAS'.split()], 'steps': $ADAPTIVE_STEPS, 'restarts': $ADAPTIVE_RESTARTS, 'eot_samples': 1, 'eot_verify_samples': 20, 'through_scorer': True, 'checkpoint_jsonl': True},
   'fgsm_oversample':           e.get('fgsm_oversample'),
   'requested_oversample_weights': e.get('requested_oversample_weights'),
@@ -1070,12 +1149,19 @@ echo "  scp -P <port> root@<ip>:/workspace/prism-repo/prism/models/*.pkl ."
 # ── Final exit code reflects gate outcomes ───────────────────────────────────
 # All artifacts (paper tables, manifest) are written before this point so the
 # operator gets full diagnostics even when a gate misses. Exit-code contract:
-#   0 → all gates pass (Step 4 + P0.4 + P0.5)
+#   0 → all gates pass (Step 4 + Step 5 full attack + P0.4 + P0.5)
 #   3 → Phase 2 gate miss (P0.4 ASR gap, FPR, or P0.5 recovery gap)
+#   4 → Step 5 full attack metric gate miss
 # Step 4 (FPR) and earlier failures already exited 1/2 before we got here.
 if [ "${GATE_MISS_PHASE2:-0}" -ne 0 ]; then
   echo ""
   echo "EXIT 3: One or more Phase 2 gates failed (see GATE SUMMARY above)."
   echo "        Paper tables + manifest were written for diagnostic review."
   exit 3
+fi
+if [ "${GATE_MISS_FULL:-0}" -ne 0 ]; then
+  echo ""
+  echo "EXIT 4: Full attack metric gate failed (see logs/step5_full_metric_gate.log)."
+  echo "        Paper tables + manifest were written for diagnostic review."
+  exit 4
 fi

@@ -18,7 +18,9 @@ Optional stability block: deterministic logit consistency under cheap pixel
 Optional side-channel quadratic expansion: appends pairwise products of the
     non-TDA side channels inside the stored linear heads. The raw feature
     contract remains unchanged; only the scorer's fitted model input expands.
-Optional final feature: input-gradient L2 norm (use_grad_norm=True) [Ablation only].
+Optional final feature: input-gradient L2 norm (use_grad_norm=True) for the
+    promoted 55-feature arm. Keep it opt-in so legacy no-grad-norm artifacts
+    can still be reproduced.
 
 Architecture:
   score = α * wasserstein_score + (1-α) * logistic_score_centered

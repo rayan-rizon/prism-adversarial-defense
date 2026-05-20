@@ -182,8 +182,8 @@ def calibrate_ensemble(
     # --- Calibrate with per-tier conservative alphas ---
     # Published targets:        L1=10 %,  L2=3 %,   L3=0.5 %
     # Per-tier factors (YAML):  configs/default.yaml -> conformal.tier_cal_alpha_factors
-    #                           current: {L1: 0.90, L2: 0.70, L3: 0.50}
-    #                           -> cal alphas: L1=9.0 %, L2=2.1 %, L3=0.25 %
+    #                           current: {L1: 0.75, L2: 0.55, L3: 0.52}
+    #                           -> cal alphas: L1=7.5 %, L2=1.65 %, L3=0.26 %
     #
     # Why per-tier, not a single global factor:
     # L1 is set to the highest value observed to keep validation FPR under the

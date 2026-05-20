@@ -310,6 +310,17 @@ def score_quantiles(scores) -> dict:
     }
 
 
+def _json_default(obj):
+    """Make evaluation artifacts JSON-safe for NumPy / array scalars."""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (set, tuple)):
+        return list(obj)
+    raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
+
 def _base_attack_success_mask(norm_model, x_clean_np, x_adv_np, device,
                               batch_size: int = 256) -> np.ndarray:
     """Return mask where adversarial prediction differs from clean prediction."""
@@ -371,13 +382,26 @@ def run_evaluation_full(
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
+    cw_confidence: float = 0.0,
     cw_engine: str = 'torch',
+    pgd_max_iter: int = 50,
+    pgd_restarts: int = 10,
     skip_latency: bool = False,
     latency_only: bool = False,
     allow_cpu_cw: bool = False,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
+
+    # Fail fast if AutoAttack is requested but the package is missing. Avoids
+    # silently emitting an `{'error': ...}` entry in the results JSON while the
+    # paper claims AutoAttack robustness. Pre-flight check before any compute
+    # is burned on the other attacks.
+    if attacks_to_run and 'AutoAttack' in attacks_to_run and not AA_AVAILABLE:
+        print("ERROR: AutoAttack was requested but the 'autoattack' package is not installed.")
+        print("       pip install autoattack")
+        print("       Aborting to avoid silently omitting AutoAttack from a paper-quality run.")
+        sys.exit(1)
 
     if device_str is not None:
         device = torch.device(device_str)
@@ -473,6 +497,8 @@ def run_evaluation_full(
             getattr(_ens_scorer, 'score_channel_calibration', {}) or {}
         ).get('validation_metrics'),
         'training_attack_counts': getattr(_ens_scorer, 'training_attack_counts', None),
+        'balanced_attacks': getattr(_ens_scorer, 'balanced_attacks', None),
+        'pgd_train_steps': getattr(_ens_scorer, 'pgd_train_steps', None),
         'per_attack_validation_metrics': getattr(
             _ens_scorer, 'per_attack_validation_metrics', None
         ),
@@ -509,14 +535,14 @@ def run_evaluation_full(
             classifier,
             eps=EPS_LINF_STANDARD,
             eps_step=EPS_LINF_STANDARD / 4,   # step = 2/255
-            max_iter=40,
-            num_random_init=1,
+            max_iter=pgd_max_iter,
+            num_random_init=pgd_restarts,
         ),
         # ART CW is kept as a compatibility fallback. The default evaluator
         # uses the native PyTorch CW path below, which avoids ART's NumPy/GPU
         # transfer overhead and exposes chunk-level progress in the logs.
         'CW': lambda: CarliniL2Method(
-            classifier, max_iter=cw_max_iter, confidence=0.0, learning_rate=0.01,
+            classifier, max_iter=cw_max_iter, confidence=cw_confidence, learning_rate=0.01,
             binary_search_steps=cw_bss, batch_size=256, verbose=True,
         ),
         'Square': lambda: SquareAttack(
@@ -572,7 +598,7 @@ def run_evaluation_full(
         }
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(results, f, indent=2)
+            json.dump(results, f, indent=2, default=_json_default)
         print(f"\nLatency-only results saved → {output_path}")
         return results
 
@@ -686,7 +712,7 @@ def run_evaluation_full(
                         max_iter=cw_max_iter,
                         binary_search_steps=cw_bss,
                         learning_rate=0.01,
-                        confidence=0.0,
+                        confidence=cw_confidence,
                     )
                     X_adv_np[_c_start:_c_end] = adv_chunk.cpu().numpy()
                     cw_success_total += int(cw_stats['attack_success'])
@@ -764,7 +790,7 @@ def run_evaluation_full(
                 'final_chunk': int(_cur_bs),
                 'max_iter': cw_max_iter,
                 'binary_search_steps': cw_bss,
-                'confidence': 0.0,
+                'confidence': cw_confidence,
                 'learning_rate': 0.01,
                 'cuda_peak_memory_mb': cuda_peak_mb,
             }
@@ -898,7 +924,12 @@ def run_evaluation_full(
             aa_chunk=aa_chunk, aa_version=aa_version,
         )
     elif 'AutoAttack' in (attacks_to_run or []):
-        results['AutoAttack'] = {'error': 'autoattack not installed'}
+        # Should be unreachable: the top-of-function pre-flight aborts before
+        # any compute. Kept as defense-in-depth so a refactor that moves the
+        # pre-flight cannot regress to silent omission.
+        print("ERROR: AutoAttack was requested but the 'autoattack' package is not installed.")
+        print("       Refusing to write results JSON with a missing-attack stub.")
+        sys.exit(1)
 
     # ── Summary table ──────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
@@ -932,8 +963,8 @@ def run_evaluation_full(
             'PGD': {
                 'eps_linf': EPS_LINF_STANDARD,
                 'eps_step': EPS_LINF_STANDARD / 4,
-                'max_iter': 40,
-                'num_random_init': 1,
+                'max_iter': pgd_max_iter,
+                'num_random_init': pgd_restarts,
             },
             'Square': {
                 'eps_linf': EPS_LINF_STANDARD,
@@ -943,6 +974,7 @@ def run_evaluation_full(
             'CW': {
                 'max_iter': cw_max_iter,
                 'binary_search_steps': cw_bss,
+                'confidence': cw_confidence,
                 'engine': cw_engine,
             },
             'AutoAttack': {
@@ -960,7 +992,7 @@ def run_evaluation_full(
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, default=_json_default)
     print(f"\nResults saved → {output_path}")
 
     return results
@@ -1108,7 +1140,10 @@ def run_evaluation_multiseed(
     aa_version: str = 'standard',
     cw_max_iter: int = 40,
     cw_bss: int = 5,
+    cw_confidence: float = 0.0,
     cw_engine: str = 'torch',
+    pgd_max_iter: int = 50,
+    pgd_restarts: int = 10,
     skip_latency: bool = False,
     allow_cpu_cw: bool = False,
 ):
@@ -1176,7 +1211,10 @@ def run_evaluation_multiseed(
             aa_version=aa_version,
             cw_max_iter=cw_max_iter,
             cw_bss=cw_bss,
+            cw_confidence=cw_confidence,
             cw_engine=cw_engine,
+            pgd_max_iter=pgd_max_iter,
+            pgd_restarts=pgd_restarts,
             skip_latency=skip_latency,
             allow_cpu_cw=allow_cpu_cw,
         )
@@ -1348,7 +1386,7 @@ def run_evaluation_multiseed(
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(multi_seed_output, f, indent=2)
+        json.dump(multi_seed_output, f, indent=2, default=_json_default)
     print(f"\nMulti-seed results saved → {output_path}")
 
     # ── Print summary table ────────────────────────────────────────────────────
@@ -1508,6 +1546,22 @@ if __name__ == '__main__':
                              'optimisation on GPU and is the default for '
                              'publishable runs; art preserves the legacy ART '
                              'CarliniL2Method path for comparison.')
+    parser.add_argument('--cw-confidence', type=float, default=0.0,
+                        help='CW-L2 confidence κ. Default 0.0 (back-compat with '
+                             'fast smoke configs). Paper-quality runs should '
+                             'use κ=1.0 to ensure the perturbation stays '
+                             'adversarial after rounding/quantization. '
+                             'VastAI full pipeline sets κ=1.0 explicitly.')
+    parser.add_argument('--pgd-max-iter', type=int, default=50,
+                        help='PGD max_iter. Default 50 (RobustBench convention). '
+                             'Previously hard-coded to 40; bumped to 50 for '
+                             'NeurIPS-grade comparability with prior work.')
+    parser.add_argument('--pgd-restarts', type=int, default=10,
+                        help='PGD num_random_init. Default 10 (RobustBench '
+                             'convention). Previously hard-coded to 1; the '
+                             'single-restart configuration underestimates '
+                             'attack strength and was flagged in the '
+                             'pre-submission audit as reviewer-risk.')
     parser.add_argument('--skip-latency', action='store_true',
                         help='Skip PRISM latency benchmark. Use this for '
                              'parallel attack jobs so timing is measured in a '
@@ -1536,7 +1590,10 @@ if __name__ == '__main__':
             aa_version=args.aa_version,
             cw_max_iter=args.cw_max_iter,
             cw_bss=args.cw_bss,
+            cw_confidence=args.cw_confidence,
             cw_engine=args.cw_engine,
+            pgd_max_iter=args.pgd_max_iter,
+            pgd_restarts=args.pgd_restarts,
             skip_latency=False,
             latency_only=True,
             allow_cpu_cw=args.allow_cpu_cw,
@@ -1557,7 +1614,10 @@ if __name__ == '__main__':
             aa_version=args.aa_version,
             cw_max_iter=args.cw_max_iter,
             cw_bss=args.cw_bss,
+            cw_confidence=args.cw_confidence,
             cw_engine=args.cw_engine,
+            pgd_max_iter=args.pgd_max_iter,
+            pgd_restarts=args.pgd_restarts,
             skip_latency=args.skip_latency,
             allow_cpu_cw=args.allow_cpu_cw,
         )
@@ -1577,7 +1637,10 @@ if __name__ == '__main__':
             aa_version=args.aa_version,
             cw_max_iter=args.cw_max_iter,
             cw_bss=args.cw_bss,
+            cw_confidence=args.cw_confidence,
             cw_engine=args.cw_engine,
+            pgd_max_iter=args.pgd_max_iter,
+            pgd_restarts=args.pgd_restarts,
             skip_latency=args.skip_latency,
             allow_cpu_cw=args.allow_cpu_cw,
         )

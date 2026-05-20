@@ -100,18 +100,25 @@ for label, path, expect_tda in [
     check(f"{label} stored as dict", isinstance(data, dict), f"type={type(data).__name__}")
     if isinstance(data, dict):
         check(f"{label} softmax entropy enabled", bool(data.get('use_softmax_entropy', False)))
-        check(f"{label} grad norm disabled", not bool(data.get('use_grad_norm', False)))
+        check(f"{label} grad norm flag recorded", isinstance(data.get('use_grad_norm', None), bool))
         feature_space = data.get('feature_space_version')
+        use_grad_norm = bool(data.get('use_grad_norm', False))
         expected_feature_spaces = (
             {
                 'pixel-stability-v2',
                 'pixel-stability-v2+sidequad',
                 'pixel-stability-v2+logitprofile+sidequad',
+                'pixel-stability-v2+gradnorm',
+                'pixel-stability-v2+sidequad+gradnorm',
+                'pixel-stability-v2+logitprofile+sidequad+gradnorm',
             }
             if expect_tda else {
                 'pixel-v1',
                 'pixel-stability-v2+sidequad',
                 'pixel-stability-v2+logitprofile+sidequad',
+                'pixel-v1+gradnorm',
+                'pixel-stability-v2+sidequad+gradnorm',
+                'pixel-stability-v2+logitprofile+sidequad+gradnorm',
             }
         )
         check(
@@ -181,10 +188,19 @@ for label, path, expect_tda in [
             )
             use_sidequad = bool(data.get('use_side_quadratic_features', False))
             use_logit_profile = bool(data.get('use_logit_profile_features', False))
-            expected_n_features = 54 if use_logit_profile else 46
+            expected_n_features = (
+                (36 if bool(data.get('use_tda', True)) else 0)
+                + 1  # DCT
+                + 1  # entropy
+                + (8 if use_logit_profile else 0)
+                + int(data.get('stability_feature_count') or 0)
+                + (1 if use_grad_norm else 0)
+            )
             if feature_space in {
                 'pixel-stability-v2+sidequad',
                 'pixel-stability-v2+logitprofile+sidequad',
+                'pixel-stability-v2+sidequad+gradnorm',
+                'pixel-stability-v2+logitprofile+sidequad+gradnorm',
             }:
                 check(f"{label} side-quadratic flag enabled", use_sidequad)
                 if use_logit_profile:
@@ -220,7 +236,14 @@ for label, path, expect_tda in [
                 check(f"{label} side-quadratic flag disabled", not use_sidequad)
         check(f"{label} use_tda={expect_tda}", bool(data.get('use_tda', True)) is expect_tda)
         if expect_tda:
-            expected_n = 54 if bool(data.get('use_logit_profile_features', False)) else 46
+            expected_n = (
+                36
+                + 1  # DCT
+                + 1  # entropy
+                + (8 if bool(data.get('use_logit_profile_features', False)) else 0)
+                + int(data.get('stability_feature_count') or 0)
+                + (1 if use_grad_norm else 0)
+            )
             check(
                 f"{label} n_features == {expected_n}",
                 int(data.get('n_features') or 0) == expected_n,

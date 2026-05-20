@@ -28,14 +28,14 @@
 > each multi-seed run — explicit ✅/❌ per metric, so you know immediately
 > whether to continue or stop the instance.
 
-> **Current Vast.ai-ready detector (2026-05-17).** `run_vastai_full.sh`
+> **Current Vast.ai-ready detector (2026-05-19).** `run_vastai_full.sh`
 > now defaults to `configs/vastai_cw_full.yaml` and trains the promoted
-> CW-aware weighted detector: `n_train=2500`, profile split, FGSM `1.5x`,
-> PGD `1.0x`, Square `1.0x`, CW-L2 `0.5x`, CW train/eval `40x5`,
-> logit-profile + stability-v2 + side-quadratic features, grad-norm off,
-> and conformal L1 factor `0.85`. Local evidence is archived in
-> `experiments/evaluation/cw_candidate_fgsm_l1/research_report_20260517.md`;
-> final publishable evidence still requires the full multi-seed Vast.ai run.
+> balanced fast-attack detector: `n_train=1500`, profile split, balanced
+> FGSM/PGD/Square, logit-profile + stability-v2 + side-quadratic features,
+> grad-norm on, and conformal factors `L1=0.75`, `L2=0.55`, `L3=0.52`. CW-L2 and AutoAttack stay
+> in the Vast.ai evaluation stages. Local evidence is kept in the repo's
+> candidate/smoke artifacts; final publishable evidence still requires the
+> full multi-seed Vast.ai run.
 
 ---
 
@@ -68,9 +68,10 @@ All TPR/FPR figures reported with Wilson 95 % CIs pooled across 5 seeds.
 >   ✅ Latency      mean=52.1ms  target<100ms
 > ─────────────────────────────────────────────────────────────────
 > Gate result must be computed from fresh artifacts. The current local
-> fast-attack candidate is the 54-feature `logitprofile+sidequad` scorer; it
-> passed the local n=300 FGSM/PGD/Square diagnostic on 2026-05-15. CW-L2 and
-> AutoAttack remain deferred to Vast.ai and must be reported separately.
+> fast-attack candidate is the 55-feature `logitprofile+sidequad+gradnorm`
+> scorer; it passed the local n=100 FGSM/PGD/Square diagnostic on 2026-05-19.
+> CW-L2 and AutoAttack remain in the Vast.ai full gate and must be reported
+> separately.
 > ```
 
 ---
@@ -89,7 +90,7 @@ PHASE 0 — TRAINING (all three launchers start simultaneously after Step 1)
 build_profile_testset.py         → reference_profiles.pkl  [Step 1, ~10 min]
         │
         ├──[foreground]──► train_ensemble_scorer.py         [Step 2,  ~30 min]
-        │                    (n=2400, profile split, balanced FGSM/PGD/Square, logitprofile + stability-v2 + sidequad)
+        │                    (n=1500, profile split, balanced FGSM/PGD/Square, logitprofile + stability-v2 + sidequad + gradnorm)
         │                    Step 2b: post-retrain verify gate
         ├──[background]──► train_ensemble_scorer.py --no-tda-features  [Step 2c, ~30 min]
         │                    → models/ensemble_no_tda.pkl
@@ -284,7 +285,7 @@ bash run_local_full.sh 100 --skip-train
 
 | Parameter | Local | Vast.ai |
 |-----------|-------|---------|
-| n-train (ensemble) | 500 | 2400 |
+| n-train (ensemble) | 1500 | 1500 |
 | n-test (eval) | 100 | 1000 |
 | Seeds | 1 (seed=42) | 5 |
 | Attacks | FGSM + PGD + Square | same fast gate first; CW + AutoAttack only after local promotion |
@@ -318,7 +319,7 @@ python scripts/build_profile_testset.py 2>&1 | tee logs/build_profile.log
 
 ```bash
 python scripts/train_ensemble_scorer.py \
-  --n-train 2400 \
+  --n-train 1500 \
   --source-split profile \
   --balanced-attacks \
   --pgd-train-steps 40 \
@@ -327,6 +328,7 @@ python scripts/train_ensemble_scorer.py \
   --use-stability-features \
   --use-logit-profile-features \
   --use-side-quadratic-features \
+  --use-grad-norm \
   --output models/ensemble_scorer.pkl \
   2>&1 | tee logs/retrain.log
 ```
@@ -359,14 +361,14 @@ print('use_side_quadratic_features:', sq)
 print('n_features:', nf)
 for required in ('FGSM', 'PGD', 'Square'):
     assert required in ta, f'ERROR: {required} not in training mix!'
-assert not ng, 'ERROR: grad-norm must be OFF (regression risk)'
+assert ng, 'ERROR: grad-norm must be ON for the promoted 55-feature contract'
 assert se, 'ERROR: softmax entropy must be ON'
 assert sf, 'ERROR: stability features must be ON'
 assert lp, 'ERROR: logit-profile features must be ON'
 assert sq, 'ERROR: side-quadratic expansion must be ON for the current local winner'
-assert nf == 54, f'ERROR: expected 54 raw features, got {nf}'
+assert nf == 55, f'ERROR: expected 55 raw features, got {nf}'
 assert model_dim > nf, f'ERROR: side-quadratic model_dim={model_dim} must exceed raw n_features={nf}'
-assert d.get('feature_space_version') == 'pixel-stability-v2+logitprofile+sidequad', 'ERROR: wrong feature_space_version'
+assert d.get('feature_space_version') == 'pixel-stability-v2+logitprofile+sidequad+gradnorm', 'ERROR: wrong feature_space_version'
 assert d.get('training_source_split') in ('profile', 'test-profile'), 'ERROR: scorer must train on profile split'
 assert d.get('selection_objective') == 'worst_case_tpr', 'ERROR: scorer must select by worst-case TPR'
 assert int(d.get('pgd_train_steps', -1)) == 40, 'ERROR: pgd_train_steps must be 40'
@@ -421,11 +423,11 @@ All three evaluation phases read only locked frozen artifacts — launch them al
 at once to overlap Step 6 + 7 with the CW bottleneck.
 
 ```bash
-# Step 5A: CW — research-plan canonical (max_iter=40, bss=5, bs=256 via chunk=128)
+# Step 5A: CW — research-standard canonical (max_iter=100, bss=9, confidence=1.0)
 python experiments/evaluation/run_evaluation_full.py \
   --n-test 1000 --attacks CW \
   --multi-seed --seeds 42 123 456 789 999 \
-  --cw-max-iter 40 --cw-bss 5 --cw-chunk 128 \
+  --cw-max-iter 100 --cw-bss 9 --cw-confidence 1.0 --cw-engine torch --cw-chunk 128 \
   --checkpoint-interval 100 \
   --output experiments/evaluation/results_cw_n1000_ms5.json \
   2>&1 | tee logs/cw_ms5.log &
@@ -513,15 +515,15 @@ model_dim = int(d.get('logistic_input_dim') or 0)
 errors = []
 for required in ('FGSM', 'PGD', 'Square'):
     if required not in ta: errors.append(f'{required} missing: {ta}')
-if ng:                       errors.append('use_grad_norm=True — must be OFF')
+if not ng:                       errors.append('use_grad_norm=False — must be ON for the promoted 55-feature contract')
 if not se:                   errors.append('use_softmax_entropy=False — must be ON')
 if not sf:                   errors.append('use_stability_features=False - must be ON')
 if not lp:                   errors.append('use_logit_profile_features=False - must be ON')
 if not sq:                   errors.append('use_side_quadratic_features=False - must be ON')
-if nf != 54:                 errors.append(f'n_features={nf}, expected 54')
+if nf != 55:                 errors.append(f'n_features={nf}, expected 55')
 if model_dim <= int(nf or 0): errors.append(f'logistic_input_dim={model_dim}, expected > n_features={nf}')
-if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad':
-    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad')
+if d.get('feature_space_version') != 'pixel-stability-v2+logitprofile+sidequad+gradnorm':
+    errors.append(f'feature_space_version={d.get(\"feature_space_version\")}, expected pixel-stability-v2+logitprofile+sidequad+gradnorm')
 if d.get('training_source_split') not in ('profile', 'test-profile'):
     errors.append(f'training_source_split={d.get(\"training_source_split\")}, expected profile/test-profile')
 if d.get('selection_objective') != 'worst_case_tpr':
@@ -548,7 +550,7 @@ and re-run Step 2 (~40 min):
 ```bash
 rm models/ensemble_scorer.pkl
 python scripts/train_ensemble_scorer.py \
-  --n-train 2400 --source-split profile \
+  --n-train 1500 --source-split profile \
   --balanced-attacks \
   --pgd-train-steps 40 --square-train-max-iter 500 \
   --selection-objective worst_case_tpr \
@@ -696,9 +698,9 @@ scp -P <port> \
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Step 2b: `training_attacks: []` | Stale code on instance (used `getattr` on dict pkl) | `git pull`, then re-run Step 2b check — see §4b |
-| Step 2b: `n_features=0, expected 54` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
+| Step 2b: `n_features=0, expected 55` | `n_features` not saved in old pkl (pre-fix) | `git pull` (fix adds fallback computation) — see §4b |
 | Step 2b: `pkl is not a dict` | Very old pkl pickled the class object directly | Delete pkl, re-run Step 2 |
-| FGSM TPR ~63 % | grad-norm enabled | **REVERT: remove --use-grad-norm.** Feature is non-discriminative but inflates thresholds. See `regression_analysis_20260422.md`. |
+| FGSM TPR ~63 % | legacy no-grad-norm arm or stale contract | Promote the 55-feature grad-norm contract and rerun Step 2. |
 | PGD TPR collapse | Stability features missing or stale calibrator | Ensure `--use-stability-features`, retrain, then rerun `calibrate_ensemble.py` before evaluation. |
 | FGSM/Square plateau below target | Feature lower-tail overlap under the FPR constraint | Keep CW/AA deferred; run a new feature-family ablation before remote slow attacks. |
 | CW rate > 15 s/img | Running on CPU | Check `nvidia-smi`; ensure CUDA available; `--device cuda` |
@@ -814,8 +816,9 @@ test accuracy floors below 0.75.
 | Config | Value | Rationale |
 |---|---|---|
 | Attack mix | **Balanced FGSM/PGD/Square first; CW/AA only after fast-gate promotion** | Prevents aggregate AUC from hiding a weak attack family; non-default oversampling is ablation-only |
-| CW iter | **40** | RobustBench detector-eval norm; balances ℓ₂ attack strength vs. GPU-hours |
-| CW binary search steps | **5** | Standard Carlini 2017 parameterization |
+| CW iter | **100** | Stronger CW-L2 smoke/full gate; reduces reviewer risk vs. too-light optimization |
+| CW binary search steps | **9** | Standard Carlini 2017 parameterization for paper-quality runs |
+| CW confidence | **1.0** | Keeps perturbations adversarial after rounding/quantization |
 | CW batch size | **256** | Fills a single 24 GB card; reduces wall-clock ~6× vs. bs=32 |
 | Adaptive PGD λ sweep | **{0.0, 0.5, 1.0, 2.0, 5.0, 10.0}** | Athalye/Carlini; confirms no collapse at high λ |
 | Adaptive PGD steps × restarts | **100 × 10** | Strong-attack standard for detector papers |
