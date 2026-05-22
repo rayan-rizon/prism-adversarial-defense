@@ -119,6 +119,9 @@ BACKBONE_CHECKPOINT_PATH: str     = _CFG.get('model', {}).get(
     'backbone_checkpoint', 'models/cifar_resnet18.pt'
 )
 BACKBONE_NUM_CLASSES: int         = int(_CFG.get('model', {}).get('num_classes', 10))
+# Backbone architecture selector. 'resnet18' is the default (ResNet-18 pipeline).
+# Set to 'wrn28_10' via configs/wrn_cifar10.yaml for the Stretch A WRN experiment.
+BACKBONE_ARCH: str                = str(_CFG.get('model', {}).get('arch', 'resnet18'))
 EPS_LINF_STANDARD: float          = 8 / 255  # standard CIFAR-10 evaluation budget
 CONFORMAL_ALPHAS: Dict[str, float] = _CFG['conformal']['alphas']
 

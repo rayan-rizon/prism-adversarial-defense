@@ -28,7 +28,7 @@ import torch.nn as nn
 from .cifar_resnet import cifar_resnet18, CIFARResNet18
 from ..config import (
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_CHECKPOINT_PATH,
-    BACKBONE_NUM_CLASSES,
+    BACKBONE_NUM_CLASSES, BACKBONE_ARCH,
 )
 
 
@@ -108,18 +108,30 @@ def load_backbone(device: torch.device,
 
     ckpt = checkpoint_path or BACKBONE_CHECKPOINT_PATH
     if not Path(ckpt).exists():
+        arch_hint = BACKBONE_ARCH
+        script_hint = ('pretrain_wrn_backbone.py'
+                       if arch_hint == 'wrn28_10'
+                       else 'pretrain_cifar_backbone.py')
         raise FileNotFoundError(
             f"CIFAR backbone checkpoint not found at '{ckpt}'.\n"
-            f"  Run:  python scripts/pretrain_cifar_backbone.py\n"
-            f"  This produces a CIFAR-trained ResNet-18 in ~1 hour on an "
-            f"RTX 5090 (200 epochs)."
+            f"  Run:  python scripts/{script_hint}\n"
+            f"  (arch={arch_hint}, detected from active PRISM_CONFIG)"
         )
 
-    backbone = cifar_resnet18(
-        num_classes=num_classes,
-        checkpoint_path=ckpt,
-        map_location=str(device),
-    )
+    # Architecture dispatch — driven by model.arch in the active config.
+    if BACKBONE_ARCH == 'wrn28_10':
+        from .cifar_wrn import cifar_wrn28_10
+        backbone = cifar_wrn28_10(
+            num_classes=num_classes,
+            checkpoint_path=ckpt,
+            map_location=str(device),
+        )
+    else:
+        backbone = cifar_resnet18(
+            num_classes=num_classes,
+            checkpoint_path=ckpt,
+            map_location=str(device),
+        )
     backbone = backbone.to(device)
     if eval_mode:
         backbone.eval()

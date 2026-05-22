@@ -70,6 +70,49 @@ Attack-specific conclusions are drawn from the generated table and the
 gate summary emitted by \texttt{run\_vastai\_full.sh} and
 \texttt{run\_vastai\_cifar100.sh}; no hand-entered historical values are used.
 
+% ── Adaptive attacks ──────────────────────────────────────────────────────
+\subsection{Adaptive Attack Evaluation}
+\label{sec:adaptive}
+
+Following Carlini et al.~\cite{carlini2019evaluating}, we evaluate \prism
+against a white-box adaptive attacker who has access to the Wasserstein
+scoring channel and crafts perturbations that explicitly suppress its
+signal. The attack is a BPDA-style PGD that augments the classification
+loss with a weighted activation-matching term
+$\mathcal{L} = \mathcal{L}_\text{CE}(x', y) - \lambda \cdot
+\|\phi_\ell(x') - \mu_\ell\|_2$, where $\mu_\ell$ is the clean-profile
+medoid activation at the monitored layer $\ell$ and $\lambda$ controls
+the trade-off between misclassification and \prism-evasion. We sweep
+$\lambda \in \{0, 0.5, 1, 2, 5, 10\}$ at 100 PGD steps with 10 random
+restarts and verify success via EOT-style stochastic re-evaluation.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/adaptive_pgd.tex}
+\caption{%
+  Adaptive PGD with activation-matching term ($\lambda$ sweep, 100 steps,
+  10 restarts, 5 seeds). TPR degrades monotonically as $\lambda$ grows,
+  bottoming at $0.429$ at $\lambda{=}10$ while FPR holds at the calibrated
+  $0.075$.
+}
+\label{tab:adaptive_pgd}
+\end{table}
+
+\paragraph{Honest framing.} As $\lambda$ grows, an attacker who is willing
+to spend perturbation budget on activation-matching can substantially
+reduce \prism's detection rate (TPR drops from $0.832$ at $\lambda{=}0$
+to $0.429$ at $\lambda{=}10$); FPR is unaffected because the conformal
+threshold is fixed on clean calibration scores and does not depend on the
+adversary's loss. The reported attack targets the Wasserstein channel
+specifically; a fully end-to-end adaptive attack that also penalises the
+DCT-energy, gradient-norm, and softmax-entropy ensemble channels is
+implemented in \texttt{run\_adaptive\_pgd.py} via the
+\texttt{--through-scorer} flag and is left for future evaluation. We do
+not claim adaptive-attack robustness; instead, we report degradation
+curves so deployments can choose operating points and so future work can
+benchmark against a documented baseline.
+
 % ── Ablation ──────────────────────────────────────────────────────────────
 \subsection{Ablation Study}
 \label{sec:ablation}
@@ -209,6 +252,17 @@ clean windows (warmup$=35$, 15 at-risk steps), empirical false alarm
 probability is $< 5\%$; longer-window deployments should periodically reset
 L0 or auto-deactivate on return to the clean score baseline.
 
+\paragraph{Two distinct false-alarm rates.}
+The \emph{FPR (clean steps)} column in Table~\ref{tab:campaign}
+($0.084$--$0.143$) is the per-query L1/L2/L3 conformal alert rate of the
+underlying IID detector --- the same FPR reported in
+Table~\ref{tab:main} --- not the L0 campaign-trigger rate. A deployment
+that quarantines accounts should gate on L0 firing (clean-only rate
+$0.000$ after the F1 fix), not on every L1 step; L1 alerts are
+appropriate for softer signals such as elevated logging or rate-limiting,
+where a $\sim$10\% per-query rate is acceptable because the action is
+reversible and per-query.
+
 % ── Recovery (TAMSH) ─────────────────────────────────────────────────────
 \subsection{L3 Recovery (TAMSH)}
 \label{sec:recovery}
@@ -216,8 +270,13 @@ L0 or auto-deactivate on return to the clean score baseline.
 We measure recovery accuracy of five routing strategies applied to the
 subset of PGD inputs that trigger the L3 (reject) tier: the most aggressive
 adversarials, where simply rejecting the input is the conservative default.
-The C4 gate is best-TAMSH-strategy recovery accuracy minus passthrough
-recovery accuracy at least 15~pp.
+We pre-registered a $+15$~pp recovery gap (best learned router vs.\
+passthrough) as the contribution target for this component. As reported
+below, the \emph{learned} router (combined $H_0{+}H_1$ Wasserstein gating)
+falls $4.4$~pp short of that target at $+10.6$~pp; we therefore report this
+component as a positive-signal contribution rather than a target-clearing
+result, and document the residual gap to the prior-augmented variant and
+the oracle ceiling as the path for future learned routing.
 
 \begin{table}[h]
 \centering
@@ -225,9 +284,13 @@ recovery accuracy at least 15~pp.
 \input{tables/recovery.tex}
 \caption{%
   L3-recovery on PGD adversarials (5 seeds, $n_{L3} \approx 792$ per
-  seed; mean trigger rate $0.792$ within sanity band $[0.10, 0.82]$). Bold
-  row passes the C4 gate by $+11$~pp headroom; oracle ceiling shown for
-  context.
+  seed; mean trigger rate $0.792$ within sanity band $[0.10, 0.82]$). The
+  learned-router row (\texttt{tamsh}, combined $H_0{+}H_1$) is the
+  primary contribution and delivers $+10.6$~pp over passthrough, falling
+  $4.4$~pp short of the pre-registered $+15$~pp target. The
+  \texttt{tamsh\_force} row is a prior-augmented upper-bound analysis
+  (always-route to PGD specialist, not a learned policy); the oracle
+  ceiling is per-input best-of-$K$ on the same L3 subset.
 }
 \label{tab:recovery}
 \end{table}
@@ -237,14 +300,20 @@ The \texttt{tamsh\_uniform} arm replaces topology-distance gating with
 uniform $1/K$ mixing across all 4 experts. Its recovery accuracy equals
 that of passthrough ($0.033$ each, paired gap $0.00$~pp on all 5 seeds):
 uniform mixing of expert logits is degenerate to the unrouted full
-network's argmax. The +10.6~pp \texttt{tamsh} gap (combined H0+H1 Wasserstein gating)
-over uniform is therefore attributable entirely to the routing signal, not
-to standalone expert-network capacity. The further +15~pp lift achieved
-by \texttt{tamsh\_force} (always-route to the PGD-trained expert) reflects
-correct routing under a strong prior --- L3-rejected inputs are by
-definition high-confidence adversarials, and PGD is the dominant
-adversarial signal in our training mix --- and is the configuration that
-clears the C4 gate.
+network's argmax. The $+10.6$~pp \texttt{tamsh} gap (combined $H_0{+}H_1$
+Wasserstein gating) over uniform is therefore attributable entirely to the
+routing signal, not to standalone expert-network capacity --- a positive
+but partial result against the pre-registered $+15$~pp target. The further
+$+15.4$~pp lift achieved by \texttt{tamsh\_force} (always-route to the
+PGD-trained expert) reflects correct routing under a strong prior: L3-
+rejected inputs are by definition high-confidence adversarials, and PGD
+is the dominant adversarial signal in our training mix. We treat
+\texttt{tamsh\_force} as an upper-bound analysis rather than a deployable
+policy, since it bakes in an oracle assumption about attack identity that
+a real router would have to learn online. The gap between the learned
+router ($0.139$ recovery accuracy) and the prior-augmented variant
+($0.293$) bounds the headroom achievable by a stronger gating signal
+below the oracle ceiling ($0.399$).
 
 % ── Calibration ──────────────────────────────────────────────────────────
 \subsection{Calibration Sensitivity}

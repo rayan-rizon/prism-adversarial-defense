@@ -45,12 +45,13 @@ from torch.utils.data import DataLoader
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from src.models import cifar_resnet18
+from src.models.backbone import load_backbone
 from src.config import (
     BACKBONE_CHECKPOINT_PATH,
     BACKBONE_NUM_CLASSES,
     BACKBONE_MEAN,
     BACKBONE_STD,
+    BACKBONE_ARCH,
     DATASET,
 )
 from src.data_loader import load_test_dataset
@@ -87,11 +88,15 @@ def verify_backbone_acc(
         )
 
     dev = torch.device(device or ('cuda' if torch.cuda.is_available() else 'cpu'))
-    model = cifar_resnet18(
-        num_classes=BACKBONE_NUM_CLASSES,
+    # Use load_backbone() so this gate works for any arch (resnet18, wrn28_10, …)
+    # without hardcoding the model class here.
+    model = load_backbone(
+        device=dev,
         checkpoint_path=str(ckpt),
-        map_location=str(dev),
-    ).to(dev).eval()
+        num_classes=BACKBONE_NUM_CLASSES,
+        eval_mode=True,
+        wrap=False,
+    )
 
     # Use the canonical test transform (already normalised) so this matches
     # exactly what every downstream stage feeds the model.

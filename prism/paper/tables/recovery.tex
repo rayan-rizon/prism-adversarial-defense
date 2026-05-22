@@ -4,7 +4,10 @@
 % PGD adversarials, L3-rejected subset.
 %   Mean L3 trigger rate = 0.792 (per-seed [0.801, 0.801, 0.780, 0.786, 0.790]),
 %   within Wilson-95% sanity band [0.10, 0.82].
-% C4 gate: best TAMSH strategy recovery_accuracy - passthrough >= 15pp.
+% Pre-registered C4 target: best LEARNED router recovery - passthrough >= 15pp.
+% Learned router (tamsh, combined H0+H1) achieves +10.6pp, which falls 4.4pp
+% short of target; reported honestly. tamsh_force is upper-bound analysis,
+% not a deployable learned policy.
 % Gaps are paired per-seed (delta computed within each seed, then mean +/- std).
 % Cross-checked numerically against per-seed JSONs via verify_recovery.py.
 \begin{tabular}{lccccc}
@@ -14,9 +17,10 @@ Strategy & Recovery Acc. & 95\% CI & Gap vs passthrough (pp) & Avail. & Router s
 reject              & 0.000 & [0.000, 0.001] & ---     & 0.000 & --- \\
 passthrough         & 0.033 & [0.027, 0.038] & ---     & 1.000 & none \\
 tamsh\_uniform      & 0.033 & [0.027, 0.038] & $+0.00 \pm 0.00$ & 1.000 & uniform $1/K$ (control) \\
-tamsh (combined H0+H1) & 0.139 & [0.128, 0.149] & $+10.62 \pm 1.45$ & 1.000 & Wasserstein gating \\
-\textbf{tamsh\_force (PGD specialist)} & $\mathbf{0.293}$ & $\mathbf{[0.280, 0.306]}$ & $\mathbf{+26.00 \pm 1.84}$ & 1.000 & oracle / heuristic prior \\
+\textbf{tamsh (combined $H_0{+}H_1$, learned)} & $\mathbf{0.139}$ & $\mathbf{[0.128, 0.149]}$ & $\mathbf{+10.62 \pm 1.45}$ & 1.000 & Wasserstein gating \\
 \midrule
+\multicolumn{6}{l}{\textit{Upper-bound analysis (not a deployable policy):}} \\
+tamsh\_force (PGD specialist) & 0.293 & [0.280, 0.306] & $+26.00 \pm 1.84$ & 1.000 & oracle prior (always-route) \\
 \multicolumn{6}{l}{\textit{Oracle ceiling (per-input best-of-K on the same L3 subset): $0.399$ recovery accuracy.}} \\
 \bottomrule
 \end{tabular}
