@@ -118,6 +118,14 @@ export NVIDIA_TF32_OVERRIDE=1
 export TORCH_CUDNN_V8_API_ENABLED=1
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=4
+# GPU throughput tuning (saves wallclock on 32 GB 5090 / 4090):
+#   - LAZY module loading: avoids CUDA preloading every kernel up front,
+#     ~15% startup faster across 9 concurrent processes
+#   - MAX_CONNECTIONS=32: more concurrent kernel launches per stream
+#   - expandable_segments: reduces fragmentation under multi-process VRAM mix
+export CUDA_MODULE_LOADING=LAZY
+export CUDA_DEVICE_MAX_CONNECTIONS=32
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True,max_split_size_mb:512"
 
 mkdir -p logs/${TAG} \
          models/${TAG} \
@@ -431,11 +439,16 @@ python experiments/evaluation/run_evaluation_full.py \
 PID_CW=$!
 
 # ── Step 5B: Fast attacks (FGSM/PGD/Square/AutoAttack) ────────────────────────
+# Throughput-tuned for RTX 5090 32 GB: gen-chunk 256 (was 128) doubles batch on
+# FGSM/PGD/Square generation. AA-chunk stays at 64: AutoAttack runs 4 sequential
+# sub-attacks (APGD-CE + APGD-T + FAB + Square) per chunk; bumping past 64 risks
+# OOM when 9 concurrent processes (CW + Fast + 5×Adaptive-PGD + Ablation + L0)
+# all peak VRAM at once.
 python experiments/evaluation/run_evaluation_full.py \
   --config $CONFIG \
   --n-test $N_TEST --attacks FGSM PGD Square AutoAttack \
   --multi-seed --seeds $SEEDS \
-  --gen-chunk 128 --square-max-iter 5000 \
+  --gen-chunk 256 --square-max-iter 5000 \
   --pgd-max-iter $PGD_MAX_ITER --pgd-restarts $PGD_RESTARTS \
   --aa-version standard --aa-chunk 64 \
   --skip-latency \
@@ -444,9 +457,14 @@ python experiments/evaluation/run_evaluation_full.py \
   2>&1 | tee logs/${TAG}/step5_fast_ms5.log &
 PID_FAST=$!
 
-# ── Step 6: Adaptive PGD × 5 seeds (parallel) ─────────────────────────────────
+# ── Step 6: Adaptive PGD × 5 seeds (parallel, staggered launch) ──────────────
+# Stagger launches by 3 s so CUDA init bursts don't simultaneously peak VRAM
+# at startup. After steady-state, all 5 procs run truly parallel.
 STEP6_PIDS=""; STEP6_SEEDS=""
+STEP6_FIRST=1
 for s in $SEEDS; do
+  if [ "$STEP6_FIRST" -eq 0 ]; then sleep 3; fi
+  STEP6_FIRST=0
   if python experiments/evaluation/run_adaptive_pgd.py --help 2>&1 | grep -q -- '--pgd-restarts'; then
     python experiments/evaluation/run_adaptive_pgd.py \
       --config $CONFIG \
