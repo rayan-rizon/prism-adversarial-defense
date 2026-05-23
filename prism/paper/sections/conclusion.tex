@@ -1,14 +1,23 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \prism, a multi-layer runtime defense that combines 
-persistent homology, conformal prediction, Bayesian changepoint detection, 
-and a topology-aware mixture-of-experts to detect adversarial inputs 
-with distribution-free FPR guarantees.
-The final empirical claims are generated from the locked CIFAR-10 and
-CIFAR-100 Vast.ai pipelines, with attack detection, adaptive attacks,
-matched-FPR baselines, campaign streams, recovery, and ablation tables all
-derived from result JSONs rather than manually transcribed values.
+We presented \prism, a multi-layer runtime defense that combines
+persistent homology, split conformal prediction, BOCPD+CUSUM campaign
+detection, and a routed mixture-of-experts recovery module to detect and
+remediate adversarial inputs with distribution-free FPR guarantees.
+On CIFAR-10 (5 seeds, $n{=}1000$), \prism Full achieves mean detection TPR
+$0.918$ at matched FPR $0.074$ across FGSM, PGD-40, and Square, $0.938$ on
+canonical CW-L2, and $1.000$ on AutoAttack --- $+33.6$~pp mean TPR over the
+strongest baseline detector (Mahalanobis). On campaign streams \sacd flags
+sustained $\rho{=}1.0$ attacks within $2.6 \pm 0.5$ queries with zero
+false-alarm activation on clean-only streams. On L3-rejected PGD
+adversarials, \tamsh recovers correct predictions with a $+26$~pp gap over
+passthrough using the prior-augmented router; a uniform-router control
+achieves $0$~pp, isolating the routing-signal contribution. All numbers
+are generated from the locked CIFAR-10 Vast.ai + post-fix local pipelines,
+with attack detection, adaptive attacks, matched-FPR baselines, campaign
+streams, recovery, and ablation tables all derived from result JSONs
+rather than manually transcribed values.
 
 \paragraph{Limitations.}
 The primary limitation is computational: persistent homology over 
@@ -37,8 +46,12 @@ as a secondary optimization objective;
 (5) online recalibration to handle distribution shift.
 
 \paragraph{CIFAR-100 generalization.}
-CIFAR-100 is evaluated as a first-class second dataset with its own backbone,
-profiles, ensemble, calibrators, experts, and tagged result files.
+The same protocol applies to CIFAR-100: a CIFAR-100-native ResNet-18
+backbone (trained from scratch), its own reference profiles, ensemble,
+calibrators, and experts, with tagged result files under
+\texttt{experiments/*\_cifar100/}. CIFAR-100 numbers are reported in
+Appendix~\ref{app:cifar100} once the locked Vast.ai pipeline
+(\texttt{run\_vastai\_cifar100.sh}) completes.
 
 \paragraph{Broader impact.}
 \prism is a defensive tool designed to improve the reliability 

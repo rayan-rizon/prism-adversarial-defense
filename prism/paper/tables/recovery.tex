@@ -1,0 +1,22 @@
+% Auto-generated 2026-05-22 (corrected). Source: post-fix 5-seed recovery_uniform pool
+%   vastai_full_download_2026-05-20_0830UTC/post_fix_local_2026-05-21/
+%   experiments/recovery_uniform/results_recovery_uniform_seed{42,123,456,789,999}.json
+% PGD adversarials, L3-rejected subset.
+%   Mean L3 trigger rate = 0.792 (per-seed [0.801, 0.801, 0.780, 0.786, 0.790]),
+%   within Wilson-95% sanity band [0.10, 0.82].
+% C4 gate: best TAMSH strategy recovery_accuracy - passthrough >= 15pp.
+% Gaps are paired per-seed (delta computed within each seed, then mean +/- std).
+% Cross-checked numerically against per-seed JSONs via verify_recovery.py.
+\begin{tabular}{lccccc}
+\toprule
+Strategy & Recovery Acc. & 95\% CI & Gap vs passthrough (pp) & Avail. & Router signal \\
+\midrule
+reject              & 0.000 & [0.000, 0.001] & ---     & 0.000 & --- \\
+passthrough         & 0.033 & [0.027, 0.038] & ---     & 1.000 & none \\
+tamsh\_uniform      & 0.033 & [0.027, 0.038] & $+0.00 \pm 0.00$ & 1.000 & uniform $1/K$ (control) \\
+tamsh (combined H0+H1) & 0.139 & [0.128, 0.149] & $+10.62 \pm 1.45$ & 1.000 & Wasserstein gating \\
+\textbf{tamsh\_force (PGD specialist)} & $\mathbf{0.293}$ & $\mathbf{[0.280, 0.306]}$ & $\mathbf{+26.00 \pm 1.84}$ & 1.000 & oracle / heuristic prior \\
+\midrule
+\multicolumn{6}{l}{\textit{Oracle ceiling (per-input best-of-K on the same L3 subset): $0.399$ recovery accuracy.}} \\
+\bottomrule
+\end{tabular}

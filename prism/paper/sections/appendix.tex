@@ -64,10 +64,13 @@ full pairwise computation takes $\sim 8$~minutes on a single CPU core.
 \paragraph{Expert clustering.}
 $K$-medoids clustering with $K=4$ is applied to the $N$ calibration 
 persistence diagrams using the Wasserstein PAM algorithm \cite{schubert2021fast}.
-Each cluster medoid serves as the routing signature $\mathcal{R}_k^L$ 
+Each cluster medoid serves as the routing signature $\mathcal{R}_k^L$
 in Eq.~(\ref{eq:routing}).
-Expert sub-networks are 3-layer MLPs with hidden dimension 512 
-trained for 20 epochs on the corresponding cluster's activation vectors.
+Expert sub-networks are 3-layer MLPs (Linear $\to$ ReLU $\to$ LayerNorm
+$\to$ Linear $\to$ ReLU $\to$ LayerNorm $\to$ Linear) with hidden dimension
+$256$, trained on per-attack-cluster activation pools. We use LayerNorm
+rather than BatchNorm because the per-cluster pool size at inference can be
+as small as 1 (a single L3-rejected input).
 
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -86,11 +89,12 @@ selected hazard rate, alert probability, warmup, and false-alarm/gap metrics.
 
 \paragraph{Calibration requirement.}
 BOCPD requires domain-calibrated priors.
-With default prior ($\mu_0=0.1$), the detector does not fire within 150 queries
-because the NIG posterior cannot match the actual clean score mean ($\sim 4.6$)
-fast enough to yield sensitive changepoint detection.
-For deployment, $\mu_0$ should be set to the empirical mean of the
-calibration set anomaly scores.
+With default prior ($\mu_0=0.1$), the detector does not fire within 150
+queries because the NIG posterior cannot match the actual canonical clean
+score mean ($\sim 0.29$ on the ensemble logit scale; see
+\texttt{score\_quantiles.clean.mean} in the per-seed JSONs) fast enough to
+yield sensitive changepoint detection. For deployment, $\mu_0$ should be
+set to the empirical mean of the calibration-set anomaly scores.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -104,13 +108,131 @@ calibration set anomaly scores.
 \toprule
 Hyperparameter & Default & Range tested & Sensitivity \\
 \midrule
-$n_\text{cal}$ (calibration size)  & 2000 & 500–3000 & Low ($\pm0.09$ on L3) \\
-$n_\text{sub}$ (TDA subsampling)   & 150  & 50–500   & Medium (TPR $\pm4\%$) \\
-$K$ (expert clusters)              & 4    & 2–8      & Low (Recovery $\pm2\%$) \\
-$\lambda$ (L0 threshold factor)    & 0.8  & 0.6–0.95 & Medium (FPR tradeoff) \\
-$p_\text{alert}$ (BOCPD threshold) & 0.50 & 0.30–0.70 & Low (latency $\pm2$ steps) \\
+$n_\text{cal}$ (calibration size)  & 2000 & 500--3000 & Low ($\pm0.03$ on L3) \\
+$n_\text{sub}$ (TDA subsampling)   & 150  & 50--500   & Medium (TPR $\pm4\%$) \\
+$K$ (expert clusters)              & 4    & 2--8      & Low (Recovery $\pm2\%$) \\
+$\lambda$ (L0 threshold factor)    & 0.8  & 0.6--0.95 & Medium (FPR tradeoff) \\
+$p_\text{alert}$ (BOCPD threshold) & 0.50 & 0.30--0.70 & Low (latency $\pm2$ steps) \\
+$\delta$ (CUSUM drift floor)       & 0.10 & 0.00--0.50 & High at $\delta=0$ \\
+$k_\text{consec}$ (CUSUM consec.)  & 3    & 1--5      & High at $k_\text{consec}=1$ \\
 \bottomrule
 \end{tabular}
 \caption{Hyperparameter sensitivity summary.}
 \label{tab:hyper}
 \end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Appendix-Only: SACD ASR Gap (Demoted Metric)}
+\label{app:asr_gap}
+
+The naive ``ASR gap (L0 off vs.\ L0 on)'' metric at $\rho{=}1.0$ is reported
+here for completeness; the headline campaign metric is time-to-detect
+(\S\ref{sec:campaign}, Table~\ref{tab:campaign}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Scenario & ASR (L0 off) & ASR (L0 on) & $\Delta$ (pp, paired) \\
+\midrule
+clean\_only              & $0.000 \pm 0.000$ & $0.000 \pm 0.000$ & $+0.00 \pm 0.00$ \\
+sustained\_$\rho{=}0.5$  & $0.015 \pm 0.014$ & $0.011 \pm 0.015$ & $+0.39 \pm 0.88$ \\
+sustained\_$\rho{=}0.8$  & $0.012 \pm 0.009$ & $0.009 \pm 0.010$ & $+0.24 \pm 0.54$ \\
+sustained\_$\rho{=}1.0$  & $0.011 \pm 0.007$ & $0.009 \pm 0.009$ & $+0.20 \pm 0.45$ \\
+burst                    & $0.010 \pm 0.016$ & $0.010 \pm 0.016$ & $+0.00 \pm 0.00$ \\
+low\_rate ($\rho{=}0.05$) & $0.004 \pm 0.009$ & $0.000 \pm 0.000$ & $+0.41 \pm 0.91$ \\
+\bottomrule
+\end{tabular}
+\caption{Campaign-stream ASR gap (5-seed mean $\pm$ std). The ceiling is
+structurally bounded: the upstream L3 conformal threshold rejects $\sim$99\%
+of $\rho{=}1.0$ adversarials within 22 queries, leaving no headroom for an
+L0-attributable ASR gap (all gaps $\leq 0.41$~pp). Time-to-detect, not ASR
+gap, is the operationally meaningful campaign metric (Table~\ref{tab:campaign}).}
+\label{tab:asr_gap}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Appendix-Only: Weakened-CW Detector-Fidelity Ablation}
+\label{app:weak_cw}
+
+A 5-seed local rerun with weakened CW parameters ($\text{max\_iter}=5$,
+$\text{bss}=5$, vs.\ the canonical $\text{max\_iter}=100, \text{bss}=9$
+in Table~\ref{tab:main}) shows that the ensemble detector's CW TPR depends
+on attack-signature fidelity, not on perturbation magnitude:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+CW configuration & Mean L2 distortion & Attack success & Detector TPR \\
+\midrule
+canonical ($\text{max\_iter}=100$, $\text{bss}=9$) & 0.128 & $1.000$ & $\mathbf{0.938 \pm 0.008}$ \\
+weakened ($\text{max\_iter}=5$, $\text{bss}=5$)    & 0.193 & $0.896$ & $0.645 \pm 0.013$ \\
+\bottomrule
+\end{tabular}
+\caption{Stronger CW with smaller distortion is \emph{easier} to detect
+than weakened CW with larger distortion. Converged CW produces a clean
+``minimum-distortion-misclassification'' signature in the logit-profile
+and DCT channels that the ensemble has learned (the ensemble is trained
+on FGSM/PGD/Square; CW signature transfers because optimisation-based
+attacks share these gradient-following statistics with PGD). Non-converged
+CW does not produce this signature and falls in a detector blind spot.}
+\label{tab:weak_cw}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Appendix-Only: TAMSH Router Diagnosis (F4 Fix)}
+\label{app:tamsh_diag}
+
+The pre-fix TAMSH router used $H_1$-only Wasserstein distance for expert
+gating. Diagnostic audit (seed 42, $n=200$ PGD inputs) showed:
+
+\begin{enumerate}[leftmargin=*,noitemsep]
+  \item $H_1$ medoid diagrams contain only 1--3 points per expert on
+        \texttt{layer4} of a CIFAR-native ResNet-18.
+  \item 22.7\% of L3-rejected inputs have \emph{empty} $H_1$ diagrams.
+  \item The empty-diagram fallback in the Wasserstein implementation
+        returns $\sum |b-d|$, which evaluates to the same tiny value for
+        all four experts. \texttt{argmin} then defaults to index 0.
+  \item Net effect: expert 0 (clean-trained) wins 94\% of routes ($n=163$,
+        picks=[154, 0, 8, 1]); routing entropy = 0.336/2.000~bits.
+  \item Force-routing the same inputs to each expert in isolation shows
+        expert 2 (PGD-trained) achieves 35\% recovery accuracy vs.\
+        $\sim$5\% for experts 0/1/3. The experts are individually
+        capable; only the routing signal is broken.
+\end{enumerate}
+
+\noindent
+The F4 fix adds an $H_0$ term to the routing metric (Eq.~\ref{eq:routing}):
+$H_0$ medoid diagrams have $\sim$16 points (one per connected component
+at large filtration radius) and are sufficiently dense for Wasserstein
+gating to be informative. On the 5-seed L3-rejected pool, per-input
+oracle (best-of-$K$) ceiling is $39.9\%$ recovery; the combined-metric
+router achieves $13.9\%$ ($35\%$ of oracle, $+10.6$~pp over passthrough);
+always-route-to-expert-2 achieves $29.3\%$ ($73\%$ of oracle, $+26.0$~pp
+over passthrough, clearing the $+15$~pp C4 gate).
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{CIFAR-100 Results}
+\label{app:cifar100}
+
+We report CIFAR-100 results following the same protocol as
+\S\ref{sec:experiments} (5 seeds, $n=1000$ per seed; CIFAR-native ResNet-18
+trained from scratch via \texttt{scripts/pretrain\_cifar\_backbone.py
+--dataset cifar100}; conformal calibration on a held-out clean split with
+the same three FPR tiers L1/L2/L3 = $0.10, 0.03, 0.005$).
+
+The CIFAR-100 pipeline is launched by \texttt{run\_vastai\_cifar100.sh} and
+produces the same set of artifacts: detection (FGSM/PGD/Square/CW/AutoAttack),
+adaptive PGD, channel-mask ablation, baselines, campaign streams, and
+recovery (\texttt{tamsh}, \texttt{tamsh\_uniform}, \texttt{tamsh\_force}).
+Results land under \texttt{models/cifar100/} and \texttt{experiments/*}
+with the \texttt{cifar100} tag and feed
+\texttt{scripts/build\_paper\_tables.py} which emits combined CIFAR-10 +
+CIFAR-100 rows into the same five table files used in the main text.

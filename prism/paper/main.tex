@@ -1,34 +1,45 @@
 \documentclass{article}
 
-% NeurIPS 2025 style
-\usepackage[preprint]{neurips_2025}
+% ── NeurIPS 2026 style ─────────────────────────────────────────────────────
+% Available track options (uncomment exactly ONE for submission):
+%   \usepackage{neurips_2026}                          % default = main track, double-blind, with line numbers
+%   \usepackage[main]{neurips_2026}                    % main track explicitly
+%   \usepackage[position]{neurips_2026}                % position-paper track
+%   \usepackage[eandd]{neurips_2026}                   % evaluations & datasets track
+%   \usepackage[creativeai]{neurips_2026}              % creative AI track
+%   \usepackage[sglblindworkshop]{neurips_2026}        % single-blind workshop
+%   \usepackage[dblblindworkshop]{neurips_2026}        % double-blind workshop
+%
+% Camera-ready: add `final` (e.g. `\usepackage[main, final]{neurips_2026}`).
+% arXiv / preprint build (named author shown, no line numbers):
+\usepackage[preprint]{neurips_2026}
+% NeurIPS main-track submission alternative (anonymizes + line numbers):
+% \usepackage[main]{neurips_2026}
 
-% Math
+% ── Required NeurIPS encoding / typography packages ────────────────────────
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+
+% ── Additional packages used by this paper ─────────────────────────────────
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{mathtools}
-
-% Figures & tables
 \usepackage{graphicx}
-\usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{subcaption}
 \usepackage{float}
-
-% Algorithms
 \usepackage{algorithm}
 \usepackage{algorithmic}
-
-% Hyperlinks
-\usepackage{hyperref}
-\usepackage{url}
-
-% Misc
-\usepackage{microtype}
 \usepackage{xspace}
-\usepackage{xcolor}
 \usepackage{enumitem}
 
-% ── Macros ──────────────────────────────────────────────────────────────────
+% ── Macros ─────────────────────────────────────────────────────────────────
 \newcommand{\prism}{\textsc{PRISM}\xspace}
 \newcommand{\tamm}{\textsc{TAMM}\xspace}
 \newcommand{\cadg}{\textsc{CADG}\xspace}
@@ -42,14 +53,18 @@
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{corollary}[theorem]{Corollary}
 
-% ── Document ────────────────────────────────────────────────────────────────
+% ── Title ──────────────────────────────────────────────────────────────────
 \title{\textsc{PRISM}: Predictive Runtime Immune System with Manifold Monitoring for
        Architecture-Agnostic Adversarial Defense}
 
+% For anonymous submission (double-blind), keep author block empty / anonymized.
+% For preprint / camera-ready, fill in real authors per neurips_2026.tex template.
+% Author block. Visible under [preprint] and [main, final]; hidden under
+% bare [main] (NeurIPS double-blind review anonymization).
 \author{%
-  [Author Name] \\
-  [Institution] \\
-  \texttt{[email]} \\
+  Rayan Rizon\\
+  Independent Researcher\\
+  \texttt{rayan.rizon@gmail.com}\\
 }
 
 \begin{document}
@@ -66,10 +81,23 @@
 \input{sections/experiments}
 \input{sections/conclusion}
 
+% ── Acknowledgments (omit in anonymized submission) ────────────────────────
+% \begin{ack}
+%   Funding disclosure and competing-interest declarations go here. Required
+%   for the camera-ready version. Hidden in the anonymized submission via
+%   the `ack` environment provided by neurips_2026.sty.
+% \end{ack}
+
+% ── References ─────────────────────────────────────────────────────────────
 \bibliography{prism}
 \bibliographystyle{plainnat}
 
+% ── Appendix ───────────────────────────────────────────────────────────────
 \appendix
 \input{sections/appendix}
+
+% ── NeurIPS Paper Checklist (required, does not count toward page limit) ───
+\newpage
+\input{checklist}
 
 \end{document}

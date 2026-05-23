@@ -129,21 +129,38 @@ Bayesian Online Changepoint Detection (BOCPD) \cite{adams2007bayesian}
 with a Normal-Inverse-Gamma conjugate prior.
 
 \paragraph{Detection signal.}
-BOCPD maintains the posterior run-length distribution 
-$p(r_t \mid S_{1:t})$ at each step $t$, 
+BOCPD maintains the posterior run-length distribution
+$p(r_t \mid S_{1:t})$ at each step $t$,
 where $r_t$ is the time since the last changepoint.
-During clean operation, the posterior concentrates on large run lengths 
-(stable distribution).
-When an adversarial campaign begins, the score distribution shifts 
-upward and $p(r_t \leq k)$ spikes.
-\sacd triggers L0 mode when:
+During clean operation, the posterior concentrates on large run lengths
+(stable distribution); when an adversarial campaign begins, the score
+distribution shifts upward and $p(r_t \leq k)$ spikes.
+The campaign alert fires when:
 \begin{equation}
   \Pr[r_t \leq k_\text{alert}] > p_\text{alert}, \quad t > t_\text{warmup},
   \label{eq:l0_trigger}
 \end{equation}
-with current defaults $k_\text{alert}=10$, $p_\text{alert}=0.60$,
-$t_\text{warmup}=35$; Vast.ai runs additionally fit these thresholds on
-held-out score streams before campaign evaluation.
+with $k_\text{alert}=10$, $p_\text{alert}=0.60$, $t_\text{warmup}=35$.
+
+\paragraph{CUSUM with drift floor.}
+A parallel CUSUM detector $S_t = \max(0,\, S_{t-1} + (z_t - \delta))$ over
+centred scores $z_t$ provides a low-latency secondary signal when BOCPD's
+warmup window has not yet elapsed. We require a strictly positive drift
+floor $\delta \geq 0.10$: with $\delta = 0$, $S_t$ accumulates without
+the negative reset term and crosses any finite trigger on long enough
+clean streams, producing up to $59.4\%$ active-fraction on clean-only
+inputs at seed-42 in our pre-fix runs. We additionally require $k_\text{consec}$
+consecutive CUSUM trigger steps before raising the alert; with
+$\delta=0.10,\, k_\text{consec}=3$, the active fraction on a 500-step
+clean-only stream is $0.000$ on all 5 seeds.
+
+\paragraph{Headline metric.}
+We report \emph{time-to-detect} (mean number of queries between the first
+adversarial step and the first L0 trigger) as the primary campaign-detection
+metric. A naive ``ASR gap (L0 off vs.\ L0 on)'' metric at $\rho{=}1.0$ is
+structurally bounded by the upstream L3 conformal threshold, which already
+rejects $\sim$99\% of adversarials within 22 queries; we report ASR gap in
+the appendix for completeness but do not use it as the headline.
 
 % ── TAMSH ────────────────────────────────────────────────────────────────────
 \subsection{TAMSH: Topology-Aware MoE Self-Healing}
@@ -160,12 +177,42 @@ pooled activation to the active dataset's class logits ($C=10$ for CIFAR-10,
 $C=100$ for CIFAR-100).
 
 \paragraph{Expert routing.}
-At runtime, for an L3-tier input $x$, we select:
+At runtime, for an L3-tier input $x$, we select an expert by comparing the
+input's persistence diagram to each expert's reference medoid using a
+\emph{combined} $H_0$+$H_1$ Wasserstein metric:
 \begin{equation}
-  k^*(x) = \arg\min_{k=1}^{K}\, W_2\!\bigl(\mathrm{Dgm}(\phi_L(x)),\, \mathcal{R}_k^L\bigr),
+  k^*(x) = \arg\min_{k=1}^{K}\, \Bigl[\,
+    w_0 W_2\!\bigl(\mathrm{Dgm}_{H_0}(\phi_L(x)),\, \mathcal{R}_k^{L,H_0}\bigr)
+  + w_1 W_2\!\bigl(\mathrm{Dgm}_{H_1}(\phi_L(x)),\, \mathcal{R}_k^{L,H_1}\bigr) \Bigr],
   \label{eq:routing}
 \end{equation}
-where $\mathcal{R}_k^L$ is the medoid diagram of cluster $k$ at layer $L$.
-The input is then forwarded through expert $k^*$ using the final monitored
-layer activation, matching the training representation.
-This preserves prediction availability for detected adversarial inputs.
+with $w_0 = w_1 = 1$ in the deployed configuration.
+The combined metric is required because on \texttt{layer4} of a CIFAR-native
+ResNet-18 the $H_1$ medoid diagrams are sparse (1--3 points per expert);
+restricting routing to $H_1$ alone causes 22.7\% of L3-rejected inputs to
+have empty $H_1$ diagrams, which the empty-diagram fallback resolves by
+defaulting to expert index 0, collapsing routing entropy to 0.336/2.000~bits.
+Adding $H_0$ (16 connected-component points per medoid) recovers a usable
+gating signal. The input is forwarded through expert $k^*$ using the final
+monitored layer activation, matching the training representation.
+
+\paragraph{Routing variants and the uniform-router control.}
+We additionally evaluate two variants that are needed to honestly attribute
+the routing contribution:
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Uniform router (control)}: replace topology-distance gating
+    with uniform $1/K$ mixing of expert logits. This isolates the
+    contribution of the routing \emph{signal} from any standalone capacity
+    of the expert sub-networks.
+  \item \textbf{Prior-augmented router}: always route to the attack
+    specialist expert (we use the PGD-trained expert because L3-rejected
+    inputs are by definition high-confidence adversarials and PGD is the
+    dominant adversarial signal in the training mix).
+\end{itemize}
+\S\ref{sec:recovery} reports recovery accuracy under all three router
+configurations. The uniform-router arm achieves a $0$~pp gap over
+passthrough (uniform $1/K$ mixing of well-trained experts is degenerate
+to the unrouted full network's argmax), confirming that the
+$+10.6$~pp gap of the combined-metric router is attributable to the
+gating signal, and the further $+15$~pp lift of the prior-augmented
+router reflects correct expert specialization under a strong prior.

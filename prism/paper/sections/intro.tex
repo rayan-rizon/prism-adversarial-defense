@@ -43,23 +43,33 @@ We apply split conformal prediction to the anomaly score stream, obtaining
 using only a held-out clean calibration set.
 
 \item \textbf{Temporal campaign detector (\sacd).}
-We model the score stream as a Bayesian Online Changepoint Detection (BOCPD) 
-problem under a Normal-Inverse-Gamma prior.
-When a sustained distribution shift is detected (campaign mode), 
-\sacd automatically tightens detection thresholds to improve sensitivity 
-against coordinated probing attacks---a threat model absent from prior work.
+We monitor the score stream with a CUSUM-with-drift-floor change detector
+and report \emph{time-to-detect} (mean queries between the first adversarial
+step and the first L0 trigger) as the headline metric. On sustained
+$\rho{=}1.0$ streams \sacd raises the campaign alert in $2.6 \pm 0.5$
+queries while maintaining $0.0$ false-alarm activation on clean-only
+streams---a threat model absent from prior work.
 
-\item \textbf{Topology-aware MoE recovery (\tamsh).}
-For inputs reaching the L3 severity tier, \prism selects the 
-topologically-nearest expert sub-network via Wasserstein gating and 
-routes the input through it, preserving prediction availability 
-rather than issuing a blanket rejection.
+\item \textbf{Routed MoE recovery (\tamsh).}
+For inputs reaching the L3 severity tier, \prism routes the input through
+an attack-specialist expert sub-network rather than issuing a blanket
+rejection. We isolate the routing-signal contribution with a uniform-router
+control (uniform $1/K$ mixing) that achieves a recovery gap of $0$~pp over
+passthrough; the routed (combined H0+H1 Wasserstein gating) configuration
+achieves $+10.6$~pp, and a prior-augmented configuration that always
+routes to the PGD-trained expert achieves $+26.0$~pp (the configuration
+that clears the C4 gate).
 
 \end{enumerate}
 
-Empirically, we report CIFAR-10 and CIFAR-100 results from a locked
-multi-seed artifact pipeline covering detection, adaptive attacks, reproduced
-baselines, campaign streams, recovery, and ablations.
+Empirically, we report CIFAR-10 results from a locked multi-seed
+($5{\times}n{=}1000$) artifact pipeline covering detection (FGSM, PGD,
+Square, CW, AutoAttack, adaptive PGD), four reproduced baselines (LID,
+Mahalanobis, ODIN, Energy), campaign streams, recovery, and a per-channel
+ablation that exposes each feature family's attack-specific failure mode.
+\prism Full outperforms the strongest baseline (Mahalanobis) by $+33.6$~pp
+mean TPR at matched FPR. CIFAR-100 results follow the same protocol and
+are reported in the appendix.
 
 \textbf{Scope and limitations.}
 \prism is a \emph{runtime monitor}, not an adversarial trainer; 

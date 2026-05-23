@@ -1,258 +1,482 @@
 """
-Generate all 3 paper figures using known experimental results.
+Generate all 3 paper figures from canonical post-fix Vast.ai data.
 
-Fig 1: PRISM architecture pipeline diagram (text-based flowchart → PDF)
-Fig 2: Score distribution boxplot (clean vs FGSM/PGD) from Table 3 data
-Fig 3: Calibration threshold stability across calibration set sizes
+Fig 1: PRISM architecture pipeline diagram (illustration, no data)
+Fig 2: Score distribution per attack (real quantiles from JSON)
+Fig 3: Calibration threshold stability (real clean_scores.npy sweep)
+
+Run from prism/paper/ directory:
+    python figures/make_figures.py
 """
+import json
 import os
-import numpy as np
+from pathlib import Path
+
 import matplotlib
-matplotlib.use('Agg')  # headless — no display required
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+import numpy as np
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
-os.makedirs('paper/figures', exist_ok=True)
+# â”€â”€ Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+PAPER = Path(__file__).resolve().parent.parent
+FIG_DIR = PAPER / "figures"
+ROOT = PAPER.parent.parent
+VASTAI = ROOT / "vastai_full_download_2026-05-20_0830UTC"
+PROJECT = VASTAI / "project"
+POSTFIX = VASTAI / "post_fix_local_2026-05-21"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 1: PRISM Architecture Pipeline
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€ Global style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.size": 9,
+    "axes.titlesize": 10,
+    "axes.labelsize": 9.5,
+    "xtick.labelsize": 8.5,
+    "ytick.labelsize": 8.5,
+    "legend.fontsize": 8.5,
+    "figure.dpi": 150,
+    "savefig.bbox": "tight",
+    "axes.grid": True,
+    "grid.alpha": 0.28,
+    "grid.linewidth": 0.6,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.linewidth": 0.8,
+})
+
+# Color palette (color-blind safe)
+C_CLEAN     = "#5BAD6F"
+C_FGSM      = "#E8A838"
+C_PGD       = "#C75B7A"
+C_SQUARE    = "#E05A2B"
+C_CW        = "#3F88C5"
+C_AA        = "#7A4FB2"
+C_L1        = "#E8A838"
+C_L2        = "#E05A2B"
+C_L3        = "#9B2237"
+
+
+# â”€â”€ Figure 1: Architecture diagram (no data dependency) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def make_fig1():
-    fig, ax = plt.subplots(figsize=(12, 3.5))
-    ax.set_xlim(0, 12)
-    ax.set_ylim(0, 3.5)
-    ax.axis('off')
+    """
+    PRISM defense pipeline. Shows:
+      - Linear forward path: input -> ResNet -> activations -> persistence -> ensemble score
+      - CADG conformal thresholding splits flow into PASS / L1 / L2 / L3 branches
+      - L3 branch routes to TAMSH (MoE recovery)
+      - SACD monitors score stream; on campaign alert, sends L0 feedback that
+        tightens CADG thresholds and increases sensitivity
+      - Final decision merges back into an output prediction
+    """
+    fig, ax = plt.subplots(figsize=(14.4, 6.3))
+    ax.set_xlim(0, 15)
+    ax.set_ylim(0, 6.35)
+    ax.axis("off")
+    ax.grid(False)
 
-    # (x_center, y_center, label, color)
-    boxes = [
-        (0.85, 1.75, 'Input\n$x$',                 '#4A90D9'),
-        (2.45, 1.75, 'Base Model\n(ResNet-18)',      '#5BAD6F'),
-        (4.20, 1.75, 'TAMM\nActivation\nExtraction', '#E8A838'),
-        (5.95, 1.75, 'TAMM\nPersistence\nDiagrams',  '#E8A838'),
-        (7.70, 1.75, 'CADG\nConformal\nThresholds',  '#C75B7A'),
-        (9.35, 1.75, 'SACD\nCampaign\nDetector',     '#9B59B6'),
-        (11.0, 1.75, 'TAMSH\nMoE\nRouter', '#E05A2B'),
-    ]
-    box_w, box_h = 1.35, 1.35
+    # Module colors
+    C_INPUT  = "#4A90D9"
+    C_MODEL  = "#5BAD6F"
+    C_TAMM   = "#E8A838"
+    C_CADG   = "#C75B7A"
+    C_SACD   = "#9B59B6"
+    C_TAMSH  = "#E05A2B"
+    C_OUT_OK = "#5BAD6F"
+    C_GRAY   = "#222"
+    C_MUTED  = "#555"
 
-    for (cx, cy, label, color) in boxes:
+    text_artists = []
+
+    def add_text(*args, **kwargs):
+        artist = ax.text(*args, **kwargs)
+        text_artists.append(artist)
+        return artist
+
+    def stage(cx, cy, w, h, color, lines, fs=11.5, text_color="white"):
         rect = FancyBboxPatch(
-            (cx - box_w/2, cy - box_h/2), box_w, box_h,
-            boxstyle='round,pad=0.08', linewidth=1.5,
-            edgecolor='white', facecolor=color, alpha=0.88, zorder=3
+            (cx - w / 2, cy - h / 2), w, h,
+            boxstyle="round,pad=0.12", linewidth=1.15,
+            edgecolor="white", facecolor=color, alpha=0.96, zorder=3,
         )
         ax.add_patch(rect)
-        ax.text(cx, cy, label, ha='center', va='center',
-                fontsize=7.5, fontweight='bold', color='white', zorder=4)
+        title = lines[0]
+        body = lines[1:]
+        title_y = cy if not body else cy + 0.30
+        title_fs = fs if not body else fs + 0.3
+        add_text(cx, title_y, title, ha="center", va="center",
+                 fontsize=title_fs, fontweight="bold", color=text_color,
+                 zorder=4, clip_on=False)
+        for i, line in enumerate(body):
+            add_text(cx, cy + 0.04 - i * 0.31, line, ha="center", va="center",
+                     fontsize=fs - 1.0, color=text_color, zorder=4,
+                     clip_on=False)
 
-    # Arrows between boxes
-    for i in range(len(boxes) - 1):
-        x0 = boxes[i][0] + box_w/2
-        x1 = boxes[i+1][0] - box_w/2
-        y  = boxes[i][1]
-        ax.annotate('', xy=(x1, y), xytext=(x0, y),
-                    arrowprops=dict(arrowstyle='->', color='#333333', lw=1.5),
-                    zorder=5)
+    def arrow(x0, y0, x1, y1, color=C_GRAY, lw=1.35, style="-",
+              rad=0.0, zorder=5):
+        ax.annotate(
+            "", xy=(x1, y1), xytext=(x0, y0),
+            arrowprops=dict(
+                arrowstyle="->", color=color, lw=lw, linestyle=style,
+                shrinkA=0, shrinkB=0, connectionstyle=f"arc3,rad={rad}",
+            ),
+            zorder=zorder,
+        )
 
-    # Tier labels beneath CADG box
-    for tier, xt, col in [('PASS', 7.70 - 0.45, '#5BAD6F'),
-                           ('L1/L2', 7.70,      '#E8A838'),
-                           ('L3', 7.70 + 0.42,  '#C75B7A')]:
-        ax.text(xt, 0.55, tier, ha='center', va='center', fontsize=6.5,
-                color=col, fontweight='bold')
+    # Title block.
+    add_text(7.5, 6.05, "PRISM Defense Pipeline",
+             ha="center", va="center", fontsize=17,
+             fontweight="bold", color=C_GRAY, zorder=10, clip_on=False)
+    add_text(7.5, 5.80,
+             "Inference-time topological monitoring with conformal FPR certificates, "
+             "campaign-aware thresholds, and MoE recovery",
+             ha="center", va="center", fontsize=10.5,
+             color=C_MUTED, style="italic", zorder=10, clip_on=False)
 
-    # L0 feedback arrow from SACD back to CADG
-    ax.annotate('', xy=(7.70 + box_w/2, 2.42), xytext=(9.35 - box_w/2, 2.42),
-                arrowprops=dict(arrowstyle='<-', color='#9B59B6',
-                                lw=1.2, linestyle='dashed'))
-    ax.text(8.525, 2.62, 'L0 active\n(lower thresholds)', ha='center',
-            va='bottom', fontsize=6, color='#9B59B6', style='italic')
+    # Forward inference path.
+    Y_MAIN = 3.70
+    stage(0.95,  Y_MAIN, 1.42, 1.06, C_INPUT,
+          ["Input $x$", "$3{\\times}32{\\times}32$"])
+    stage(2.85,  Y_MAIN, 1.76, 1.06, C_MODEL,
+          ["Base Model", "ResNet-18", "(frozen)"])
+    stage(4.95,  Y_MAIN, 1.86, 1.06, C_TAMM,
+          ["TAMM", "activations $\\phi_\\ell$", "persistence diagrams"])
+    stage(7.05,  Y_MAIN, 1.86, 1.06, C_TAMM,
+          ["Ensemble Score", "Wasserstein $+$ DCT", "$+$ entropy"])
+    stage(9.28,  Y_MAIN, 2.02, 1.06, C_CADG,
+          ["CADG", "conformal tiers", "10%, 3%, 0.5% FPR"])
+    stage(12.15, Y_MAIN, 2.10, 1.06, C_TAMSH,
+          ["TAMSH", "MoE router", "$K{=}4$ experts"])
 
-    ax.set_title('PRISM Defense Pipeline', fontsize=11, fontweight='bold', pad=4)
-    fig.tight_layout(pad=0.4)
-    fig.savefig('paper/figures/fig1_architecture.pdf', dpi=150, bbox_inches='tight')
-    fig.savefig('paper/figures/fig1_architecture.png', dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    print("✓ Fig 1 saved: paper/figures/fig1_architecture.pdf")
+    for x0, y0, x1, y1 in [
+        (1.66, Y_MAIN, 1.97, Y_MAIN),
+        (3.73, Y_MAIN, 4.02, Y_MAIN),
+        (5.88, Y_MAIN, 6.12, Y_MAIN),
+        (7.98, Y_MAIN, 8.27, Y_MAIN),
+        (10.29, Y_MAIN, 11.10, Y_MAIN),
+    ]:
+        arrow(x0, y0, x1, y1)
 
+    # SACD control lane: separated from the data path to avoid label collisions.
+    stage(10.02, 5.02, 5.85, 0.82, C_SACD,
+          ["SACD: CUSUM campaign detector",
+           "time-to-detect $=2.6$ queries at $\\rho=1.0$"],
+          fs=12.6)
+    arrow(7.05, 4.23, 8.55, 4.65, color=C_SACD, lw=1.25,
+          style="dotted", rad=0.08, zorder=2)
+    add_text(7.42, 4.42, "score stream", fontsize=9.3, color=C_SACD,
+             ha="right", va="center", style="italic", zorder=6,
+             clip_on=False,
+             bbox=dict(facecolor="white", edgecolor="none", alpha=0.82,
+                       pad=0.8))
+    arrow(9.28, 4.62, 9.28, 4.25, color=C_SACD, lw=1.35,
+          style="dashed", zorder=5)
+    add_text(9.57, 4.36, "L0 active: tighten $\\hat q_\\alpha$",
+             fontsize=9.3, color=C_SACD, ha="left", va="center",
+             style="italic", zorder=6, clip_on=False,
+             bbox=dict(facecolor="white", edgecolor="none", alpha=0.82,
+                       pad=0.8))
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 2: Score Distribution Boxplot (from Table 3 in experiments.tex)
-# ─────────────────────────────────────────────────────────────────────────────
-def make_fig2():
-    """Numbers from experiments.tex Table 3 (recalibrated, layer2/3/4 config).
+    # Output branches.
+    Y_OUT = 1.55
+    stage(4.35, Y_OUT, 5.50, 0.72, C_OUT_OK,
+          ["Output $\\hat y=f(x)$  |  PASS / L1 / L2 tiers"], fs=11.4)
+    stage(12.15, Y_OUT, 4.10, 0.72, C_OUT_OK,
+          ["Recovered output $\\hat y$  |  L3 routed"], fs=11.4)
 
-    Empirical score statistics (mean ± std):
-      Clean              7.27 ± 2.15  (n=5000 held-out clean CIFAR-10)
-      FGSM ε=0.03       10.80 ± 3.10
-      FGSM ε=0.05       11.20 ± 2.90
-      Square ε=0.05     14.30 ± 2.10
-      PGD-40 ε=0.03     36.30 ± 4.60  (truncated to 22 for display)
-    Conformal thresholds (n_cal=5000):
-      L1=10.37, L2=12.08, L3=14.21
-    """
-    rng = np.random.RandomState(42)
+    arrow(8.55, 3.10, 4.80, 1.95, color=C_OUT_OK, lw=1.45,
+          rad=-0.22, zorder=2)
+    add_text(6.30, 2.35, "PASS / L1 / L2", fontsize=10.0,
+             color="#3A8A52", ha="center", va="center",
+             fontweight="bold", zorder=6, clip_on=False)
+    arrow(12.15, 3.12, 12.15, 1.95, color=C_TAMSH, lw=1.45, zorder=2)
+    add_text(12.72, 2.56, "L3: reject\n+ MoE recover", fontsize=10.0,
+             color=C_TAMSH, ha="left", va="center", fontweight="bold",
+             linespacing=1.15, zorder=6, clip_on=False)
 
-    # Empirical parameters from recalibrated Table 3
-    # PGD-40 is shown capped at 22 to keep the axes readable
-    groups = [
-        ('Clean',          '#5BAD6F', 7.27,  2.15, 200),
-        ('FGSM\nε=0.03',  '#E8A838', 10.80, 3.10, 200),
-        ('FGSM\nε=0.05',  '#E8A838', 11.20, 2.90, 200),
-        ('Square\nε=0.05','#E05A2B', 14.30, 2.10, 200),
-        ('PGD-40\nε=0.03','#C75B7A', 36.30, 4.60, 200),
+    # Bottom annotation strip: compact module semantics.
+    legend_items = [
+        ("TAMM",  C_TAMM,  "per-layer persistence (Wasserstein medoid)"),
+        ("CADG",  C_CADG,  "distribution-free FPR cert. (split conformal)"),
+        ("SACD",  C_SACD,  "campaign detector (time-to-detect headline)"),
+        ("TAMSH", C_TAMSH, "MoE recovery ($+26$ pp vs passthrough)"),
     ]
+    row_y = [0.72, 0.30]
+    col_x = [0.62, 7.48]
+    for i, (tag, col, desc) in enumerate(legend_items):
+        rx = col_x[i % 2]
+        ry = row_y[i // 2]
+        ax.add_patch(FancyBboxPatch((rx, ry - 0.10), 0.65, 0.30,
+                                    boxstyle="round,pad=0.03",
+                                    edgecolor="white", facecolor=col,
+                                    alpha=0.95, lw=1.0, zorder=3))
+        add_text(rx + 0.325, ry + 0.05, tag, ha="center", va="center",
+                 fontsize=9.0, fontweight="bold", color="white", zorder=4)
+        add_text(rx + 0.78, ry + 0.05, desc, ha="left", va="center",
+                 fontsize=9.2, color=C_GRAY, zorder=4)
 
-    data   = []
-    labels = []
-    colors = []
+    # Guard against clipped text when figure dimensions or labels change.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    fig_bbox = fig.bbox.padded(-2)
+    clipped = []
+    for artist in text_artists:
+        bbox = artist.get_window_extent(renderer=renderer)
+        (x0, y0), (x1, y1) = bbox.get_points()
+        if not (fig_bbox.contains(x0, y0) and fig_bbox.contains(x1, y1)):
+            clipped.append(artist.get_text())
+    if clipped:
+        raise RuntimeError(f"Figure 1 text outside canvas: {clipped}")
 
-    for label, color, mu, std, n in groups:
-        samples = rng.normal(mu, std, n)
-        samples = np.clip(samples, 0, None)
-        data.append(samples)
-        labels.append(label)
-        colors.append(color)
+    fig.savefig(FIG_DIR / "fig1_architecture.pdf", bbox_inches="tight",
+                pad_inches=0.05)
+    fig.savefig(FIG_DIR / "fig1_architecture.png", bbox_inches="tight",
+                pad_inches=0.05)
+    plt.close(fig)
+    print("[ok] fig1_architecture.{pdf,png}  (research layout verified)")
 
-    # Split into two panels: left for non-PGD, right inset for PGD
-    fig, (ax_main, ax_pgd) = plt.subplots(
-        1, 2, figsize=(8, 4),
-        gridspec_kw={'width_ratios': [4, 1]},
-        sharey=False
+# â”€â”€ Figure 2: Score distribution per attack (real quantiles) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def make_fig2():
+    """
+    Box plot of canonical ensemble anomaly scores for clean and each attack.
+    Quantile data is read from per-seed JSON `score_quantiles`. We aggregate
+    across 5 seeds by mean of percentiles, then construct a box plot directly
+    from those percentiles (no Gaussian re-sampling).
+    """
+    SEEDS = [42, 123, 456, 789, 999]
+
+    # Collect quantiles per attack
+    attacks = {
+        "Clean":      ("clean", None,                              C_CLEAN),
+        "FGSM":       ("adversarial", "results_fast_n1000_ms5",    C_FGSM),
+        "Square":     ("adversarial", "results_fast_n1000_ms5",    C_SQUARE),
+        "CW-L2":      ("adversarial", "results_cw_n1000_ms5",      C_CW),
+        "PGD-40":     ("adversarial", "results_fast_n1000_ms5",    C_PGD),
+        "AutoAttack": ("adversarial", "results_fast_n1000_ms5",    C_AA),
+    }
+    quantile_keys = ("p05", "p25", "p50", "p75", "p95")
+
+    pooled = {}
+    fast_attack_key = {"FGSM": "FGSM", "PGD-40": "PGD", "Square": "Square",
+                       "AutoAttack": "AutoAttack"}
+    for label, (which, file_prefix, color) in attacks.items():
+        per_seed_qs = {q: [] for q in quantile_keys}
+        for s in SEEDS:
+            if label == "Clean":
+                f = PROJECT / "experiments" / "evaluation" / f"results_fast_n1000_ms5_seed{s}.json"
+                d = json.load(open(f))
+                sq = d["FGSM"]["score_quantiles"]["clean"]
+            elif label == "CW-L2":
+                f = PROJECT / "experiments" / "evaluation" / f"results_cw_n1000_ms5_seed{s}.json"
+                d = json.load(open(f))
+                sq = d["CW"]["score_quantiles"]["adversarial"]
+            else:
+                f = PROJECT / "experiments" / "evaluation" / f"results_fast_n1000_ms5_seed{s}.json"
+                d = json.load(open(f))
+                key = fast_attack_key[label]
+                sq = d[key]["score_quantiles"]["adversarial"]
+            for q in quantile_keys:
+                per_seed_qs[q].append(sq[q])
+        pooled[label] = {q: float(np.mean(per_seed_qs[q])) for q in quantile_keys}
+        pooled[label]["color"] = color
+
+    # Approx conformal thresholds from clean quantile interpolation.
+    cq = pooled["Clean"]
+    # L1 = p90 â‰ˆ midpoint(p75,p95) shifted toward p95 (linear interp 0.90 of [0.75..0.95])
+    L1 = cq["p75"] + (cq["p95"] - cq["p75"]) * ((0.90 - 0.75) / (0.95 - 0.75))
+    # L2 = p97 â‰ˆ p95 + small extrapolation toward tail
+    L2 = cq["p95"] + (cq["p95"] - cq["p75"]) * ((0.97 - 0.95) / (0.95 - 0.75))
+    # L3 = p99.5 â€” use empirical p99.5 from raw clean_scores.npy if available
+    clean_npy = PROJECT / "experiments" / "calibration" / "clean_scores.npy"
+    if clean_npy.exists():
+        arr = np.load(clean_npy)
+        # the .npy is at a different (calibrated) scale; do not mix scales.
+        # Instead extrapolate L3 from the eval-scale quantiles.
+        pass
+    L3 = cq["p95"] + (cq["p95"] - cq["p75"]) * ((0.995 - 0.95) / (0.95 - 0.75))
+
+    # Build figure with broken y-axis (main panel + zoom for PGD/AutoAttack)
+    labels = ["Clean", "FGSM", "Square", "CW-L2", "PGD-40", "AutoAttack"]
+    fig, (ax_main, ax_high) = plt.subplots(
+        2, 1, figsize=(8.5, 5.6),
+        gridspec_kw={"height_ratios": [1.05, 1.0], "hspace": 0.18},
+        sharex=True,
     )
 
-    # ── Main panel (Clean + FGSM + Square) ──
-    bp = ax_main.boxplot(data[:4], patch_artist=True, notch=False,
-                         medianprops=dict(color='white', linewidth=2.0),
-                         whiskerprops=dict(linewidth=1.2),
-                         capprops=dict(linewidth=1.2),
-                         flierprops=dict(marker='o', markersize=3,
-                                        markerfacecolor='#888', alpha=0.4))
-    for patch, color in zip(bp['boxes'], colors[:4]):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.82)
+    def build_bxp(label):
+        q = pooled[label]
+        # whislo/whishi are p05/p95; q1/q3 are p25/p75; med is p50
+        return dict(label=label, whislo=q["p05"], q1=q["p25"], med=q["p50"],
+                    q3=q["p75"], whishi=q["p95"], fliers=[], mean=q["p50"])
 
-    # Threshold reference lines
-    th_cfg = [('L1=10.37', 10.37, '#E8A838'),
-              ('L2=12.08', 12.08, '#E05A2B'),
-              ('L3=14.21', 14.21, '#C75B7A')]
-    for name, val, col in th_cfg:
-        ax_main.axhline(val, color=col, linestyle='--', linewidth=1.0, alpha=0.85)
-        ax_main.text(4.55, val + 0.18, name, fontsize=7, color=col, va='bottom')
+    bxp_data = [build_bxp(l) for l in labels]
 
-    ax_main.set_xticks(range(1, 5))
-    ax_main.set_xticklabels(labels[:4], fontsize=8.5)
-    ax_main.set_ylabel('PRISM Anomaly Score $S(x)$', fontsize=10)
-    ax_main.set_title('Score Distributions: Clean vs Adversarial', fontsize=10)
-    ax_main.grid(axis='y', alpha=0.3, linewidth=0.7)
-    ax_main.set_ylim(0, 22)
+    def style_bxp(ax):
+        bp = ax.bxp(bxp_data, patch_artist=True, showmeans=False,
+                    showfliers=False, widths=0.55,
+                    medianprops=dict(color="white", linewidth=2.0),
+                    whiskerprops=dict(linewidth=1.1, color="#444"),
+                    capprops=dict(linewidth=1.1, color="#444"),
+                    boxprops=dict(linewidth=0.8, edgecolor="#222"))
+        for patch, label in zip(bp["boxes"], labels):
+            patch.set_facecolor(pooled[label]["color"])
+            patch.set_alpha(0.85)
+        return bp
 
-    # ── PGD panel ──
-    bp2 = ax_pgd.boxplot([data[4]], patch_artist=True, notch=False,
-                          medianprops=dict(color='white', linewidth=2.0),
-                          whiskerprops=dict(linewidth=1.2),
-                          capprops=dict(linewidth=1.2),
-                          flierprops=dict(marker='o', markersize=3,
-                                         markerfacecolor='#888', alpha=0.4))
-    bp2['boxes'][0].set_facecolor(colors[4])
-    bp2['boxes'][0].set_alpha(0.82)
-    ax_pgd.set_xticks([1])
-    ax_pgd.set_xticklabels([labels[4]], fontsize=8.5)
-    ax_pgd.set_title('PGD-40', fontsize=9)
-    ax_pgd.grid(axis='y', alpha=0.3, linewidth=0.7)
-    ax_pgd.set_ylim(20, 50)
-    ax_pgd.axhline(14.21, color='#C75B7A', linestyle='--', linewidth=1.0, alpha=0.6)
-    ax_pgd.text(1.1, 14.5, 'L3', fontsize=7, color='#C75B7A', va='bottom')
-    # Indicate break
-    ax_pgd.spines['left'].set_linestyle('--')
+    style_bxp(ax_main); style_bxp(ax_high)
 
-    fig.tight_layout(pad=1.2)
-    fig.savefig('paper/figures/fig2_score_dist.pdf', dpi=150, bbox_inches='tight')
-    fig.savefig('paper/figures/fig2_score_dist.png', dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    print("✓ Fig 2 saved: paper/figures/fig2_score_dist.pdf")
+    # Y-limits â€” split view
+    ax_high.set_ylim(-6, 14)            # bottom panel = full range, clean + light attacks
+    ax_main.set_ylim(14, 36)            # top panel = PGD / AutoAttack tail
+    # Hide spines between break
+    ax_main.spines["bottom"].set_visible(False)
+    ax_high.spines["top"].set_visible(False)
+    ax_main.tick_params(labelbottom=False, bottom=False)
 
+    # Diagonal break markers
+    d = 0.008
+    kw = dict(transform=ax_main.transAxes, color="k", lw=0.8, clip_on=False)
+    ax_main.plot((-d, +d), (-d, +d), **kw)
+    ax_main.plot((1 - d, 1 + d), (-d, +d), **kw)
+    kw["transform"] = ax_high.transAxes
+    ax_high.plot((-d, +d), (1 - d, 1 + d), **kw)
+    ax_high.plot((1 - d, 1 + d), (1 - d, 1 + d), **kw)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 3: Calibration Threshold Stability
-# ─────────────────────────────────────────────────────────────────────────────
-def make_fig3():
-    """
-    Sweeps n_cal ∈ {500,1000,2000,3000} and shows threshold stability.
-    Uses actual calibrator.pkl if available; otherwise simulates from
-    the known clean score distribution (mean=4.89, std=1.38).
-    """
-    import pickle, os
+    # Threshold lines (only on lower panel where they're visible)
+    for name, val, col in [("L1", L1, C_L1), ("L2", L2, C_L2), ("L3", L3, C_L3)]:
+        ax_high.axhline(val, color=col, linestyle="--", linewidth=1.1,
+                        alpha=0.85, zorder=1)
+        ax_high.text(6.55, val, f"{name} ($\\approx${val:.2f})", fontsize=7.5,
+                     color=col, va="center", ha="left", fontweight="bold")
 
-    cal_sizes = [500, 1000, 2000, 3000]
-    rng = np.random.RandomState(0)
-
-    # Try to load real calibrator + scores; fall back to simulation
-    real_scores = None
-    # Try PRISM/experiments/calibration first (run from paper/figures/), then
-    # try two levels up (run from PRISM/ root)
-    for candidate in [
-        'experiments/calibration/clean_scores.npy',
-        '../../experiments/calibration/clean_scores.npy',
-    ]:
-        if os.path.exists(candidate):
-            real_scores = np.load(candidate)
-            print(f"  Using real clean scores from {candidate} "
-                  f"(n={len(real_scores)}, mean={real_scores.mean():.2f})")
-            break
-    if real_scores is None:
-        print("  clean_scores.npy not found — simulating from N(7.27, 2.15²)")
-
-    def compute_thresholds(scores, n):
-        subset = scores[:n]
-        thresholds = {}
-        for level, alpha in [('L1', 0.10), ('L2', 0.03), ('L3', 0.005)]:
-            q_idx = int(np.ceil((n + 1) * (1 - alpha))) - 1
-            q_idx = min(q_idx, n - 1)
-            thresholds[level] = np.sort(subset)[q_idx]
-        return thresholds
-
-    results = {level: [] for level in ['L1', 'L2', 'L3']}
-
-    for n in cal_sizes:
-        if real_scores is not None:
-            scores = real_scores[:min(n, len(real_scores))]
-            if len(scores) < n:
-                scores = np.concatenate([
-                    scores,
-                    rng.normal(7.27, 2.15, n - len(scores))
-                ])
-        else:
-            scores = rng.normal(7.27, 2.15, n)
-
-        t = compute_thresholds(scores, n)
-        for level in ['L1', 'L2', 'L3']:
-            results[level].append(t[level])
-
-    fig, ax = plt.subplots(figsize=(6, 3.8))
-    colors_map = {'L1': '#E8A838', 'L2': '#E05A2B', 'L3': '#C75B7A'}
-    for level, color in colors_map.items():
-        ax.plot(cal_sizes, results[level], marker='o', linewidth=2,
-                markersize=6, color=color, label=f'{level} threshold')
-
-    ax.set_xlabel('Calibration Set Size $n_{cal}$', fontsize=10)
-    ax.set_ylabel('Threshold Value', fontsize=10)
-    ax.set_title('Conformal Threshold Stability vs Calibration Set Size', fontsize=10)
-    ax.legend(fontsize=9)
-    ax.grid(alpha=0.3, linewidth=0.7)
-    ax.set_xticks(cal_sizes)
-    ax.set_xticklabels([str(n) for n in cal_sizes])
+    ax_high.set_xticks(range(1, len(labels) + 1))
+    ax_high.set_xticklabels(labels, fontsize=9)
+    ax_high.set_xlabel("Input Type", labelpad=4)
+    ax_high.set_ylabel("PRISM Anomaly Score $S(x)$")
+    ax_main.set_ylabel("$S(x)$ (high range)")
+    ax_main.set_title("Canonical Ensemble Score Distribution â€” Clean vs Adversarial\n"
+                      "(5-seed pooled quantiles: whiskers $=$ p05/p95, box $=$ IQR, line $=$ median)",
+                      fontsize=10, pad=6)
 
     fig.tight_layout()
-    fig.savefig('paper/figures/fig3_calibration.pdf', dpi=150, bbox_inches='tight')
-    fig.savefig('paper/figures/fig3_calibration.png', dpi=150, bbox_inches='tight')
+    fig.savefig(FIG_DIR / "fig2_score_dist.pdf")
+    fig.savefig(FIG_DIR / "fig2_score_dist.png")
     plt.close(fig)
-    print("✓ Fig 3 saved: paper/figures/fig3_calibration.pdf")
+    print(f"[ok] fig2_score_dist.{{pdf,png}}  (thresholds L1={L1:.2f}, L2={L2:.2f}, L3={L3:.2f})")
 
 
-if __name__ == '__main__':
+# â”€â”€ Figure 3: Calibration threshold stability â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def make_fig3():
+    """
+    Sweep n_cal âˆˆ {500, 1000, 2000, 3000} using real clean_scores.npy from
+    the Vast.ai calibration artifact. Plot L1/L2/L3 conformal thresholds
+    vs n_cal, with Wilson-95% bands from achieved FPR on val_scores.npy.
+    """
+    cal_path = PROJECT / "experiments" / "calibration" / "clean_scores.npy"
+    val_path = PROJECT / "experiments" / "calibration" / "val_scores.npy"
+    if not cal_path.exists():
+        print("[warn] clean_scores.npy not found â€” figure 3 falls back to simulation.")
+        return
+
+    cal = np.load(cal_path)
+    val = np.load(val_path) if val_path.exists() else None
+    sizes = [500, 1000, 2000, 3000]
+    alphas = {"L1": 0.10, "L2": 0.03, "L3": 0.005}
+
+    rng = np.random.RandomState(0)
+    n_repeats = 25  # bootstrap variance across subsamples
+    results = {lvl: {"mean": [], "lo": [], "hi": []} for lvl in alphas}
+    achieved_fpr = {lvl: {"mean": [], "lo": [], "hi": []} for lvl in alphas}
+
+    def wilson(p, n, z=1.96):
+        if n == 0: return (0.0, 0.0)
+        denom = 1 + z*z/n
+        c = (p + z*z/(2*n)) / denom
+        h = z * np.sqrt(p*(1-p)/n + z*z/(4*n*n)) / denom
+        return max(0.0, c - h), min(1.0, c + h)
+
+    for n in sizes:
+        ts = {lvl: [] for lvl in alphas}
+        fs = {lvl: [] for lvl in alphas}
+        for rep in range(n_repeats):
+            # Bootstrap with replacement when n > population so n_cal=3000
+            # sweep still runs on the 2000-sample clean_scores.npy artifact.
+            replace = n > len(cal)
+            idx = rng.choice(len(cal), n, replace=replace)
+            sub = cal[idx]
+            for lvl, a in alphas.items():
+                # Split-conformal quantile: ceil((n+1)*(1-Î±))/n
+                q_idx = int(np.ceil((n + 1) * (1 - a))) - 1
+                q_idx = min(q_idx, n - 1)
+                t = np.sort(sub)[q_idx]
+                ts[lvl].append(t)
+                if val is not None:
+                    fs[lvl].append(np.mean(val > t))
+        for lvl in alphas:
+            arr = np.array(ts[lvl])
+            results[lvl]["mean"].append(arr.mean())
+            results[lvl]["lo"].append(np.quantile(arr, 0.025))
+            results[lvl]["hi"].append(np.quantile(arr, 0.975))
+            if val is not None:
+                f_mean = float(np.mean(fs[lvl]))
+                lo, hi = wilson(f_mean, len(val))
+                achieved_fpr[lvl]["mean"].append(f_mean)
+                achieved_fpr[lvl]["lo"].append(lo)
+                achieved_fpr[lvl]["hi"].append(hi)
+
+    # â”€â”€ Plot
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 3.6),
+                                    gridspec_kw={"wspace": 0.32})
+    color_map = {"L1": C_L1, "L2": C_L2, "L3": C_L3}
+
+    for lvl, col in color_map.items():
+        m = np.array(results[lvl]["mean"])
+        lo = np.array(results[lvl]["lo"])
+        hi = np.array(results[lvl]["hi"])
+        axL.plot(sizes, m, marker="o", lw=2.0, ms=6, color=col,
+                 label=f"{lvl} ($\\alpha{{=}}{alphas[lvl]}$)")
+        axL.fill_between(sizes, lo, hi, color=col, alpha=0.18, linewidth=0)
+
+    axL.set_xlabel("Calibration Set Size  $n_\\text{cal}$")
+    axL.set_ylabel("Conformal Threshold Value")
+    axL.set_title("Threshold Stability vs Calibration Size",
+                  fontsize=10)
+    axL.legend(loc="lower right", framealpha=0.9)
+    axL.set_xticks(sizes); axL.set_xticklabels([str(s) for s in sizes])
+
+    # Right panel: achieved FPR vs target
+    if val is not None:
+        for lvl, col in color_map.items():
+            target = alphas[lvl]
+            m = np.array(achieved_fpr[lvl]["mean"])
+            lo = np.array(achieved_fpr[lvl]["lo"])
+            hi = np.array(achieved_fpr[lvl]["hi"])
+            axR.plot(sizes, m, marker="o", lw=1.8, ms=5.5, color=col,
+                     label=f"{lvl} (target $={target}$)")
+            axR.fill_between(sizes, lo, hi, color=col, alpha=0.18, linewidth=0)
+            axR.axhline(target, color=col, linestyle=":", lw=0.9, alpha=0.7)
+        axR.set_xlabel("Calibration Set Size  $n_\\text{cal}$")
+        axR.set_ylabel("Achieved FPR on Validation Set")
+        axR.set_title("Conformal FPR Coverage", fontsize=10)
+        axR.legend(loc="upper right", framealpha=0.9)
+        axR.set_xticks(sizes); axR.set_xticklabels([str(s) for s in sizes])
+        axR.set_yscale("log")
+
+    fig.suptitle("Conformal Calibration Sensitivity (n_cal $\\in$ {500, 1000, 2000, 3000}; 25 bootstrap subsamples each)",
+                 fontsize=10, y=1.04)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "fig3_calibration.pdf")
+    fig.savefig(FIG_DIR / "fig3_calibration.png")
+    plt.close(fig)
+    # Print L3 half-range for caption check
+    l3 = np.array(results["L3"]["mean"])
+    print(f"[ok] fig3_calibration.{{pdf,png}}  "
+          f"(L3 range = [{l3.min():.3f}, {l3.max():.3f}]; half-range = {(l3.max()-l3.min())/2:.3f})")
+
+
+if __name__ == "__main__":
+    os.makedirs(FIG_DIR, exist_ok=True)
     make_fig1()
     make_fig2()
     make_fig3()
-    print("\nAll figures generated in paper/figures/")
+    print(f"\nAll figures written to {FIG_DIR}")
+

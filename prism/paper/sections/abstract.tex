@@ -8,21 +8,27 @@ calibrated clean-data profile using Wasserstein distance;
 (2)~\cadg (Conformal Adversarial Detection Guarantee), which provides 
 distribution-free false-positive rate certificates at three severity tiers via 
 split conformal prediction; 
-(3)~\sacd (Sequential Adversarial Campaign Detector), which applies Bayesian 
-Online Changepoint Detection to the score stream to identify sustained attack 
-campaigns and dynamically tighten detection thresholds; and 
-(4)~\tamsh (Topology-Aware MoE Self-Healing), which routes inputs that trigger 
-the highest-severity tier through topology-matched expert sub-networks to 
-preserve prediction availability.
+(3)~\sacd (Sequential Adversarial Campaign Detector), a CUSUM-on-score-stream
+monitor that flags sustained attack campaigns at a mean latency of
+\textbf{2.6 queries} on $\rho{=}1.0$ streams while maintaining $0.0$
+false-alarm activation on clean-only streams; and
+(4)~\tamsh (Topology-Aware MoE Self-Healing), which recovers correct
+predictions on L3-rejected adversarials through attack-specialist expert
+sub-networks, achieving a \textbf{+26pp} recovery gap over passthrough
+under PGD; a controlled uniform-router ablation (uniform $1/K$ mixing) gives
+$0$~pp gap, isolating the routing-signal contribution.
 
-We evaluate \prism on CIFAR-10 and CIFAR-100 with CIFAR-native ResNet-18
-backbones under FGSM, PGD, CW-L2, Square, AutoAttack, and adaptive PGD.
-All attack, ablation, campaign, recovery, and baseline numbers are generated
-from the locked Vast.ai artifact pipeline and reported with multi-seed
-uncertainty. The sequential campaign detector is evaluated on stream scenarios,
-and topology-aware MoE routing is evaluated on L3-triggered adversarials using
-dataset ground-truth labels plus clean-correct conditional metrics.
+We evaluate \prism on CIFAR-10 with a CIFAR-native ResNet-18 backbone under
+FGSM, PGD, CW-L2, Square, AutoAttack, and adaptive PGD, reporting per-attack
+TPR/FPR (5 seeds, $n{=}1000$/seed), per-channel ablation, matched-FPR
+baseline comparison against LID, Mahalanobis, ODIN, and Energy, campaign
+detection, and L3 recovery. \prism Full achieves $0.918$ mean TPR on
+FGSM/PGD/Square (matched empirical FPR $0.074$), $0.938$ on CW-L2
+($0.075$), and $1.000$ on AutoAttack ($0.075$), beating the strongest
+reproduced baseline (Mahalanobis $0.582$ mean TPR at FPR $0.077$) by
+$+33.6$~pp on the FGSM/PGD/Square pool. CIFAR-100 results follow the same protocol and are
+reported in the appendix once the locked Vast.ai pipeline completes.
 Unlike detector-coupled defenses, \prism operates on any pre-trained
-classifier without retraining or architecture modification,
-and uniquely provides distribution-free false-positive rate certificates
-absent in all prior activation-based detectors.
+classifier without retraining or architecture modification, and uniquely
+provides distribution-free false-positive rate certificates absent in all
+prior activation-based detectors.

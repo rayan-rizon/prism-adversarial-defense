@@ -1,0 +1,27 @@
+% Auto-generated 2026-05-22 (corrected). Source: post-fix 5-seed campaign streams
+%   vastai_full_download_2026-05-20_0830UTC/post_fix_local_2026-05-21/
+%   experiments/evaluation/results_campaign_local_seed{42,123,456,789,999}.json
+%
+% Headline metric reframed (P0.4 -> time-to-detect):
+%   The previous primary metric (ASR gap at sustained rho=1.00) is
+%   structurally bounded by the upstream L3 conformal threshold, which
+%   already removes ~99% of adversarials by query 22, leaving no headroom
+%   for an L0-attributable gap. Reported in the appendix for completeness.
+%
+% Time-to-detect = (first_l0_trigger_step - first_adv_step), L0 on only.
+% FPR_clean_steps = L1/L2/L3 conformal alert rate on clean steps of the stream.
+% L0_active = CUSUM campaign-detector activation fraction over the full stream
+%             (overall, not clean-only — see clean_only row for the F1-fix metric).
+% Cross-checked numerically against per-seed JSONs via verify_campaign.py.
+\begin{tabular}{lcccc}
+\toprule
+Scenario & Mean time-to-detect (queries) & Range & L0 active & FPR (clean steps) \\
+\midrule
+clean\_only         & ---  (no adversary)     & ---     & $0.000 \pm 0.000$ & $0.084 \pm 0.028$ \\
+sustained\_$\rho{=}0.50$ & $3.4 \pm 0.9$            & [2, 4]  & $0.893 \pm 0.030$ & $0.107 \pm 0.053$ \\
+sustained\_$\rho{=}0.80$ & $\mathbf{2.6 \pm 0.5}$   & [2, 3]  & $0.897 \pm 0.014$ & $0.092 \pm 0.045$ \\
+sustained\_$\rho{=}1.00$ & $\mathbf{2.6 \pm 0.5}$   & [2, 3]  & $0.897 \pm 0.014$ & $0.090 \pm 0.055$ \\
+burst (10-step pulse) & $12.0 \pm 0.0$           & [12, 12] & $0.863 \pm 0.018$ & $0.118 \pm 0.052$ \\
+low\_rate ($\rho{=}0.05$) & $17.4 \pm 8.9$           & [2, 24] & $0.951 \pm 0.020$ & $0.143 \pm 0.027$ \\
+\bottomrule
+\end{tabular}

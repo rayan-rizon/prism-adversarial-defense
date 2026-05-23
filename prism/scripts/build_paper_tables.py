@@ -161,6 +161,7 @@ def _pool_counts(entries):
 def table_main_attacks(results_dir):
     exp_root = _experiments_root(results_dir)
     eval_dir = os.path.join(exp_root, 'evaluation')
+    eval_cw_dir = os.path.join(exp_root, 'evaluation_cw')
     paths = sorted(set(
         glob(os.path.join(eval_dir, 'results_paper_seed*.json'))
         + glob(os.path.join(eval_dir, 'results_*paper_seed*.json'))
@@ -170,6 +171,8 @@ def table_main_attacks(results_dir):
         + glob(os.path.join(eval_dir, 'results_*cw_n*_ms*.json'))
         + glob(os.path.join(eval_dir, 'results_cw_seed*.json'))
         + glob(os.path.join(eval_dir, 'results_*cw_seed*.json'))
+        # post-fix layout: canonical-CW runs go to evaluation_cw/
+        + glob(os.path.join(eval_cw_dir, 'results_cw_*seed*.json'))
     ))
     paths = [
         p for p in paths
@@ -382,9 +385,19 @@ def table_campaign(results_dir):
 # ────────────────────────────────────────────────────────────────────────────
 
 def table_recovery(results_dir):
+    """Recovery table including all TAMSH strategies (reject, passthrough,
+    tamsh, tamsh_uniform, tamsh_force, tamsh_ensemble, tamsh_maxconf).
+
+    Discovery globs cover the post-fix layout:
+      - `recovery/`           — original tamsh-only runs
+      - `recovery_uniform/`   — adds tamsh_uniform + tamsh_force
+      - `evaluation/`         — legacy single-output runs
+    """
     exp_root = _experiments_root(results_dir)
     paths = sorted(glob(os.path.join(
         exp_root, 'recovery', 'results*recovery*seed*.json')))
+    paths += sorted(glob(os.path.join(
+        exp_root, 'recovery_uniform', 'results*recovery*seed*.json')))
     paths += sorted(glob(os.path.join(
         exp_root, 'evaluation', 'results*recovery*.json')))
     per_dataset_strat = defaultdict(list)
@@ -406,8 +419,12 @@ def table_recovery(results_dir):
         "\\midrule",
     ]
     datasets = sorted({dataset for dataset, _ in per_dataset_strat})
+    strat_order = [
+        'reject', 'passthrough',
+        'tamsh', 'tamsh_uniform', 'tamsh_ensemble', 'tamsh_maxconf', 'tamsh_force',
+    ]
     for dataset in datasets:
-        for strat in ['reject', 'passthrough', 'tamsh']:
+        for strat in strat_order:
             if (dataset, strat) not in per_dataset_strat:
                 continue
             entries = per_dataset_strat[(dataset, strat)]
@@ -416,8 +433,9 @@ def table_recovery(results_dir):
             acc = n_correct / max(n_l3, 1)
             lo, hi = wilson_ci(n_correct, n_l3)
             avail = np.mean([e.get('availability', 0) for e in entries])
+            label = strat.replace('_', '\\_')
             lines.append(
-                f"{dataset} & {strat} & {_fmt(acc)} & {_fmt_ci(lo, hi)} & {_fmt(avail)} \\\\"
+                f"{dataset} & {label} & {_fmt(acc)} & {_fmt_ci(lo, hi)} & {_fmt(avail)} \\\\"
             )
     lines += ["\\bottomrule", "\\end{tabular}"]
     return '\n'.join(lines) + '\n'

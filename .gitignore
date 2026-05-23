@@ -21,7 +21,10 @@ cifar-*-python/
 # Logs
 tmp_logs/
 *.log
+*.log.err
+*.log.old
 vastai_results/
+prism/logs/
 
 # IDE
 .DS_Store
@@ -42,4 +45,27 @@ prism/temp_cargo/
 RESULTS_DOWNLOAD_20260517_233546/
 vastai_full_download_*/
 vastai_results_*/
+
+# LaTeX intermediates (regenerated on every compile)
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.run.xml
+
+# Smoke / local-only result artifacts (not canonical paper data)
+**/smoke_*.json
+**/smoke_*.md
+**/results_*_smoke_*.json
+**/results_*_local_*.json
+**/smoke_local/
+
+# Scratch
+result.md
+result_*.md
+scratch*.md
 

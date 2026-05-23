@@ -461,13 +461,68 @@ def run_ablation_multiseed(
 
     dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
-    # ── Collect per-seed results ───────────────────────────────────────────────
+    # ── Collect per-seed results (with per-seed checkpointing) ────────────────
     # Structure: per_seed[seed_str][config_name][attack_name] = {TPR, FPR, F1, ...}
+    #
+    # Power-safe resume: each completed seed is atomically written to
+    # <output_dir>/_ckpt_ablation_seed{N}.json. On restart, a seed whose
+    # checkpoint exists AND has all expected configs+attacks is skipped.
     per_seed = {}
+    # Pre-compute checkpoint dir (same dir as the final multiseed JSON)
+    _ckpt_dir = (
+        os.path.dirname(os.path.abspath(output_path)) if output_path
+        else output_dir
+    )
+    os.makedirs(_ckpt_dir, exist_ok=True)
+
+    def _ckpt_path(s):
+        return os.path.join(_ckpt_dir, f'_ckpt_ablation_seed{s}.json')
+
+    # Signature: any change to n / attacks / config-set invalidates checkpoints.
+    _ckpt_sig = {
+        'n': n,
+        'attacks': sorted(attacks_to_run),
+        'configs': sorted(configs.keys()),
+        'eps': round(EPS, 6),
+        'eval_idx': list(EVAL_IDX),
+    }
+
+    def _ckpt_valid(s):
+        p = _ckpt_path(s)
+        if not os.path.exists(p):
+            return None
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return None
+        if data.get('_signature') != _ckpt_sig:
+            return None
+        results = data.get('_results')
+        if not isinstance(results, dict):
+            return None
+        # Schema check: must have all configs, each with all attacks_to_run
+        for cn in configs:
+            if cn not in results:
+                return None
+            for a in attacks_to_run:
+                if a not in results[cn]:
+                    return None
+                if 'TPR' not in results[cn][a]:
+                    return None
+        return results
+
     for seed in seeds:
         print(f"\n{'─'*65}")
         print(f"Seed {seed}")
         print(f"{'─'*65}")
+
+        cached = _ckpt_valid(seed)
+        if cached is not None:
+            print(f"  RESUME: loaded checkpoint {_ckpt_path(seed)}")
+            per_seed[str(seed)] = cached
+            continue
+
         rng = np.random.RandomState(seed)
         eval_pool = list(range(*EVAL_IDX))
         sample_idx = rng.choice(eval_pool, min(n, len(eval_pool)), replace=False)
@@ -489,6 +544,15 @@ def run_ablation_multiseed(
                 all_imgs_pixel, adv_cache, device, attacks
             )
         per_seed[str(seed)] = seed_results
+
+        # Atomic checkpoint write: tmp → fsync → rename
+        tmp = _ckpt_path(seed) + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'_signature': _ckpt_sig, '_results': seed_results}, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, _ckpt_path(seed))
+        print(f"  Checkpoint saved → {_ckpt_path(seed)}")
 
     # ── Aggregate: mean ± std across seeds per config × attack ───────────────
     aggregate = {}
@@ -595,6 +659,13 @@ def run_ablation_multiseed(
     print(f"\nJSON saved → {json_path}")
 
     _write_markdown_multiseed(aggregate, statistical_tests, attacks_to_run, seeds, md_path)
+
+    # Final JSON written successfully → remove per-seed checkpoints
+    for s in seeds:
+        try:
+            os.remove(_ckpt_path(s))
+        except OSError:
+            pass
 
     # ── Print summary ─────────────────────────────────────────────────────────
     print(f"\n{'='*65}")
