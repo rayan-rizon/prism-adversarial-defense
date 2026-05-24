@@ -1,0 +1,143 @@
+{
+  "reject": {
+    "recovery_accuracy": 0.0,
+    "recovery_accuracy_CI_95": [
+      0.0,
+      0.0049
+    ],
+    "recovery_accuracy_clean_correct": 0.0,
+    "recovery_accuracy_clean_correct_CI_95": [
+      0.0,
+      0.0051
+    ],
+    "availability": 0.0,
+    "availability_clean_correct": 0.0,
+    "n_correct": 0,
+    "n_correct_clean_correct": 0,
+    "n_l3": 786,
+    "n_clean_correct_l3": 749
+  },
+  "passthrough": {
+    "recovery_accuracy": 0.0356,
+    "recovery_accuracy_CI_95": [
+      0.0248,
+      0.051
+    ],
+    "recovery_accuracy_clean_correct": 0.0013,
+    "recovery_accuracy_clean_correct_CI_95": [
+      0.0002,
+      0.0075
+    ],
+    "availability": 1.0,
+    "availability_clean_correct": 1.0,
+    "n_correct": 28,
+    "n_correct_clean_correct": 1,
+    "n_l3": 786,
+    "n_clean_correct_l3": 749
+  },
+  "tamsh": {
+    "recovery_accuracy": 0.1438,
+    "recovery_accuracy_CI_95": [
+      0.121,
+      0.17
+    ],
+    "recovery_accuracy_clean_correct": 0.1308,
+    "recovery_accuracy_clean_correct_CI_95": [
+      0.1086,
+      0.1569
+    ],
+    "availability": 1.0,
+    "availability_clean_correct": 1.0,
+    "n_correct": 113,
+    "n_correct_clean_correct": 98,
+    "n_l3": 786,
+    "n_clean_correct_l3": 749,
+    "expert_selection_counts": {
+      "0": 379,
+      "3": 53,
+      "2": 347,
+      "1": 7
+    }
+  },
+  "tamsh_ensemble": {
+    "recovery_accuracy": 0.126,
+    "recovery_accuracy_CI_95": [
+      0.1046,
+      0.151
+    ],
+    "recovery_accuracy_clean_correct": 0.1121,
+    "recovery_accuracy_clean_correct_CI_95": [
+      0.0915,
+      0.1368
+    ],
+    "availability": 1.0,
+    "availability_clean_correct": 1.0,
+    "n_correct": 99,
+    "n_correct_clean_correct": 84,
+    "n_l3": 786,
+    "n_clean_correct_l3": 749,
+    "expert_selection_counts": {
+      "0": 379,
+      "3": 53,
+      "2": 347,
+      "1": 7
+    }
+  },
+  "tamsh_force": {
+    "recovery_accuracy": 0.313,
+    "recovery_accuracy_CI_95": [
+      0.2815,
+      0.3462
+    ],
+    "recovery_accuracy_clean_correct": 0.3271,
+    "recovery_accuracy_clean_correct_CI_95": [
+      0.2945,
+      0.3615
+    ],
+    "availability": 1.0,
+    "availability_clean_correct": 1.0,
+    "n_correct": 246,
+    "n_correct_clean_correct": 245,
+    "n_l3": 786,
+    "n_clean_correct_l3": 749,
+    "expert_selection_counts": {
+      "2": 786
+    }
+  },
+  "_gates": {
+    "tamsh_minus_passthrough_ge_15pp": false,
+    "tamsh_ensemble_minus_passthrough_ge_15pp": false,
+    "tamsh_maxconf_minus_passthrough_ge_15pp": false,
+    "tamsh_force_minus_passthrough_ge_15pp": true,
+    "best_tamsh_strategy_ge_15pp": true,
+    "trigger_rate_in_band": true
+  },
+  "_meta": {
+    "dataset": "cifar10",
+    "attack": "PGD",
+    "n_test": 1000,
+    "n_l3_triggered": 786,
+    "n_clean_correct_l3": 749,
+    "l3_trigger_rate": 0.786,
+    "trigger_rate_ok": true,
+    "strategies": [
+      "reject",
+      "passthrough",
+      "tamsh",
+      "tamsh_ensemble",
+      "tamsh_force"
+    ],
+    "seed": 123,
+    "eps": 0.031373,
+    "device": "cuda",
+    "tamsh_gap_pp": 10.82,
+    "tamsh_ensemble_gap_pp": 9.04,
+    "tamsh_maxconf_gap_pp": null,
+    "tamsh_force_gap_pp": 27.74,
+    "force_expert": 2,
+    "comparison_mode": "combined",
+    "ensemble_temperature": 0.1,
+    "go_no_go": "best TAMSH-strategy recovery_accuracy \u2212 passthrough recovery_accuracy \u2265 15pp; if miss, TAMSH (C4) demoted to appendix per plan P0.5.",
+    "oracle_source": "CIFAR10 ground-truth label is the primary correctness signal; clean-correct conditional metrics are also reported."
+  }
+}

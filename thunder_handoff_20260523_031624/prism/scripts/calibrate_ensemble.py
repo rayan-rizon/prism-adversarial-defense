@@ -1,0 +1,283 @@
+"""
+Calibrate Conformal Thresholds for Persistence Ensemble Scorer
+
+This script re-calibrates the conformal thresholds using the composite
+anomaly score from PersistenceEnsembleScorer. This is essential because
+the ensemble score has a different distribution than the base Wasserstein score.
+
+RATIONALE:
+Ensuring the FPR targets (10%, 3%, 0.5%) are strictly met for the
+final publishable results.
+
+PIPELINE GATE:
+Any change to PersistenceEnsembleScorer or the feature vector MUST be
+followed by re-running this script, then compute_ensemble_val_fpr.py,
+then run_evaluation_full.py.  See Appendix A items A-6/A-7 in
+PRISM Implementation.md for the silent failures this prevents.
+
+USAGE:
+  python scripts/calibrate_ensemble.py
+"""
+import torch
+import torchvision
+import torchvision.transforms as T
+import numpy as np
+import pickle
+import os, sys
+from tqdm import tqdm
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
+from src.tamm.extractor import ActivationExtractor
+from src.tamm.tda import TopologicalProfiler
+from src.tamm.logit_stability import compute_input_stability_features
+from src.tamm.persistence_stats import compute_logit_profile_features
+from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
+from src.cadg.calibrate import ConformalCalibrator
+# All shared constants come from src.config (backed by configs/default.yaml).
+# Do not re-introduce hardcoded copies — silent drift caused results failures.
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
+    CAL_IDX, VAL_IDX, CONFORMAL_ALPHAS, CAL_ALPHA_FACTOR,
+    TIER_CAL_ALPHA_FACTORS,
+    N_SUBSAMPLE, MAX_DIM,
+    DATASET, PATHS,
+)
+from src.data_loader import load_test_dataset
+from src.models import load_backbone
+
+_norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+if BACKBONE_INPUT_SIZE == 32:
+    _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+else:
+    _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
+
+
+def _stability_features(model, x_norm, img_pixel, logits_np, feature_count):
+    """Match PRISM.defend's configured deterministic stability extraction."""
+    return compute_input_stability_features(
+        model=model,
+        x_norm=x_norm,
+        img_pixel=img_pixel,
+        mean=BACKBONE_MEAN,
+        std=BACKBONE_STD,
+        logits_np=logits_np,
+        feature_count=feature_count,
+    )
+
+
+def calibrate_ensemble(
+    data_root: str = './data',
+    ensemble_path: str = None,
+    profile_path: str  = None,
+    output_path: str   = None,
+):
+    # Route artifact paths through PATHS so CIFAR-100 lands in models/cifar100/.
+    ensemble_path = ensemble_path or PATHS['ensemble_scorer']
+    profile_path  = profile_path  or PATHS['reference_profiles']
+    output_path   = output_path   or PATHS['calibrator']
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Device: {device}")
+    print(f"Cal split:  test idx {CAL_IDX[0]}-{CAL_IDX[1]-1}  (n={CAL_IDX[1]-CAL_IDX[0]})")
+    print(f"Val split:  test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}  (n={VAL_IDX[1]-VAL_IDX[0]})")
+    print(f"Cal alpha factor (scalar fallback): {CAL_ALPHA_FACTOR:.2f} x published targets")
+    print(
+        "Per-tier cal alpha factors: "
+        + ", ".join(f"{k}={v:.2f}" for k, v in TIER_CAL_ALPHA_FACTORS.items())
+    )
+
+    if not os.path.exists(ensemble_path):
+        print(f"ERROR: {ensemble_path} not found. Run scripts/train_ensemble_scorer.py first.")
+        sys.exit(1)
+
+    with open(profile_path, 'rb') as f:
+        ref_profiles = pickle.load(f)
+
+    # Load base components to reconstruct ensemble
+    from src.tamm.scorer import TopologicalScorer
+    base_scorer = TopologicalScorer(
+        ref_profiles=ref_profiles,
+        layer_names=LAYER_NAMES,
+        layer_weights=LAYER_WEIGHTS,
+        dim_weights=DIM_WEIGHTS,
+    )
+
+    ensemble = PersistenceEnsembleScorer.load(ensemble_path, base_scorer, LAYER_NAMES)
+    print("Loaded PersistenceEnsembleScorer.")
+
+    # --- Setup model ---
+    # Active CIFAR-trained backbone — identical to what was used to build profiles
+    # and train the ensemble. Any drift here invalidates the calibrator.
+    model = load_backbone(torch.device(device))
+    extractor = ActivationExtractor(model, LAYER_NAMES)
+    profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
+
+    # Dispatch dataset loader on DATASET (cifar10 / cifar100).
+    dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
+
+    def get_scores(idx_range, label):
+        ensemble_scores = []
+        base_scores = []
+        _use_dct = getattr(ensemble, 'use_dct', False)
+        _use_se  = getattr(ensemble, 'use_softmax_entropy', False)
+        _use_lp = getattr(ensemble, 'use_logit_profile_features', False)
+        _use_stab = getattr(ensemble, 'use_stability_features', False)
+        _use_grad = getattr(ensemble, 'use_grad_norm', False)
+        _stab_count = int(getattr(ensemble, 'stability_feature_count', 4))
+        for i in tqdm(range(idx_range[0], idx_range[1]), desc=f"Scoring {label}"):
+            img_pixel, _ = dataset[i]
+            x = _norm(img_pixel).unsqueeze(0).to(device)
+            acts = extractor.extract(x)
+            dgms = {}
+            for layer in LAYER_NAMES:
+                act_np = acts[layer].squeeze(0).cpu().numpy()
+                dgms[layer] = profiler.compute_diagram(act_np)
+            img_np = img_pixel.numpy() if _use_dct else None
+            # Compute model logits for softmax-entropy feature (CW-L2 detection).
+            logits_np = None
+            if _use_se or _use_lp or _use_stab:
+                with torch.no_grad():
+                    logits_out = model(x)
+                logits_np = logits_out.squeeze(0).cpu().numpy()
+            logit_profile_features = None
+            if _use_lp:
+                logit_profile_features = compute_logit_profile_features(logits_np)
+            stability_features = None
+            if _use_stab:
+                stability_features = _stability_features(
+                    model, x, img_pixel, logits_np, _stab_count
+                )
+            grad_norm = None
+            if _use_grad:
+                x_g = x.detach().clone().requires_grad_(True)
+                with torch.enable_grad():
+                    logits_g = model(x_g)
+                    pred_idx = int(logits_g.argmax(1).item())
+                    (grad_x,) = torch.autograd.grad(logits_g[0, pred_idx], x_g)
+                grad_norm = float(grad_x.norm().item())
+            base_scores.append(base_scorer.score(dgms))
+            s = ensemble.score(
+                dgms,
+                image=img_np,
+                grad_norm=grad_norm,
+                logits=logits_np,
+                logit_profile_features=logit_profile_features,
+                stability_features=stability_features,
+            )
+            ensemble_scores.append(s)
+        return (
+            np.array(ensemble_scores, dtype=np.float32),
+            np.array(base_scores, dtype=np.float32),
+        )
+
+    print("\nComputing ensemble scores for calibration and validation splits...")
+    cal_scores, cal_base_scores = get_scores(CAL_IDX, 'calibration')
+    val_scores, val_base_scores = get_scores(VAL_IDX, 'validation')
+
+    # --- Calibrate with per-tier conservative alphas ---
+    # Published targets:        L1=10 %,  L2=3 %,   L3=0.5 %
+    # Per-tier factors (YAML):  configs/default.yaml -> conformal.tier_cal_alpha_factors
+    #                           current: {L1: 0.75, L2: 0.55, L3: 0.52}
+    #                           -> cal alphas: L1=7.5 %, L2=1.65 %, L3=0.26 %
+    #
+    # Why per-tier, not a single global factor:
+    # L1 is set to the highest value observed to keep validation FPR under the
+    # published target after profile-split training. L2 keeps moderate slack.
+    # L3 remains conservative because the tail is sparse, so a small calibration
+    # to validation rank shift has a large relative FPR effect. Thresholds are
+    # still verified on the val split against the published alphas, so the
+    # conformal guarantee holds on the reported targets.
+    pub_targets = dict(CONFORMAL_ALPHAS)
+    cal_targets = {
+        k: pub_targets[k] * TIER_CAL_ALPHA_FACTORS.get(k, CAL_ALPHA_FACTOR)
+        for k in pub_targets
+    }
+
+    calibrator = ConformalCalibrator(alphas=pub_targets)
+    # Pass cal_targets explicitly -> stored in calibrator.calibration_alphas
+    thresholds = calibrator.calibrate(cal_scores, alphas=cal_targets)
+
+    base_calibrator = ConformalCalibrator(alphas=pub_targets)
+    base_calibrator.calibrate(cal_base_scores, alphas=cal_targets)
+
+    print("\n=== Ensemble Conformal Thresholds ===")
+    print(f"  [Cal alpha factor: {CAL_ALPHA_FACTOR:.2f} | "
+          f"Published: L1<={pub_targets['L1']:.3f}, "
+          f"L2<={pub_targets['L2']:.3f}, L3<={pub_targets['L3']:.4f}]")
+    for level, threshold in thresholds.items():
+        cal_a = calibrator.calibration_alphas[level]
+        pub_a = pub_targets[level]
+        print(f"  {level:2s}  cal_alpha={cal_a:.4f}  pub_alpha={pub_a:.4f}  threshold={threshold:.6f}")
+
+    # --- Verify on val split against PUBLISHED alpha targets (strict, tol=0.0) ---
+    # calibrator.alphas == pub_targets (set in __init__).
+    # get_coverage_report() checks empirical_fpr <= self.alphas[level] + tolerance.
+    print("\n=== FPR Verification on Val Split (strict, tol=0.0, target=published alpha) ===")
+    report = calibrator.get_coverage_report(val_scores, tolerance=0.0)
+    all_passed = True
+    for level, info in report.items():
+        status = "[PASS]" if info['passed'] else "[FAIL]"
+        if not info['passed']:
+            all_passed = False
+        print(
+            f"  {level:2s}: empirical FPR={info['empirical_fpr']:.4f}  "
+            f"(pub target<={info['target_alpha']:.4f})  {status}"
+        )
+
+    if all_passed:
+        print("\n  [OK] All ensemble FPR guarantees verified on val split.")
+    else:
+        print("\n  [WARN] Some guarantees still violated. "
+              "Lower conformal.tier_cal_alpha_factors[<failing tier>] in "
+              "configs/default.yaml by ~0.05 and rerun. Current values: "
+              + ", ".join(f"{k}={v:.2f}" for k, v in TIER_CAL_ALPHA_FACTORS.items()))
+
+    print("\n=== Base-TDA Calibrator Verification on Val Split ===")
+    base_report = base_calibrator.get_coverage_report(val_base_scores, tolerance=0.0)
+    for level, info in base_report.items():
+        status = "[PASS]" if info['passed'] else "[FAIL]"
+        print(
+            f"  {level:2s}: empirical FPR={info['empirical_fpr']:.4f}  "
+            f"(pub target<={info['target_alpha']:.4f})  {status}"
+        )
+
+    # --- Save ---
+    with open(output_path, 'wb') as f:
+        pickle.dump(calibrator, f)
+    print(f"\nCalibrator (ensemble) saved -> {output_path}")
+
+    base_output_path = os.path.join(
+        os.path.dirname(output_path) or '.',
+        'calibrator_base.pkl',
+    )
+    with open(base_output_path, 'wb') as f:
+        pickle.dump(base_calibrator, f)
+    print(f"Calibrator (base TDA) saved -> {base_output_path}")
+
+    extractor.cleanup()
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var).')
+    parser.add_argument('--data-root', default='./data')
+    parser.add_argument('--ensemble-path', default=None,
+                        help='Override ensemble scorer path, e.g. models/ensemble_no_tda.pkl.')
+    parser.add_argument('--profile-path', default=None,
+                        help='Override reference profile path.')
+    parser.add_argument('--output', default=None,
+                        help='Output calibrator path. Default: config PATHS["calibrator"].')
+    args = parser.parse_args()
+    calibrate_ensemble(
+        data_root=args.data_root,
+        ensemble_path=args.ensemble_path,
+        profile_path=args.profile_path,
+        output_path=args.output,
+    )

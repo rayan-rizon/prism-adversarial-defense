@@ -1,0 +1,269 @@
+"""
+Build Topological Self-Profile from the active CIFAR TEST set (FPR fix)
+
+RATIONALE
+---------
+The original build_profile.py used TRAINING data for profiling and
+calibration, while run_evaluation.py evaluates on the TEST set.  CIFAR
+train and test splits have a measurable distribution shift in activation space, which
+causes the conformal guarantee to be violated:
+
+  - L2 target α=0.03  -> observed FPR ≈ 3.3%  (excess 0.3%)
+  - L3 target α=0.005 -> observed FPR ≈ 1.3%  (excess 0.8%)
+
+FIX: Use the TEST set for both profiling and calibration.  This restores the
+exchangeability assumption required by split conformal prediction.
+
+TEST SET SPLIT (10,000 images):
+  images 0–4999    -> profile set  (compute reference medoids + clean scores)
+  images 5000–6999 -> calibration  (fit conformal thresholds)
+  images 7000–7999 -> validation   (verify FPR guarantee)
+  images 8000–9999 -> HELD OUT     (used by run_evaluation_full.py for final eval)
+
+This clean separation ensures zero data leakage between:
+  profiling / calibration / validation / evaluation.
+
+USAGE
+-----
+  cd prism/
+  python scripts/build_profile_testset.py          # builds from active dataset test
+  python scripts/calibrate_ensemble.py             # calibrates using test cal split
+"""
+import torch
+import torchvision
+import torchvision.transforms as T
+import numpy as np
+import pickle
+import os
+import sys
+import ssl
+import certifi
+from tqdm import tqdm
+
+# SSL fix
+os.environ.setdefault('SSL_CERT_FILE', certifi.where())
+os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
+ssl._create_default_https_context = ssl.create_default_context
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Route --config CLI flag to PRISM_CONFIG env var BEFORE importing src.config.
+from src import bootstrap  # noqa: F401
+from src.perf import setup_perf_flags
+setup_perf_flags()
+from src.tamm.extractor import ActivationExtractor
+from src.tamm.tda import TopologicalProfiler
+from src.tamm.scorer import TopologicalScorer
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, N_SUBSAMPLE, MAX_DIM,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
+    PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX,
+    DATASET, PATHS,
+)
+from src.data_loader import load_test_dataset
+from src.models import load_backbone
+# All shared constants imported from src.config (backed by configs/default.yaml).
+# Split indices are the single source of truth -- do not hardcode here.
+
+# Native CIFAR 32x32 with backbone-correct normalisation. Non-32x32 configs
+# can still request resizing through BACKBONE_INPUT_SIZE.
+_norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+if BACKBONE_INPUT_SIZE == 32:
+    _TRANSFORM = T.Compose([T.ToTensor(), _norm])
+else:
+    _TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor(), _norm])
+
+
+def build_profile_testset(
+    data_root: str = './data',
+    output_dir: str = './models',
+    device: str = None,
+    allow_undertrained_smoke: bool = False,
+):
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Device: {device}")
+    print(f"Building topological profile from {DATASET.upper()} TEST set...")
+    print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
+
+    # ── Backbone accuracy precondition ────────────────────────────────────────
+    # Profiles built on an undertrained backbone are statistically vacuous:
+    # the reference manifold itself becomes noise, so every downstream
+    # Wasserstein distance is meaningless. Catch this at script entry rather
+    # than letting it propagate silently to the eval gate.
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+    from verify_backbone_acc import verify_backbone_acc as _vba  # noqa: E402
+    from src.config import BACKBONE_CHECKPOINT_PATH as _BCP
+    _PROFILE_MIN_ACC = 0.90
+    _acc, _n = _vba(_BCP, n=200, device=device, data_root=data_root)
+    print(f"  Backbone test acc: {_acc:.4f} (n={_n}, gate ≥ {_PROFILE_MIN_ACC:.2f})")
+    if _acc < _PROFILE_MIN_ACC and not allow_undertrained_smoke:
+        raise RuntimeError(
+            f"Backbone at {_BCP} has test acc {_acc:.4f} < {_PROFILE_MIN_ACC:.2f}. "
+            f"Refusing to build reference profiles on an undertrained backbone — "
+            f"the resulting TDA manifold would not represent the clean-data "
+            f"distribution. Run scripts/pretrain_cifar_backbone.py first."
+        )
+    if _acc < _PROFILE_MIN_ACC:
+        print(
+            f"  [WARN] Proceeding with undertrained smoke backbone "
+            f"({_acc:.4f} < {_PROFILE_MIN_ACC:.2f}). "
+            f"Profile is for local integration testing only."
+        )
+
+    # ── Model ─────────────────────────────────────────────────────────────────
+    # Active CIFAR-trained ResNet-18. Profiles built on this backbone are the
+    # reference manifold against which all downstream Wasserstein distances
+    # are computed.
+    model = load_backbone(torch.device(device))
+
+    extractor = ActivationExtractor(model, LAYER_NAMES)
+    profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
+
+    # ── Dataset (test) — dispatches on DATASET (cifar10 / cifar100) ───────────
+    dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
+    print(f"  {DATASET.upper()} test set size: {len(dataset)}")
+
+    # ── Phase 1: collect persistence diagrams for profile images ───────────────
+    n_profile = PROFILE_IDX[1] - PROFILE_IDX[0]
+    all_diagrams = {layer: [] for layer in LAYER_NAMES}
+    print(f"\nPhase 1: Collecting diagrams from {n_profile} test images "
+          f"(indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1})...")
+    for i in tqdm(range(PROFILE_IDX[0], PROFILE_IDX[1]), desc="Phase 1: diagrams"):
+        img, _ = dataset[i]
+        x = img.unsqueeze(0).to(device)
+        acts = extractor.extract(x)
+        for layer in LAYER_NAMES:
+            act_np = acts[layer].squeeze(0).cpu().numpy()
+            all_diagrams[layer].append(profiler.compute_diagram(act_np))
+
+    # ── Phase 2: compute medoid reference diagrams ─────────────────────────────
+    print("\nPhase 2: Computing medoid reference diagrams "
+          f"(dims={[0,1]}, dim_weights={DIM_WEIGHTS})...")
+    # Use the SAME dims and dim_weights as TopologicalScorer at inference time,
+    # so the medoid minimises the same distance criterion used for scoring.
+    ref_profiles = {}
+    for layer in LAYER_NAMES:
+        print(f"  {layer}: computing medoid from {len(all_diagrams[layer])} diagrams...")
+        ref_profiles[layer] = profiler.compute_reference_medoid(
+            all_diagrams[layer], dims=[0, 1], dim_weights=DIM_WEIGHTS
+        )
+        n_h0 = len(ref_profiles[layer][0]) if len(ref_profiles[layer]) > 0 else 0
+        n_h1 = len(ref_profiles[layer][1]) if len(ref_profiles[layer]) > 1 else 0
+        print(f"    Medoid: {n_h0} H0 features, {n_h1} H1 features")
+
+    # Route artifact output through PATHS[reference_profiles] so CIFAR-100 lands
+    # in models/cifar100/ rather than clobbering the CIFAR-10 pkl.
+    profile_path = os.path.join('.', PATHS['reference_profiles'])
+    os.makedirs(os.path.dirname(profile_path) or '.', exist_ok=True)
+    with open(profile_path, 'wb') as f:
+        pickle.dump(ref_profiles, f)
+    print(f"\nReference profiles saved -> {profile_path} (built from TEST set)")
+
+    # Free diagram memory before scoring phase
+    del all_diagrams
+
+    # ── Phase 3: compute anomaly scores for ALL splits ─────────────────────────
+    scorer = TopologicalScorer(
+        ref_profiles=ref_profiles,
+        layer_names=LAYER_NAMES,
+        layer_weights=LAYER_WEIGHTS,
+        dim_weights=DIM_WEIGHTS,
+    )
+
+    # Save the scorer for consistent reuse
+    scorer_path = os.path.join(output_dir, 'scorer.pkl')
+    with open(scorer_path, 'wb') as f:
+        pickle.dump(scorer, f)
+    print(f"Scorer saved -> {scorer_path}")
+
+    def compute_scores(idx_range, label):
+        """Compute anomaly scores for a contiguous index range."""
+        scores = []
+        for i in tqdm(range(idx_range[0], idx_range[1]),
+                      desc=f"Scoring {label}"):
+            img, _ = dataset[i]
+            x = img.unsqueeze(0).to(device)
+            acts = extractor.extract(x)
+            dgms = {}
+            for layer in LAYER_NAMES:
+                act_np = acts[layer].squeeze(0).cpu().numpy()
+                dgms[layer] = profiler.compute_diagram(act_np)
+            s = scorer.score(dgms)
+            scores.append(s)
+        return np.array(scores, dtype=np.float32)
+
+    print(f"\nPhase 3: Computing anomaly scores for all splits...")
+
+    # Route clean-score output through config paths so CIFAR-100 gets its own
+    # file (e.g. cifar100_clean_scores.npy) rather than overwriting the
+    # CIFAR-10 clean_scores.npy.
+    clean_scores_path = PATHS['clean_scores']
+    cal_dir = os.path.dirname(clean_scores_path) or 'experiments/calibration'
+    os.makedirs(cal_dir, exist_ok=True)
+    _base = os.path.basename(clean_scores_path)
+    _prefix = _base.replace('clean_scores.npy', '')  # '' or 'cifar100_'
+
+    # Profile scores (used to verify profiler is sane)
+    profile_scores = compute_scores(PROFILE_IDX, 'profile')
+    np.save(os.path.join(cal_dir, f'{_prefix}profile_scores.npy'), profile_scores)
+    print(f"  Profile : n={len(profile_scores)}, "
+          f"mean={profile_scores.mean():.4f}, std={profile_scores.std():.4f}")
+
+    # Calibration scores (for conformal threshold fitting)
+    cal_scores = compute_scores(CAL_IDX, 'calibration')
+    np.save(clean_scores_path, cal_scores)
+    print(f"  Calibration: n={len(cal_scores)}, "
+          f"mean={cal_scores.mean():.4f}, std={cal_scores.std():.4f}")
+
+    # Validation scores (for FPR guarantee verification)
+    val_scores = compute_scores(VAL_IDX, 'validation')
+    np.save(os.path.join(cal_dir, f'{_prefix}val_scores.npy'), val_scores)
+    print(f"  Validation:  n={len(val_scores)}, "
+          f"mean={val_scores.mean():.4f}, std={val_scores.std():.4f}")
+
+    extractor.cleanup()
+
+    # ── Phase 4: sanity check ──────────────────────────────────────────────────
+    print("\nPhase 4: Sanity checks...")
+    assert profile_scores.mean() > 0, "Profile scores must be positive"
+    assert np.all(np.isfinite(profile_scores)), "No NaN/inf in profile scores"
+    if not allow_undertrained_smoke:
+        assert cal_scores.mean() < 30, \
+            f"Cal score mean={cal_scores.mean():.2f} suspiciously high"
+    else:
+        print(
+            f"  [WARN] Skipping clean-score magnitude guard for smoke run "
+            f"(cal mean={cal_scores.mean():.2f})."
+        )
+
+    print("\n[OK] Profile built successfully from CIFAR-10 TEST set.")
+    print(f"   Profile : {len(profile_scores)} images (test idx 0-4999)")
+    print(f"   Cal     : {len(cal_scores)} images (test idx 5000-6999)")
+    print(f"   Val     : {len(val_scores)} images (test idx 7000-7999)")
+    print(f"   Eval    : 2000 images HELD OUT (test idx 8000-9999)")
+    print(f"\nNext step: python scripts/calibrate_ensemble.py")
+
+    return ref_profiles, cal_scores, val_scores
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default=None,
+                        help='YAML config path (routes via PRISM_CONFIG env var). '
+                             'Default: configs/default.yaml')
+    parser.add_argument('--data-root', default='./data')
+    parser.add_argument('--allow-undertrained-smoke', action='store_true',
+                        help='Smoke-only escape hatch: build reference profiles '
+                             'even if the backbone is below the publishable gate.')
+    # --output-dir kept for backward compat; the primary artifact path comes
+    # from PATHS[reference_profiles] in the loaded config.
+    parser.add_argument('--output-dir', default=None)
+    args = parser.parse_args()
+    out_dir = args.output_dir or os.path.dirname(PATHS['reference_profiles']) or './models'
+    build_profile_testset(
+        data_root=args.data_root,
+        output_dir=out_dir,
+        allow_undertrained_smoke=args.allow_undertrained_smoke,
+    )
