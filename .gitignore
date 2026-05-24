@@ -1,71 +1,64 @@
-# Python
-__pycache__/
-*.py[cod]
-*.so
+# Large model files
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Dataset files
+*.tar.gz
+*.zip
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# Pickle files (can be large)
+*.pkl
+*.pickle
+
+# Virtual environments
 .venv/
 venv/
-.env
+env/
+ENV/
 
-# Data/Models (usually too large for git)
-data/
-prism/data/
-models/*.pth
-models/*.pt
-models/*.pkl
-prism/models/*.pkl
-*.zip
-*.tar.gz
-cifar-*-batches-py/
-cifar-*-python/
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
 
 # Logs
-tmp_logs/
+logs/
 *.log
-*.log.err
-*.log.old
-vastai_results/
-prism/logs/
 
-# IDE
+# Data directories
+data/
+datasets/
+
+# Model checkpoints
+models/
+checkpoints/
+
+# Experiment results
+experiments/
+results/
+
+# System files
 .DS_Store
-.idea/
-.vscode/
+Thumbs.db
 
-# Jupyter
-.ipynb_checkpoints/
+# Local configuration
+*.local.yaml
+*.local.yml
+.env
+.env.local
 
-# Testing
-.pytest_cache/
-.benchmarks/
-
-# Build artifacts
-prism/temp_cargo/
-
-# Research / Downloads
-RESULTS_DOWNLOAD_20260517_233546/
-vastai_full_download_*/
-vastai_results_*/
-
-# LaTeX intermediates (regenerated on every compile)
-*.aux
-*.bbl
-*.blg
-*.out
-*.toc
-*.fls
-*.fdb_latexmk
-*.synctex.gz
-*.run.xml
-
-# Smoke / local-only result artifacts (not canonical paper data)
-**/smoke_*.json
-**/smoke_*.md
-**/results_*_smoke_*.json
-**/results_*_local_*.json
-**/smoke_local/
-
-# Scratch
-result.md
-result_*.md
-scratch*.md
-
+# Temporary files
+tmp/
+temp/
