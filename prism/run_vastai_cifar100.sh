@@ -398,17 +398,20 @@ python experiments/evaluation/run_evaluation_full.py \
   echo "  WARNING: latency benchmark failed; non-fatal."
 
 # ── Step 4c: Score-distribution audit ────────────────────────────────────────
+# Diagnostic only; Step 4 FPR gate has already passed. AutoAttack dropped from
+# audit and n lowered 200→100 to cut ~20-30 min off critical path; the audit
+# still characterises FGSM/PGD/Square score distributions which is sufficient
+# for cal→val drift detection.
 echo ""
 echo "=== Step 4c: Score Distribution Audit [$TAG, VAL split] ==="
 python scripts/audit_score_distributions.py \
   --config $CONFIG \
   --split val \
-  --n 200 \
-  --attacks FGSM PGD Square AutoAttack \
+  --n 100 \
+  --attacks FGSM PGD Square \
   --pgd-steps 40 \
   --square-max-iter 1000 \
-  --aa-version standard --aa-chunk 64 \
-  --output experiments/calibration/${TAG}_score_audit_val_n200.json \
+  --output experiments/calibration/${TAG}_score_audit_val_n100.json \
   2>&1 | tee logs/${TAG}/step4c_score_audit.log || \
   echo "  WARNING: score audit failed; non-fatal (Step 4 FPR gate already passed)."
 
