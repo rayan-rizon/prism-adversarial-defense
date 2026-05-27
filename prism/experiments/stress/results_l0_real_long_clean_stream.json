@@ -1,0 +1,453 @@
+{
+  "real_scores_source": "C:\\Users\\rayan\\Desktop\\Research\\Prism\\prism-adversarial-defense\\prism\\experiments\\stress\\real_clean_scores_val_n1000.npy",
+  "real_pool_stats": {
+    "n": 1000,
+    "mean": 0.1733217145728413,
+    "std": 2.0450381564356013,
+    "min": -8.031876564025879,
+    "max": 7.555322170257568,
+    "p95": 3.471893453598022,
+    "p99": 5.746289834976195
+  },
+  "pkl_values": {
+    "detection_mode": "cusum",
+    "cusum_drift": 1.0,
+    "cusum_threshold": 5.0,
+    "warmup_steps": 20,
+    "cusum_k_consecutive": 3,
+    "score_center": 0.2813279330730438,
+    "score_scale": 1.639197376871109,
+    "alert_run_prob": 0.6,
+    "hazard_rate": 0.03333333333333333,
+    "l0_factor": 0.8,
+    "alert_run_length": 10
+  },
+  "thresholds": [
+    5.0,
+    8.0,
+    10.0,
+    12.0
+  ],
+  "results": [
+    {
+      "threshold": 5.0,
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.093,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0186,
+      "max_fraction": 0.093,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        1814,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.6372,
+        0.0,
+        0.1016,
+        0.0
+      ],
+      "mean_fraction": 0.14776,
+      "max_fraction": 0.6372,
+      "seeds_with_trigger": 2,
+      "first_triggers": [
+        null,
+        1814,
+        null,
+        4492,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "length": 10000,
+      "per_seed_fraction": [
+        0.0,
+        0.8186,
+        0.0,
+        0.5508,
+        0.0
+      ],
+      "mean_fraction": 0.27388,
+      "max_fraction": 0.8186,
+      "seeds_with_trigger": 2,
+      "first_triggers": [
+        null,
+        1814,
+        null,
+        4492,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "length": 10000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "length": 10000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "length": 10000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ]
+}

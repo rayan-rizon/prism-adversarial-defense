@@ -1,0 +1,16 @@
+% CIFAR-100 campaign-stream evaluation (5 seeds, post-fix L0 monitor).
+% Source: ../Cifar 100/.../experiments/campaign/results_cifar100_campaign_seed*.json
+% Headline metric is time-to-detect (queries until L0 fires); ASR-gap is
+% structurally bounded because L1 conformal already crushes campaign ASR.
+\begin{tabular}{lccc}
+\toprule
+Scenario & ASR (L0 off) & ASR (L0 on) & $\Delta$ (pp) \\
+\midrule
+clean\_only              & 0.000 & 0.000 & $+0.00$ \\
+sustained\_$\rho{=}0.5$  & 0.036 & 0.026 & $+1.07$ \\
+sustained\_$\rho{=}0.8$  & 0.032 & 0.019 & $+1.29$ \\
+sustained\_$\rho{=}1.0$  & 0.031 & 0.018 & $+1.30$ \\
+burst                    & 0.043 & 0.028 & $+1.50$ \\
+low\_rate ($\rho{=}0.05$) & 0.013 & 0.004 & $+0.85$ \\
+\bottomrule
+\end{tabular}

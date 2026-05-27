@@ -11,10 +11,14 @@
 %   \usepackage[dblblindworkshop]{neurips_2026}        % double-blind workshop
 %
 % Camera-ready: add `final` (e.g. `\usepackage[main, final]{neurips_2026}`).
-% arXiv / preprint build (named author shown, no line numbers):
+% Build mode — toggle ONE line for the target submission:
+%   - For arXiv / preprint with named author block, no line numbers:
 \usepackage[preprint]{neurips_2026}
-% NeurIPS main-track submission alternative (anonymizes + line numbers):
+%   - For NeurIPS main-track double-blind submission (anonymises author,
+%     adds line numbers): comment the line above and uncomment this:
 % \usepackage[main]{neurips_2026}
+%   - For camera-ready (named author, no line numbers, final styling):
+% \usepackage[main, final]{neurips_2026}
 
 % ── Required NeurIPS encoding / typography packages ────────────────────────
 \usepackage[utf8]{inputenc} % allow utf-8 input
@@ -45,7 +49,6 @@
 \newcommand{\cadg}{\textsc{CADG}\xspace}
 \newcommand{\sacd}{\textsc{SACD}\xspace}
 \newcommand{\tamsh}{\textsc{TAMSH}\xspace}
-\newcommand{\rails}{\textsc{RAILS}\xspace}
 
 % Theorem environments
 \newtheorem{theorem}{Theorem}

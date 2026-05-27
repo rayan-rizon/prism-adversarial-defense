@@ -46,12 +46,16 @@ def check_main_attacks():
         fprs = [abl["per_seed"][str(s)]["Full PRISM"][attack]["FPR"] for s in SEEDS]
         rows[attack] = (mean(tprs), std(tprs), mean(fprs), tprs, fprs)
 
-    # CW post-fix — schema has {"CW": {...}, "_meta": ...}
+    # CW canonical (max_iter=100, bss=9) — Vast.ai gate run, NOT the
+    # post-fix weakened CW (max_iter=5, bss=5) which only feeds the
+    # detector-fidelity ablation in Appendix app:weak_cw.
     cw_tprs, cw_fprs = [], []
     for s in SEEDS:
-        d = load(POST_FIX / "experiments" / "evaluation_cw" / f"results_cw_post_fix_seed{s}.json")
-        cw_tprs.append(d["CW"]["TPR"])
-        cw_fprs.append(d["CW"]["FPR"])
+        f = PROJECT / "experiments" / "evaluation" / f"results_cw_n1000_ms5_seed{s}.json"
+        d = load(f)
+        cw_node = d.get("CW") or d.get("CW-L2") or d.get("CW_L2") or d
+        cw_tprs.append(cw_node["TPR"])
+        cw_fprs.append(cw_node["FPR"])
     rows["CW-L2"] = (mean(cw_tprs), std(cw_tprs), mean(cw_fprs), cw_tprs, cw_fprs)
 
     # AutoAttack — from fast_n1000_ms5
@@ -143,73 +147,73 @@ def check_baselines():
 
 # ──────────────────────────────────────────────────────────────────────────
 def check_recovery():
-    print("\n=== TABLE: recovery.tex ===")
-    per_strategy = {}
-    trigger_rates = []
-    schema_peek = None
-    for s in SEEDS:
-        d = load(POST_FIX / "experiments" / "recovery" / f"results_recovery_post_fix_seed{s}.json")
-        if schema_peek is None:
-            schema_peek = list(d.keys())
-            print(f"  recovery top keys: {schema_peek}")
-        # Search for trigger rate fields anywhere
-        def walk(node, path=""):
-            if isinstance(node, dict):
-                for k, v in node.items():
-                    if "trigger" in k.lower() and isinstance(v, (int, float)):
-                        yield (f"{path}/{k}", v)
-                    yield from walk(v, f"{path}/{k}")
-        triggers = list(walk(d))
-        if s == 42:
-            print(f"  trigger-like fields seed42: {triggers[:10]}")
-        trigger_rates.append(triggers)
-
-        # Strategies — handle different possible schemas
-        for top_key in ("reject", "passthrough", "tamsh", "tamsh_force",
-                        "ensemble", "maxconf", "oracle", "strategies"):
-            if top_key in d and isinstance(d[top_key], dict):
-                v = d[top_key]
-                if top_key == "strategies":
-                    for sk, sv in v.items():
-                        acc = sv.get("recovery_accuracy", sv.get("accuracy"))
-                        if acc is not None:
-                            per_strategy.setdefault(sk, []).append(acc)
-                else:
-                    acc = v.get("recovery_accuracy", v.get("accuracy"))
-                    if acc is not None:
-                        per_strategy.setdefault(top_key, []).append(acc)
-    # Uniform dir
+    """
+    Paper recovery.tex sources every row from the RECOVERY_UNIFORM pool
+    (per the table header comment: 'post-fix 5-seed recovery_uniform pool ...').
+    The other RECOVERY pool exists but uses a slightly different L3-trigger
+    composition, so mixing pools shifts std on the paired gap.
+    This function reads ONLY recovery_uniform so the printed numbers
+    match the paper table exactly. Gaps are reported as PAIRED per-seed
+    deltas, matching how the table was assembled.
+    """
+    print("\n=== TABLE: recovery.tex (source: recovery_uniform pool) ===")
+    per_seed_rows = []
     for s in SEEDS:
         f = POST_FIX / "experiments" / "recovery_uniform" / f"results_recovery_uniform_seed{s}.json"
+        d = load(f)
+        meta = d.get("_meta", {})
+        row = {
+            "seed": s,
+            "trig_rate": meta.get("l3_trigger_rate"),
+            "n_l3": meta.get("n_l3_triggered"),
+            "passthrough": d["passthrough"]["recovery_accuracy"],
+            "tamsh": d["tamsh"]["recovery_accuracy"],
+            "tamsh_uniform": d["tamsh_uniform"]["recovery_accuracy"],
+            "tamsh_force": d["tamsh_force"]["recovery_accuracy"],
+        }
+        per_seed_rows.append(row)
+
+    # Per-seed table
+    print(f"  {'seed':>5} {'trig':>7} {'n_l3':>5} "
+          f"{'pthru':>7} {'tamsh':>7} {'unif':>7} {'force':>7}")
+    for r in per_seed_rows:
+        print(f"  {r['seed']:>5} {r['trig_rate']:>7.3f} {r['n_l3']:>5} "
+              f"{r['passthrough']:>7.4f} {r['tamsh']:>7.4f} "
+              f"{r['tamsh_uniform']:>7.4f} {r['tamsh_force']:>7.4f}")
+
+    # Aggregate
+    print()
+    for c in ("trig_rate", "passthrough", "tamsh", "tamsh_uniform", "tamsh_force"):
+        vals = [r[c] for r in per_seed_rows]
+        print(f"  {c:>16}  mean={mean(vals):.4f}  std={std(vals):.4f}")
+
+    # Paired gaps (matches paper recovery.tex)
+    print("\n  Paired-per-seed gaps vs passthrough (matches paper):")
+    base = [r["passthrough"] for r in per_seed_rows]
+    for c in ("tamsh", "tamsh_uniform", "tamsh_force"):
+        deltas = [r[c] - r["passthrough"] for r in per_seed_rows]
+        m = mean(deltas) * 100
+        sd = std(deltas) * 100
+        print(f"    {c:>16}  +{m:.2f}pp +/- {sd:.2f}pp")
+
+    # Side-note: the other RECOVERY pool also has a tamsh_ensemble variant
+    # that is NOT in the paper. Print as informational diagnostic.
+    print("\n  [Note] The separate RECOVERY pool also contains "
+          "tamsh_ensemble (soft-mix over experts).")
+    print("         Not in paper because it lives in a pool with different "
+          "L3-trigger composition.")
+    extra = []
+    for s in SEEDS:
+        f = POST_FIX / "experiments" / "recovery" / f"results_recovery_post_fix_seed{s}.json"
         if not f.exists():
             continue
         d = load(f)
-        if s == 42:
-            print(f"  recovery_uniform top keys: {list(d.keys())}")
-        for top_key in ("tamsh_uniform", "uniform", "strategies"):
-            if top_key in d and isinstance(d[top_key], dict):
-                v = d[top_key]
-                if top_key == "strategies":
-                    for sk, sv in v.items():
-                        acc = sv.get("recovery_accuracy", sv.get("accuracy"))
-                        if acc is not None:
-                            per_strategy.setdefault(sk, []).append(acc)
-                else:
-                    acc = v.get("recovery_accuracy", v.get("accuracy"))
-                    if acc is not None:
-                        per_strategy.setdefault(top_key, []).append(acc)
-
-    print()
-    base = per_strategy.get("passthrough", [0])
-    base_mean = mean(base) if base else 0
-    for k, vals in per_strategy.items():
-        if vals:
-            m = mean(vals)
-            sd = std(vals)
-            gap = (m - base_mean) * 100
-            print(f"  {k:<20} n={len(vals)}  mean={fmt(m)}  std={fmt(sd)}  "
-                  f"gap_vs_passthrough={gap:+.2f}pp  per-seed={[fmt(v,3) for v in vals[:5]]}")
-    return per_strategy, trigger_rates
+        e = d.get("tamsh_ensemble")
+        if e and isinstance(e, dict):
+            extra.append(e.get("recovery_accuracy"))
+    if extra:
+        print(f"         tamsh_ensemble (n={len(extra)}): mean={mean(extra):.4f}  std={std(extra):.4f}")
+    return per_seed_rows
 
 
 # ──────────────────────────────────────────────────────────────────────────

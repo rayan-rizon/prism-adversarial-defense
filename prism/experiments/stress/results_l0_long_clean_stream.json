@@ -1,0 +1,223 @@
+{
+  "pkl_path": "C:\\Users\\rayan\\Desktop\\Research\\Prism\\prism-adversarial-defense\\prism\\models\\l0_thresholds.pkl",
+  "pkl_values": {
+    "detection_mode": "cusum",
+    "cusum_drift": 1.0,
+    "cusum_threshold": 5.0,
+    "warmup_steps": 20,
+    "cusum_k_consecutive": 3,
+    "score_center": 0.2813279330730438,
+    "score_scale": 1.639197376871109,
+    "alert_run_prob": 0.6,
+    "alert_run_length": 10,
+    "hazard_rate": 0.03333333333333333,
+    "l0_factor": 0.8
+  },
+  "empirical_moments": {
+    "mean": 0.286576,
+    "std": 1.925517,
+    "source": "results_fast_n1000_ms5_seed42.json::score_quantiles.clean"
+  },
+  "bootstrap_pool": {
+    "source": "experiments/calibration/clean_scores.npy",
+    "n": 2000,
+    "orig_mean": 0.7806768570840359,
+    "orig_std": 0.30110635805777686,
+    "rescaled_to_mean": 0.286576,
+    "rescaled_to_std": 1.925517
+  },
+  "gaussian": {
+    "500": {
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.116,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.023200000000000002,
+      "max_fraction": 0.116,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    "1000": {
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.558,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1116,
+      "max_fraction": 0.558,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    "2000": {
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.779,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1558,
+      "max_fraction": 0.779,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    "5000": {
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.9116,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.18231999999999998,
+      "max_fraction": 0.9116,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    "10000": {
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.9558,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.19116,
+      "max_fraction": 0.9558,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    }
+  },
+  "bootstrap": {
+    "500": {
+      "per_seed_fraction": [
+        0.0,
+        0.908,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1816,
+      "max_fraction": 0.908,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        46,
+        null,
+        null,
+        null
+      ]
+    },
+    "1000": {
+      "per_seed_fraction": [
+        0.0,
+        0.954,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1908,
+      "max_fraction": 0.954,
+      "n_seeds_with_any_trigger": 1,
+      "first_trigger_steps": [
+        null,
+        46,
+        null,
+        null,
+        null
+      ]
+    },
+    "2000": {
+      "per_seed_fraction": [
+        0.0,
+        0.977,
+        0.0,
+        0.4555,
+        0.0
+      ],
+      "mean_fraction": 0.28650000000000003,
+      "max_fraction": 0.977,
+      "n_seeds_with_any_trigger": 2,
+      "first_trigger_steps": [
+        null,
+        46,
+        null,
+        1089,
+        null
+      ]
+    },
+    "5000": {
+      "per_seed_fraction": [
+        0.0,
+        0.9908,
+        0.34,
+        0.7822,
+        0.5728
+      ],
+      "mean_fraction": 0.53716,
+      "max_fraction": 0.9908,
+      "n_seeds_with_any_trigger": 4,
+      "first_trigger_steps": [
+        null,
+        46,
+        3300,
+        1089,
+        2136
+      ]
+    },
+    "10000": {
+      "per_seed_fraction": [
+        0.2626,
+        0.9954,
+        0.67,
+        0.8911,
+        0.7864
+      ],
+      "mean_fraction": 0.7211,
+      "max_fraction": 0.9954,
+      "n_seeds_with_any_trigger": 5,
+      "first_trigger_steps": [
+        7374,
+        46,
+        3300,
+        1089,
+        2136
+      ]
+    }
+  }
+}

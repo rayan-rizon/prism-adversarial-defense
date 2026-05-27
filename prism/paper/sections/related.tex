@@ -2,27 +2,23 @@
 \label{sec:related}
 
 \paragraph{TDA for adversarial detection.}
-Gebhart and Schrater \cite{gebhart2019adversary} were the first to apply 
-persistent homology to adversarial detection, computing topological features 
-of neuron activations to distinguish clean from adversarial inputs.
-Concurrent work at LANL \cite{lanl2024tda} uses persistent homology with 
-two-sample testing for detection in vision-language models.
-Goibert et al.\ \cite{goibert2021adversarial} analyze the network graph 
-topology of clean vs.\ adversarial inputs.
-Relative to these works, \prism's novelty lies in using TDA as the backbone 
-of a \emph{full defense pipeline} with formal FPR certificates, 
-campaign-level temporal detection, and expert recovery---not as a standalone 
-detector.
+Gebhart and Schrater \cite{gebhart2019adversary} were the first to apply
+persistent homology to adversarial detection, computing topological
+features of neuron activations to distinguish clean from adversarial
+inputs.
+Relative to that line, \prism's novelty lies in using TDA as the backbone
+of a \emph{full defense pipeline} with formal FPR certificates,
+campaign-level temporal detection, and expert recovery---not as a
+standalone detector.
 
 \paragraph{Conformal prediction for robustness.}
-Gendler et al.\ \cite{gendler2022adversarially} (ICLR 2022) combine 
-conformal prediction with randomized smoothing to provide adversarially robust 
-prediction sets.
-Verifiable Robust Conformal Prediction (VRCP) \cite{vrcp2025} uses 
-neural network verification to tighten conformal certificates.
-Our application of conformal prediction is orthogonal: we use it to calibrate 
-a TDA-based \emph{detector} (not a predictor), providing distribution-free FPR 
-guarantees on the anomaly score threshold.
+Gendler et al.\ \cite{gendler2022adversarially} (ICLR 2022) combine
+conformal prediction with randomized smoothing to provide adversarially
+robust prediction sets.
+Our application of conformal prediction is orthogonal: we use it to
+calibrate a TDA-based \emph{detector} (not a predictor), providing
+distribution-free FPR guarantees on the anomaly score threshold via the
+standard split-conformal coverage theorem \cite{vovk2005algorithmic,angelopoulos2023gentle}.
 
 \paragraph{Runtime adversarial detectors.}
 Feature squeezing \cite{xu2018feature} applies input transformations and 
@@ -36,17 +32,19 @@ adaptive attacks that optimize for the same feature space \cite{carlini2017adver
 conformal calibration (providing formal guarantees).
 
 \paragraph{Architecture-coupled defenses.}
-\rails \cite{wang2022rails} replaces deep network layers with 
-topological-nearest neighbor classifiers (DkNN) using topology-preserving 
-feature spaces.
-Unlike \rails, \prism wraps any pre-trained model without modifying its 
-architecture or requiring re-training.
-Input purification methods \cite{shi2021online,yoon2021adversarial} 
+Deep $k$-nearest-neighbor (DkNN) style defenses replace deep network
+layers with topology-aware classifiers in feature space
+\cite{papernot2018deep}; unlike these, \prism wraps any pre-trained
+model without modifying its architecture or requiring re-training.
+Input purification methods \cite{shi2021online,yoon2021adversarial}
 apply preprocessing but require end-to-end access to the classifier.
 
 \paragraph{Temporal adversarial defense.}
-Despite extensive work on temporal adversarial attacks 
-\cite{temporal2026survey}, session-level adversarial campaign \emph{detection} 
-in neural network inference pipelines remains underexplored.
-\sacd is, to our knowledge, the first to apply BOCPD to runtime adversarial 
-campaign monitoring.
+Session-level adversarial campaign \emph{detection} in neural network
+inference pipelines is underexplored relative to per-input detection.
+Classical Bayesian Online Changepoint Detection \cite{adams2007bayesian}
+and CUSUM-style sequential testing have a long history in statistical
+process control but, to our knowledge, have not been applied to runtime
+adversarial campaign monitoring in deep classifiers; \sacd combines
+both into a low-latency campaign detector with a strictly positive
+CUSUM drift floor to bound clean-only false-alarm activation.

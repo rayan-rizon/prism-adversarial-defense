@@ -65,14 +65,17 @@ work.
 
 \end{enumerate}
 
-Empirically, we report CIFAR-10 results from a locked multi-seed
-($5{\times}n{=}1000$) artifact pipeline covering detection (FGSM, PGD,
-Square, CW, AutoAttack, adaptive PGD), four reproduced baselines (LID,
-Mahalanobis, ODIN, Energy), campaign streams, recovery, and a per-channel
-ablation that exposes each feature family's attack-specific failure mode.
-\prism Full outperforms the strongest baseline (Mahalanobis) by $+33.6$~pp
-mean TPR at matched FPR. CIFAR-100 results follow the same protocol and
-are reported in the appendix.
+Empirically, we report locked multi-seed ($5{\times}n{=}1000$) artifact
+results across three settings --- CIFAR-10/ResNet-18, CIFAR-10/WRN-28-10,
+and CIFAR-100/ResNet-18 --- covering detection (FGSM, PGD, Square, CW,
+AutoAttack, adaptive PGD), four reproduced baselines (LID, Mahalanobis,
+ODIN, Energy), campaign streams, recovery, and a per-channel ablation
+that exposes each feature family's attack-specific failure mode. On the
+main CIFAR-10/ResNet-18 setting, \prism Full outperforms the strongest
+baseline (Mahalanobis) by $+33.6$~pp mean TPR at matched FPR;
+WRN-28-10 holds a $+16.5$~pp gap over Mahalanobis and CIFAR-100 retains
+$+42.6$~pp over ODIN (Table~\ref{tab:baselines_multi}). The full
+CIFAR-100 per-component breakdown is in Appendix~\ref{app:cifar100}.
 
 \textbf{Scope and limitations.}
 \prism is a \emph{runtime monitor}, not an adversarial trainer; 

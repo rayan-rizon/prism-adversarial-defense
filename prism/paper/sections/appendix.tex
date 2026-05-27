@@ -112,13 +112,330 @@ $n_\text{cal}$ (calibration size)  & 2000 & 500--3000 & Low ($\pm0.03$ on L3) \\
 $n_\text{sub}$ (TDA subsampling)   & 150  & 50--500   & Medium (TPR $\pm4\%$) \\
 $K$ (expert clusters)              & 4    & 2--8      & Low (Recovery $\pm2\%$) \\
 $\lambda$ (L0 threshold factor)    & 0.8  & 0.6--0.95 & Medium (FPR tradeoff) \\
-$p_\text{alert}$ (BOCPD threshold) & 0.50 & 0.30--0.70 & Low (latency $\pm2$ steps) \\
-$\delta$ (CUSUM drift floor)       & 0.10 & 0.00--0.50 & High at $\delta=0$ \\
-$k_\text{consec}$ (CUSUM consec.)  & 3    & 1--5      & High at $k_\text{consec}=1$ \\
+$p_\text{alert}$ (BOCPD threshold) & 0.60 & 0.30--0.70 & Low (latency $\pm2$ steps) \\
+$t_\text{warmup}$ (warmup steps)   & 20   & 20--50    & Low (selected feasible cells span 20--50) \\
+$\delta$ (CUSUM drift floor)       & 1.0  & 0.00--1.0 & High at $\delta=0$ (59.4\% clean active-fraction) \\
+$C^*$ (CUSUM threshold)            & 5.0  & 5.0--12.0 & Medium (long-stream durability; see \S\ref{app:l0_stress}) \\
+$k_\text{consec}$ (CUSUM consec.)  & 3 (C10) / 5 (C100) & 1--5 & High at $k_\text{consec}=1$ \\
 \bottomrule
 \end{tabular}
 \caption{Hyperparameter sensitivity summary.}
 \label{tab:hyper}
+\end{table}
+
+\paragraph{$k_\text{consec} \times t_\text{warmup}$ grid (deployed CUSUM,
+$C^*{=}5.0$, $\delta{=}1.0$).}
+We sweep $k_\text{consec} \in \{1,2,3,4,5\}$ against
+$t_\text{warmup} \in \{10,20,35,50,75\}$ on a 1{,}000-step Gaussian
+clean stream (mean / max active-fraction over 5 seeds) and on a
+sustained $\rho{=}1.0$ adversarial stream (median / max time-to-detect
+over 5 seeds, in queries since first adversarial step).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{cccccc}
+\toprule
+\multicolumn{2}{c}{Cell} & \multicolumn{2}{c}{Clean active-frac (1000 step)} & \multicolumn{2}{c}{$t$-to-detect (queries)} \\
+$k_\text{consec}$ & $t_\text{warmup}$ & mean & max & median & max \\
+\midrule
+1 & any & 0.225 & 0.563 & 0 & 1 \\
+2 & any & 0.144 & 0.559 & 1 & 2 \\
+\textbf{3 (CIFAR-10 deployed)} & 20 & 0.112 & 0.558 & 2 & 3 \\
+4 & any & 0.111 & 0.557 & 3 & 4 \\
+\textbf{5 (CIFAR-100 deployed)} & 20 & 0.111 & 0.556 & 4 & 5 \\
+\bottomrule
+\end{tabular}
+\caption{$k_\text{consec}$ trades $t$-to-detect against clean
+active-fraction approximately linearly above $k{=}3$. $t_\text{warmup}$
+in the range $10{-}75$ is statistically indistinguishable on these
+streams (the CUSUM crosses fast enough that warmup does not filter
+sustained adversarial signals); we therefore collapse the $t_\text{warmup}$
+column to ``any''. The deployed CIFAR-10 cell ($k{=}3$) is at the
+inflection point: $k{=}2$ trades $\approx 1$~query of latency for
+$+3.3$~pp clean active-fraction, while $k{=}4$ buys $-0.1$~pp clean for
+$+1$~query latency. CIFAR-100's $k{=}5$ trades $2$ extra latency
+queries for negligible clean-fraction gain --- it was selected because
+CIFAR-100's clean score distribution has slightly heavier tails. Note
+that ``clean active-fraction'' counts every step after a single
+spurious trigger because the deployed monitor has no auto-reset; a
+deployment with periodic L0 reset would see this number drop by
+$\approx 100\times$. Source:
+\texttt{experiments/stress/test\_l0\_hparam\_grid.py}.}
+\label{tab:hparam_grid}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{L0 Long-Stream Stress Test}
+\label{app:l0_stress}
+
+The campaign-detection experiments in \S\ref{sec:campaign} report
+$0.000$ clean-only L0 active-fraction on the 500-step calibration
+streams used by \texttt{calibrate\_l0\_thresholds.py}. Because deployed
+monitors run for longer than 500 queries, we additionally stress-test
+the calibrated CUSUM detector on
+$\{500,1000,2000,5000,10000\}$-step clean streams across all 5 seeds.
+The stream is bootstrap-resampled from $n=1{,}000$ \emph{real}
+post-fusion ensemble clean scores generated end-to-end by the deployed
+pipeline (backbone $\to$ TAMM $\to$ ensemble) on the VAL split
+(\texttt{experiments/stress/compute\_real\_clean\_scores.py}). The
+empirical pool has mean $0.173$ and std $2.045$, matching the pkl
+calibration scale (\texttt{score\_center}$=0.281$,
+\texttt{score\_scale}$=1.639$). Each stream is processed by a fresh
+CampaignMonitor loaded from \texttt{models/l0\_thresholds.pkl}
+(\texttt{detection\_mode='cusum'}, $\delta=1.0$, $t_\text{warmup}=20$,
+$k_\text{consec}=3$), sweeping $C^* \in \{5.0, 8.0, 10.0, 12.0\}$
+(the feasible CUSUM-threshold grid cells from the calibration
+\texttt{top\_rows}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{cccccc}
+\toprule
+$C^*$ & 500 & 1000 & 2000 & 5000 & 10000 \\
+\midrule
+\textbf{5.0 (deployed)} & 0.000 & 0.000 & 0.019 & 0.148 & 0.274 \\
+8.0                     & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+10.0                    & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+12.0                    & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+\bottomrule
+\end{tabular}
+\caption{Mean clean-only L0 active-fraction across 5 seeds, computed
+on real post-fusion ensemble clean scores. Once L0 fires, it remains
+active until manually deactivated (the monitor has no auto-reset), so
+a single spurious trigger inflates the active-fraction over the
+remaining stream. The deployed $C^* = 5.0$ holds the
+$0.000$ claim through $1{,}000$ steps but admits its first
+spurious trigger between step $1{,}800$ and step $4{,}500$ (1--2 of 5
+seeds at the lengths shown). The alternative-feasible CUSUM thresholds
+from \texttt{calibrate\_l0\_thresholds.py}'s \texttt{top\_rows}
+($C^* \in \{8.0,10.0,12.0\}$) all hold $0.000$ active-fraction on
+every seed up to $10{,}000$ steps. Source:
+\texttt{experiments/stress/test\_l0\_real\_long\_clean\_stream.py}
+operating on
+\texttt{experiments/stress/real\_clean\_scores\_val\_n1000.npy}
+(deployed-pipeline VAL-split clean scores).}
+\label{tab:l0_stress}
+\end{table}
+
+\paragraph{Take-away.}
+The deployed $C^* = 5.0$ is selected on the calibration objective
+(\textit{argmax ASR-gap subject to clean-only active-fraction
+$\leq 0.01$ on a 500-step calibration stream}); it satisfies the
+calibration constraint at any stream length up to $\approx 1{,}000$
+queries and starts to admit late spurious triggers beyond
+$\approx 2{,}000$ queries on real clean streams. For deployments where
+the monitor runs over thousands of queries without periodic reset, we
+recommend $C^* \in [8.0, 12.0]$, which sits at the same selected
+top-row ASR-gap cell ($7.2$~pp) in the pkl but is strictly more durable
+on long clean streams. Periodic reset (or \texttt{deactivate\_l0()} on
+return to the clean score baseline) is the orthogonal mechanism already
+noted in \S\ref{sec:campaign} and is required for arbitrarily long
+deployments regardless of $C^*$.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Per-Component Latency Breakdown}
+\label{app:latency_breakdown}
+
+The headline latency numbers in Table~\ref{tab:latency} are end-to-end.
+This appendix decomposes a single PRISM forward pass into eight stages,
+measured on $n{=}100$ clean VAL-split images via
+\texttt{experiments/stress/test\_latency\_breakdown.py}. Numbers below
+are from a local GTX~1060~6GB run; the deployed RTX~4090 figures are
+${\sim}1.8\times$ faster (mean $39.78$~ms end-to-end,
+Table~\ref{tab:latency}). The breakdown identifies which channels
+dominate the budget --- relevant for ensemble-pruning ablations and for
+deciding which channels are worth a closed-form differentiable
+surrogate in a future ensemble-complete adaptive attack
+(\S\ref{sec:conclusion}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+Stage & mean (ms) & p50 (ms) & p95 (ms) & \% of total \\
+\midrule
+Backbone forward (logits)           & 4.92  & 4.19  & 7.10  & 6.9\% \\
+TAMM activation extraction           & 5.02  & 4.09  & 9.15  & 7.0\% \\
+TDA persistence diagrams (3 layers)  & 12.30 & 11.78 & 15.22 & 17.3\% \\
+Input gradient norm (autograd back)  & 11.48 & 10.36 & 13.93 & 16.1\% \\
+Logit-profile features               & 0.18  & 0.14  & 0.33  & 0.3\% \\
+StabilityV2 ($M{=}5$ jittered fwd)   & \textbf{21.59} & 20.60 & 29.37 & \textbf{30.3\%} \\
+DCT image prep                       & 0.02  & 0.01  & 0.07  & 0.0\% \\
+Ensemble logistic + Wasserstein fusion & 15.68 & 14.40 & 26.50 & 22.0\% \\
+\midrule
+\textbf{Total}                       & \textbf{71.18} & 66.56 & 93.52 & 100.0\% \\
+\bottomrule
+\end{tabular}
+\caption{Per-stage latency on GTX~1060~6GB ($n{=}100$ clean VAL
+samples). Stability features (the multi-jitter, no-closed-form-surrogate
+channel that the present adaptive attack does \emph{not} target) are
+the largest single contributor (30.3\%), exceeding even the TDA
+diagram computation (17.3\%). This corrects an earlier intuition that
+persistent homology would dominate the budget; at $n_\text{sub}{=}150$
+the TDA stage is competitive with backbone-side work, and the dominant
+cost is the StabilityV2 channel's repeated forward passes. The ensemble
+fusion stage's variance (p95 $26.5$ ms vs. p50 $14.4$ ms) reflects
+occasional gudhi-side allocation overhead. Source:
+\texttt{experiments/stress/results\_latency\_breakdown.json}.}
+\label{tab:latency_breakdown}
+\end{table}
+
+\paragraph{Implications for adaptive-attack design.}
+The $30.3\%$ StabilityV2 budget is also the channel that the canonical
+adaptive attack (\S\ref{sec:adaptive}) does not target, because the
+$M{=}5$ jitter-stability statistic has no closed-form differentiable
+surrogate. A genuine ensemble-complete BPDA must either (i) construct
+a surrogate (e.g., end-to-end backprop through $M$ noise draws with
+straight-through estimator on the argmax) or (ii) accept the
+defender's $30\%$ of the latency budget as an attack-cost asymmetry.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{High-Confidence CW Sensitivity ($\kappa$ Sweep)}
+\label{app:strong_cw}
+
+The canonical CW evaluation in Table~\ref{tab:main} uses
+$\kappa{=}0$. Carlini~\cite{carlini2017adversarial} recommends a
+confidence-margin sweep for robust detector evaluation, so we
+additionally measure TPR at $\kappa \in \{0, 10, 20\}$ on $n{=}100$
+VAL-split inputs using the native PyTorch CW implementation
+(\texttt{src/attacks/cw\_torch.py}, $\text{max\_iter}{=}40$,
+$\text{bss}{=}5$). All three configurations achieve $100\%$
+attack-success against the unwrapped backbone.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{cccccc}
+\toprule
+$\kappa$ & Attack success & mean $L_2$ & TPR @ L1 & TPR @ L2 & TPR @ L3 \\
+\midrule
+0 (canonical)  & 1.000 & 0.150 & 0.860 & 0.730 & 0.290 \\
+10             & 1.000 & 0.179 & 0.690 & 0.410 & 0.130 \\
+20             & 1.000 & 0.181 & 0.690 & 0.430 & 0.150 \\
+\bottomrule
+\end{tabular}
+\caption{CW confidence-margin sensitivity ($n{=}100$, VAL split,
+local GTX~1060 run; clean FPR L1 $=0.090$, L2 $=0.020$, L3 $=0.000$ on
+the same input pool). Higher-confidence CW reduces TPR at L1 by
+$\approx 17$~pp from $\kappa{=}0$ to $\kappa{=}10$, plateauing
+afterwards. The detector still discriminates adversarial from clean
+($0.69$ vs $0.09$ at L1, a $7.7\times$ ratio), but the margin is
+narrower than the canonical-CW headline ($0.94$ at $\kappa{=}0$,
+$5$-seed pool, Table~\ref{tab:main}). The drop is consistent with the
+detector being trained on $\kappa{=}0$ CW signatures and not having
+seen high-confidence variants during ensemble training; per-attack
+training augmentation with $\kappa{>}0$ samples is a natural
+robustness lever for future work. Source:
+\texttt{experiments/stress/test\_stronger\_cw.py}.}
+\label{tab:strong_cw}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Extended L3 Recovery (Multi-Attack)}
+\label{app:recovery_multi}
+
+The main recovery table (Table~\ref{tab:recovery}) reports L3 recovery
+only on PGD adversarials. We additionally measure recovery on FGSM,
+Square, and CW-L2 on $n{=}80$ VAL-split inputs to characterise how the
+TAMSH router generalises across attack families. ART's FGSM
+($\varepsilon{=}8/255$) and SquareAttack ($\text{max\_iter}{=}500$,
+$1$ restart) generate the perturbations; CW uses the same canonical
+$\kappa{=}0$ configuration as Table~\ref{tab:strong_cw}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Attack & L3 trigger rate & Passthrough & Topology router & Force-PGD & Oracle \\
+\midrule
+FGSM   & 0.200 & 0.562 & 0.375 & 0.062 & 0.750 \\
+Square & 0.287 & 0.043 & 0.261 & 0.000 & 0.913 \\
+CW     & 0.338 & 0.000 & \textbf{0.481} & 0.037 & 0.926 \\
+\bottomrule
+\end{tabular}
+\caption{L3-recovery on FGSM/Square/CW adversarials, $n{=}80$, single
+seed (VAL split). ``Topology router'' is the combined
+$H_0{+}H_1$ Wasserstein gate, matching \S\ref{sec:recovery}. Three
+points stand out:
+(i) On \textbf{CW}, the topology router recovers $48.1\%$ of L3-rejected
+adversarials from a $0.000$ passthrough baseline --- a much larger gap
+than the PGD-only $+10.6$~pp main-result.
+(ii) On \textbf{Square}, the topology router still helps ($+21.7$~pp
+over passthrough), confirming the C4 contribution transfers beyond
+white-box gradient attacks.
+(iii) On \textbf{FGSM}, the topology router \emph{hurts}
+($-18.8$~pp): the PGD-trained expert is mis-selected for low-budget
+single-step perturbations, while the unrouted backbone still recovers
+$56.2\%$ of L3 cases. Force-routing to the PGD specialist is
+catastrophic for FGSM ($-50$~pp) and ineffective for Square / CW,
+underscoring that the prior-augmented variant in
+Table~\ref{tab:recovery} is a PGD-specific upper-bound, not a
+deployable cross-attack policy. Oracle (per-input best-of-4) ceilings
+of $0.91$/$0.93$ on Square/CW indicate large remaining headroom for a
+stronger learned router. Source:
+\texttt{experiments/stress/test\_recovery\_multi\_attack.py}.}
+\label{tab:recovery_multi}
+\end{table}
+
+\paragraph{Take-away.}
+TAMSH's C4 contribution is \emph{attack-family-dependent}. CW and
+Square benefit substantially from the topology router; FGSM does not
+and would require either an FGSM-specialist expert in the pool or a
+router that down-weights the PGD specialist for low-budget
+perturbations. Future work on TAMSH should treat per-attack-family
+recovery as the primary metric rather than only PGD.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Per-Attack Score Histograms (Local Reproduction)}
+\label{app:score_hist}
+
+Figure~\ref{fig:score_hist_local} shows clean vs adversarial score
+distributions for FGSM, Square, and CW on a single-seed VAL-split run
+($n{=}80$), with the calibrated L1/L2/L3 thresholds overlaid. All
+three adversarial distributions are clearly separated from the clean
+distribution at L1; the long tail of CW into the L3 region is the
+dominant driver of the high CW recovery gap in
+Table~\ref{tab:recovery_multi}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/fig_score_hist_local_val.pdf}
+  \caption{Per-attack PRISM score distributions on VAL-split
+  (single-seed, $n{=}80$, local reproduction). Clean (blue) vs
+  adversarial (orange/green/red) histograms with vertical dashed
+  lines at L1/L2/L3 conformal thresholds. Clean per-tier coverage is
+  L1 $=0.10$, L2 $=0.02$, L3 $=0.00$, consistent with the calibrated
+  $\alpha$ values. Source:
+  \texttt{experiments/stress/test\_score\_histograms.py}.}
+  \label{fig:score_hist_local}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccccc}
+\toprule
+Set & mean & std & p50 & p95 & TPR @ L1 & TPR @ L2 \\
+\midrule
+clean   & 0.27 & 2.10 & 0.28 & 3.43 & 0.100 & 0.020 \\
+FGSM    & 5.36 & 1.86 & 5.31 & 8.63 & 0.925 & 0.638 \\
+Square  & 5.60 & 2.12 & 5.97 & 8.72 & 0.863 & 0.638 \\
+CW      & 5.92 & 2.34 & 6.03 & 9.12 & 0.925 & 0.700 \\
+\bottomrule
+\end{tabular}
+\caption{Per-set score quantiles on the local single-seed VAL run.
+Adversarial means cluster around $5.4$--$5.9$, well above the L1
+threshold $2.811$ but only partially above the L3 threshold $7.108$.}
+\label{tab:score_hist_local}
 \end{table}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -224,15 +541,144 @@ over passthrough, clearing the $+15$~pp C4 gate).
 
 We report CIFAR-100 results following the same protocol as
 \S\ref{sec:experiments} (5 seeds, $n=1000$ per seed; CIFAR-native ResNet-18
-trained from scratch via \texttt{scripts/pretrain\_cifar\_backbone.py
---dataset cifar100}; conformal calibration on a held-out clean split with
+trained from scratch; conformal calibration on a held-out clean split with
 the same three FPR tiers L1/L2/L3 = $0.10, 0.03, 0.005$).
+Headline detection numbers are in Table~\ref{tab:main_multi}; this
+appendix collects the per-component artifacts.
 
-The CIFAR-100 pipeline is launched by \texttt{run\_vastai\_cifar100.sh} and
-produces the same set of artifacts: detection (FGSM/PGD/Square/CW/AutoAttack),
-adaptive PGD, channel-mask ablation, baselines, campaign streams, and
-recovery (\texttt{tamsh}, \texttt{tamsh\_uniform}, \texttt{tamsh\_force}).
-Results land under \texttt{models/cifar100/} and \texttt{experiments/*}
-with the \texttt{cifar100} tag and feed
-\texttt{scripts/build\_paper\_tables.py} which emits combined CIFAR-10 +
-CIFAR-100 rows into the same five table files used in the main text.
+\paragraph{Adaptive PGD ($\lambda$ sweep).}
+Table~\ref{tab:c100_adaptive} reports adaptive PGD (BPDA,
+activation-matching + DCT-energy matching via
+\texttt{--through-scorer}) with 100 steps and 10 restarts across the
+$\lambda$ sweep used in \S\ref{sec:adaptive}. CIFAR-100 \prism is
+robust to the adaptive attack: TPR holds in $[0.92, 0.95]$ across
+$\lambda \in [0, 10]$, in marked contrast to the CIFAR-10 result
+(Table~\ref{tab:adaptive_pgd}), where the same attack collapses TPR
+from $0.832$ at $\lambda{=}0$ to $0.429$ at $\lambda{=}10$.
+
+\paragraph{Why CIFAR-100 resists the adaptive attack while CIFAR-10
+collapses.}
+The attack's suppression term covers two ensemble channels: per-layer
+activation matching (TAMM target) and DCT high-frequency energy
+matching. It does \emph{not} suppress the StabilityV2, gradient-norm,
+or softmax-entropy channels, which the attack would need separate
+loss terms (and, in StabilityV2's case, a differentiable surrogate of
+the jitter-stability statistic) to attack jointly. On CIFAR-10, the
+channel-mask ablation (Table~\ref{tab:ablation}) shows that TDA and
+DCT together carry the dominant FGSM/PGD discriminative weight, so
+suppressing them removes most of the detector's signal and TPR falls.
+On CIFAR-100, the ablation in Table~\ref{tab:c100_abl} and the
+cross-setting analysis in \S\ref{sec:multi_backbone} identify
+StabilityV2 as the dominant non-PGD channel (No-StabilityV2 collapses
+PGD TPR to $0.423$, Square to $0.279$, CW to $0.205$, and FGSM to
+$0.562$, with FPR dropping to $0.019$). Because the adaptive loss
+does not attack StabilityV2, the channel continues to fire on
+CIFAR-100 adversarials regardless of $\lambda$, and the L3-tier
+trigger rate stays near $88\%$ even at $\lambda{=}10$. The robust
+CIFAR-100 result is therefore not evidence that \prism is
+universally adaptive-secure; it is evidence that the attack covers
+the wrong channels for this dataset. A genuinely ensemble-complete
+adaptive attack --- adding differentiable surrogates for the
+StabilityV2, gradient-norm, and softmax-entropy losses --- is the
+required next step (see \S\ref{sec:conclusion}); the
+$\lambda$-sweep results bound the partial-coverage attacker.
+
+The corresponding WRN-28-10 adaptive-PGD evaluation was not part of
+the locked WRN campaign and is left for future work.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/cifar100_adaptive_pgd.tex}
+\caption{Adaptive PGD on CIFAR-100 (ResNet-18), 5 seeds pooled.}
+\label{tab:c100_adaptive}
+\end{table}
+
+\paragraph{Channel-mask ablation (with FPR disclosure).}
+The CIFAR-100 ablation in Table~\ref{tab:c100_abl} mirrors the
+CIFAR-10 methodology: each row removes one feature family while reusing
+the Full-PRISM threshold. As on CIFAR-10, several configurations
+inflate FPR rather than improve discrimination: No-LogitProfile,
+No-DCT, and especially No-GradNorm (FPR~$0.658$, i.e.\ flags two-thirds
+of clean inputs) appear to ``improve'' TPR only because their
+calibrated threshold has collapsed. We surface this directly via the
+explicit FPR column so the table cannot be misread as an argument for
+dropping any single channel. The legitimate signal is that StabilityV2
+(PGD/Square TPR collapses on its removal), TDA (FGSM TPR collapses
+without it), DCT, and LogitProfile each contribute non-redundant
+discriminative information at the calibrated FPR.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/cifar100_ablation.tex}
+\caption{%
+  CIFAR-100 channel-mask ablation (5 seeds, $n=1000$, per-attack TPR + FPR).
+  Rows whose FPR exceeds the $0.10$ design target indicate threshold
+  collapse, not improved detection; they are reported here for
+  symmetry with Table~\ref{tab:ablation} only.
+}
+\label{tab:c100_abl}
+\end{table}
+
+\paragraph{Campaign detection (CIFAR-100).}
+Table~\ref{tab:c100_camp} reports CIFAR-100 ASR with the L0 monitor
+off vs.\ on across the same six stream scenarios. As in the CIFAR-10
+case, the ASR gap is structurally bounded
+(\S\ref{sec:campaign}): the upstream L1/L3 conformal already crushes
+campaign ASR to $\le 4.3\%$, leaving at most $1.50$~pp of additional
+headroom for L0 across any scenario. The headline metric (time-to-detect)
+is the operationally meaningful one; gap is reported for completeness
+and is consistent with the demotion clause pre-registered in plan P0.4.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/cifar100_campaign.tex}
+\caption{%
+  CIFAR-100 campaign-stream ASR with L0 off vs.\ on (5 seeds, post-fix).
+  Clean-only false alarm rate is $0.000$; ASR-reduction gaps are
+  structurally bounded by L1 conformal action.
+}
+\label{tab:c100_camp}
+\end{table}
+
+\paragraph{L3 recovery (CIFAR-100).}
+Recovery accuracy on CIFAR-100 (Table~\ref{tab:c100_rec}) is reported
+for completeness; all routing strategies sit within $1.4$~pp of
+passthrough and well below the $+15$~pp gate target. The 100-class
+setting collapses both the passthrough baseline (chance accuracy
+$0.01$) and the recovery ceiling: the CIFAR-10 \texttt{tamsh\_force}
+upper-bound ($+26$~pp; Table~\ref{tab:recovery}) does not transfer to
+CIFAR-100, indicating that the PGD-trained expert's specialization no
+longer corresponds to a recoverable label cluster when the class space
+is $10\times$ larger. We accept this miss per the pre-registered
+demotion clause in plan P0.5: TAMSH (C4) is reported as an
+appendix-only secondary result on CIFAR-100.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/cifar100_recovery.tex}
+\caption{%
+  CIFAR-100 L3 recovery on PGD adversarials (5 seeds pooled).
+  All TAMSH strategies sit within $1.4$~pp of passthrough; the
+  $+15$~pp C4 gate is missed and the component is reported as
+  appendix-only.
+}
+\label{tab:c100_rec}
+\end{table}
+
+\paragraph{Latency.}
+Single-sample end-to-end PRISM detection latency
+(Table~\ref{tab:latency}) is well below the 100~ms real-time target
+on both datasets/backbones. Maximum-latency outliers reflect first-batch
+CUDA kernel compilation; steady-state p95 is the deployable figure.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/latency.tex}
+\caption{End-to-end PRISM detection latency (RTX 4090, $n=200$).}
+\label{tab:latency}
+\end{table}

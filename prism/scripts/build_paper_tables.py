@@ -171,6 +171,9 @@ def table_main_attacks(results_dir):
         + glob(os.path.join(eval_dir, 'results_*cw_n*_ms*.json'))
         + glob(os.path.join(eval_dir, 'results_cw_seed*.json'))
         + glob(os.path.join(eval_dir, 'results_*cw_seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_prism_square_*seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_fgsm_pgd_l3fix_*seed*.json'))
+        + glob(os.path.join(eval_dir, 'results_fast_wrn_seed*.json'))
         # post-fix layout: canonical-CW runs go to evaluation_cw/
         + glob(os.path.join(eval_cw_dir, 'results_cw_*seed*.json'))
     ))

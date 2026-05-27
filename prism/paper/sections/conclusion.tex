@@ -11,9 +11,14 @@ canonical CW-L2, and $1.000$ on AutoAttack --- $+33.6$~pp mean TPR over the
 strongest baseline detector (Mahalanobis). On campaign streams \sacd flags
 sustained $\rho{=}1.0$ attacks within $2.6 \pm 0.5$ queries with zero
 false-alarm activation on clean-only streams. On L3-rejected PGD
-adversarials, \tamsh recovers correct predictions with a $+26$~pp gap over
-passthrough using the prior-augmented router; a uniform-router control
-achieves $0$~pp, isolating the routing-signal contribution. All numbers
+adversarials, the deployable \tamsh \emph{learned} router (combined
+$H_0{+}H_1$ Wasserstein gating) recovers correct predictions with
+$+10.6$~pp over passthrough, falling $4.4$~pp short of the
+pre-registered $+15$~pp target; a uniform $1/K$ router control achieves
+$0$~pp, isolating the routing-signal contribution. A prior-augmented
+upper-bound variant that always routes to the PGD specialist reaches
+$+26$~pp and is reported as an analysis ceiling against the per-input
+oracle ($+36.6$~pp), not as a deployable policy. All numbers
 are generated from the locked CIFAR-10 Vast.ai + post-fix local pipelines,
 with attack detection, adaptive attacks, matched-FPR baselines, campaign
 streams, recovery, and ablation tables all derived from result JSONs
@@ -24,34 +29,66 @@ The primary limitation is computational: persistent homology over
 high-dimensional activation tensors requires subsampling 
 (150 points per layer in the current configuration), which may weaken detection for attacks
 that specifically preserve local topology while altering global structure.
-Runtime overhead on CPU is approximately 120\,ms per image (3-layer monitoring);
-GPU deployment reduces this to $\sim15$\,ms.
+Single-sample end-to-end detection latency on an RTX 4090
+(Table~\ref{tab:latency}, $n=200$) is $39.78$\,ms mean / $41.26$\,ms
+p95 on CIFAR-10 and $50.35$\,ms mean / $55.90$\,ms p95 on CIFAR-100,
+both well below the $100$\,ms real-time target; CPU-only deployment is
+significantly slower because persistent-homology computation on
+high-dimensional activation tensors does not vectorise.
 Point-cloud subsampling in \texttt{TopologicalProfiler} uses
 deterministic MD5-based hashing (rather than a stateful RNG) to ensure
 consistent scoring across calibration and inference passes.
-The conformal calibration assumes the clean test distribution matches 
-the calibration distribution---distribution shift (e.g., domain adaptation attacks) 
+The conformal calibration assumes the clean test distribution matches
+the calibration distribution---distribution shift (e.g., domain adaptation attacks)
 may inflate FPR.
+The adaptive-attack evaluation in \S\ref{sec:adaptive} targets
+\emph{two} of \prism's ensemble channels --- per-layer activation
+matching (TAMM) and DCT high-frequency energy --- via the
+\texttt{--through-scorer} run, and is the canonical adaptive result
+in this paper. It does \emph{not} attack StabilityV2, gradient-norm,
+or softmax-entropy: StabilityV2 has no closed-form differentiable
+surrogate (it is a jitter-stability statistic), and gradient-norm /
+softmax-entropy were not added to the BPDA loss in this campaign.
+This partial coverage is the most likely reason CIFAR-100 holds
+$0.925$ TPR at $\lambda{=}10$ while CIFAR-10 collapses to $0.429$:
+CIFAR-100's discriminative weight is concentrated in the StabilityV2
+channel (Table~\ref{tab:c100_abl}), which the present attack does
+not touch. An ensemble-complete adaptive attack (StabilityV2 +
+gradient-norm + softmax-entropy surrogates added to the
+\texttt{--through-scorer} loss) is the highest-priority open
+evaluation; we do not claim robustness against such an attacker, and
+the $\lambda$-sweep results bound only what the two-channel attacker
+can achieve.
 
 \paragraph{Future work.}
-Promising directions include: 
-(1) extending to transformer architectures by monitoring 
-attention-head activation patterns; 
-(2) adaptive $\varepsilon$-free attacks that directly target 
-the topological score $S(x)$ as a secondary objective; 
-(3) certified robustness integration by combining \prism with 
-randomized smoothing \cite{cohen2019certified} for dual guarantees;
-(4) adaptive topology attacks that directly target the Wasserstein score $S(x)$
-as a secondary optimization objective;
-(5) online recalibration to handle distribution shift.
+Highest-priority directions, in order:
+(1) an ensemble-complete adaptive attack that augments the
+\texttt{--through-scorer} loss with differentiable surrogates for the
+StabilityV2 (jitter-stability), gradient-norm, and softmax-entropy
+channels, closing the two-channel gap identified above;
+(2) extending the monitor to transformer architectures via attention-head
+and MLP-block activation patterns;
+(3) certified robustness integration by combining \prism with randomized
+smoothing \cite{cohen2019certified} for joint detection-plus-certified
+prediction guarantees;
+(4) online recalibration of the conformal thresholds to handle clean-side
+distribution shift;
+(5) a stronger learned router for \tamsh (closing the
+$+10.6 \to +26$~pp gap toward the prior-augmented upper bound and
+the $+36.6$~pp oracle ceiling) via gating networks trained directly on
+the L3-rejected pool rather than via Wasserstein medoid distance alone.
 
-\paragraph{CIFAR-100 generalization.}
-The same protocol applies to CIFAR-100: a CIFAR-100-native ResNet-18
-backbone (trained from scratch), its own reference profiles, ensemble,
-calibrators, and experts, with tagged result files under
-\texttt{experiments/*\_cifar100/}. CIFAR-100 numbers are reported in
-Appendix~\ref{app:cifar100} once the locked Vast.ai pipeline
-(\texttt{run\_vastai\_cifar100.sh}) completes.
+\paragraph{Cross-architecture and cross-dataset generalisation.}
+Section~\ref{sec:multi_backbone} reports the same protocol on
+CIFAR-10/WRN-28-10 (mean pool TPR $0.975$, FPR $0.073$) and
+CIFAR-100/ResNet-18 (mean pool TPR $0.830$, FPR $0.077$), both run
+on the same 5 seeds and same calibration scheme.
+The full per-component CIFAR-100 breakdown (adaptive PGD,
+channel-mask ablation with FPR disclosure, campaign, recovery, latency)
+is in Appendix~\ref{app:cifar100}. The TAMSH C4 recovery contribution
+does not transfer to the 100-class setting (within $1.4$~pp of
+passthrough) and is reported as appendix-only on CIFAR-100 per the
+pre-registered demotion clause.
 
 \paragraph{Broader impact.}
 \prism is a defensive tool designed to improve the reliability 

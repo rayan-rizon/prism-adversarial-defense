@@ -14,24 +14,30 @@ monitor that flags sustained attack campaigns at a mean latency of
 false-alarm activation on clean-only streams; and
 (4)~\tamsh (Topology-Aware MoE Self-Healing), which recovers correct
 predictions on L3-rejected adversarials through attack-specialist expert
-sub-networks. The learned router (combined $H_0{+}H_1$ Wasserstein gating)
-delivers a \textbf{+10.6pp} recovery gap over passthrough under PGD,
-controlled against a uniform $1/K$ router that gives $0$~pp, isolating the
-contribution to the routing signal rather than expert capacity; a
-prior-augmented variant that always routes to the PGD specialist reaches
-\textbf{+26.0pp} and is reported as an upper-bound analysis against a
-per-input oracle ceiling of $+36.6$~pp.
+sub-networks. The \emph{learned} router (combined $H_0{+}H_1$ Wasserstein
+gating) is the deployable contribution and delivers \textbf{+10.6pp}
+recovery gap over passthrough under PGD --- a positive but partial
+result against a pre-registered $+15$~pp target --- and is isolated from
+expert capacity by a uniform $1/K$ control (paired gap $0$~pp). A
+prior-augmented variant that always routes to the PGD specialist
+(\textbf{+26.0pp}) is reported as an \emph{upper-bound analysis} against
+a per-input oracle ceiling of $+36.6$~pp, not as a deployable policy.
 
-We evaluate \prism on CIFAR-10 with a CIFAR-native ResNet-18 backbone under
-FGSM, PGD, CW-L2, Square, AutoAttack, and adaptive PGD, reporting per-attack
-TPR/FPR (5 seeds, $n{=}1000$/seed), per-channel ablation, matched-FPR
-baseline comparison against LID, Mahalanobis, ODIN, and Energy, campaign
-detection, and L3 recovery. \prism Full achieves $0.918$ mean TPR on
-FGSM/PGD/Square (matched empirical FPR $0.074$), $0.938$ on CW-L2
-($0.075$), and $1.000$ on AutoAttack ($0.075$), beating the strongest
-reproduced baseline (Mahalanobis $0.582$ mean TPR at FPR $0.077$) by
-$+33.6$~pp on the FGSM/PGD/Square pool. CIFAR-100 results follow the same protocol and are
-reported in the appendix once the locked Vast.ai pipeline completes.
+We evaluate \prism on three settings using the same protocol (5 seeds,
+$n{=}1000$/seed): (i) CIFAR-10 with a CIFAR-native ResNet-18 backbone,
+(ii) CIFAR-10 with a WRN-28-10 backbone, and (iii) CIFAR-100 with a
+ResNet-18 backbone, under FGSM, PGD, CW-L2, Square, AutoAttack, and
+adaptive PGD, with per-channel ablation, matched-FPR baseline comparison
+against LID, Mahalanobis, ODIN, and Energy, campaign detection, and L3
+recovery. On the main CIFAR-10/ResNet-18 setting, \prism Full achieves
+$0.918$ mean TPR on FGSM/PGD/Square (matched empirical FPR $0.074$),
+$0.938$ on CW-L2 ($0.075$), and $1.000$ on AutoAttack ($0.075$), beating
+the strongest reproduced baseline (Mahalanobis $0.582$ mean TPR at FPR
+$0.077$) by $+33.6$~pp on the FGSM/PGD/Square pool. The WRN-28-10
+backbone lifts the same pool to $0.975$ at FPR $0.073$; CIFAR-100 holds
+$0.830$ at FPR $0.077$. Per-setting tables and the full CIFAR-100
+appendix are reported in \S\ref{sec:multi_backbone} and
+Appendix~\ref{app:cifar100}.
 Unlike detector-coupled defenses, \prism operates on any pre-trained
 classifier without retraining or architecture modification, and uniquely
 provides distribution-free false-positive rate certificates absent in all

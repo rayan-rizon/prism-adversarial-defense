@@ -200,11 +200,16 @@
   publisher = {Elsevier}
 }
 
-@inproceedings{goibert2021adversarial,
-  title     = {Adversarial robustness via adversarial label-smoothing},
-  author    = {Goibert, Maxime and Dohmatob, Elvis},
-  booktitle = {arXiv preprint arXiv:2009.09192},
-  year      = {2021}
+% Removed goibert2021adversarial: bib entry was a label-smoothing paper
+% but had been cited as a graph-topology reference, which it is not.
+% The related-work paragraph no longer relies on this citation.
+
+@inproceedings{papernot2018deep,
+  title     = {Deep $k$-nearest neighbors: Towards confident, interpretable
+               and robust deep learning},
+  author    = {Papernot, Nicolas and McDaniel, Patrick},
+  booktitle = {arXiv preprint arXiv:1803.04765},
+  year      = {2018}
 }
 
 @inproceedings{gendler2022adversarially,
@@ -214,34 +219,11 @@
   year      = {2022}
 }
 
-@article{wang2022rails,
-  title     = {{RAILS}: Runtime adversarial intelligence for latent signals},
-  author    = {Wang, Jiahao and Chen, Minghao and Gu, Xiaofeng},
-  journal   = {arXiv preprint arXiv:2203.01234},
-  year      = {2022}
-}
-
-@article{lanl2024tda,
-  title     = {Topological data analysis for adversarial detection in deep 
-               neural networks},
-  author    = {Henriksen, Alexis and Kalis, Robert},
-  journal   = {arXiv preprint arXiv:2106.07198},
-  year      = {2024}
-}
-
-@inproceedings{vrcp2025,
-  title     = {Verifiable runtime conformal prediction},
-  author    = {Zhao, Shen and Chen, Alice and Park, James},
-  booktitle = {International Conference on Machine Learning (ICML)},
-  year      = {2025}
-}
-
-@article{temporal2026survey,
-  title     = {Survey on temporal adversarial defense mechanisms},
-  author    = {Kim, Jungwoo and Patel, Rahul and Lopez, Sofia},
-  journal   = {IEEE Transactions on Neural Networks and Learning Systems},
-  year      = {2026}
-}
+% Removed wang2022rails, lanl2024tda, vrcp2025, temporal2026survey:
+% these entries could not be verified against the public literature
+% (author/title/venue/arXiv-ID combinations did not resolve). The
+% related-work narrative has been rewritten to avoid them and cite
+% only verifiable, peer-reviewed sources.
 
 @techreport{krizhevsky2009learning,
   title       = {Learning Multiple Layers of Features from Tiny Images},
@@ -276,4 +258,11 @@
   author    = {Yoon, Jongmin and Hwang, Sung Ju and Lee, Juho},
   booktitle = {International Conference on Machine Learning (ICML)},
   year      = {2021}
+}
+
+@inproceedings{zagoruyko2016wide,
+  title     = {Wide Residual Networks},
+  author    = {Zagoruyko, Sergey and Komodakis, Nikos},
+  booktitle = {British Machine Vision Conference (BMVC)},
+  year      = {2016}
 }

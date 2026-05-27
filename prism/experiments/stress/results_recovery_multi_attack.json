@@ -1,0 +1,44 @@
+{
+  "n": 80,
+  "seed": 42,
+  "split": "VAL",
+  "L3_threshold": 7.108301639556885,
+  "attacks": {
+    "FGSM": {
+      "L3_trigger_rate": 0.2,
+      "n_L3": 16,
+      "passthrough": 0.5625,
+      "uniform": 0.5,
+      "topology": 0.375,
+      "force_pgd": 0.0625,
+      "oracle": 0.75,
+      "gap_topo_vs_pass_pp": -18.75,
+      "gap_force_vs_pass_pp": -50.0,
+      "gap_oracle_vs_pass_pp": 18.75
+    },
+    "Square": {
+      "L3_trigger_rate": 0.2875,
+      "n_L3": 23,
+      "passthrough": 0.043478260869565216,
+      "uniform": 0.391304347826087,
+      "topology": 0.2608695652173913,
+      "force_pgd": 0.0,
+      "oracle": 0.9130434782608695,
+      "gap_topo_vs_pass_pp": 21.73913043478261,
+      "gap_force_vs_pass_pp": -4.3478260869565215,
+      "gap_oracle_vs_pass_pp": 86.95652173913044
+    },
+    "CW": {
+      "L3_trigger_rate": 0.3375,
+      "n_L3": 27,
+      "passthrough": 0.0,
+      "uniform": 0.48148148148148145,
+      "topology": 0.48148148148148145,
+      "force_pgd": 0.037037037037037035,
+      "oracle": 0.9259259259259259,
+      "gap_topo_vs_pass_pp": 48.148148148148145,
+      "gap_force_vs_pass_pp": 3.7037037037037033,
+      "gap_oracle_vs_pass_pp": 92.5925925925926
+    }
+  }
+}

@@ -4,20 +4,24 @@
 We evaluate \prism on CIFAR-10 against white-box, black-box,
 optimization-based, and adaptive attacks, followed by per-channel ablation,
 matched-FPR baseline comparison, campaign-detection latency, and L3
-recovery. The same protocol applied to CIFAR-100 produces a parallel set
-of tables; per-attack CIFAR-100 numbers are reported in
-Appendix~\ref{app:cifar100} once the locked Vast.ai pipeline
-(\texttt{run\_vastai\_cifar100.sh}) completes.
+recovery. To assess cross-architecture and cross-dataset generalization,
+we additionally report the same detection and baseline protocol on
+CIFAR-10/WRN-28-10 and CIFAR-100/ResNet-18
+(\S\ref{sec:multi_backbone}, Table~\ref{tab:main_multi}); a full per-table
+CIFAR-100 set (adaptive PGD, ablation, recovery, campaign, latency) is
+deferred to Appendix~\ref{app:cifar100}.
 
 % ── Setup ──────────────────────────────────────────────────────────────────
 \subsection{Experimental Setup}
 \label{sec:setup}
 
 \paragraph{Base classifier.}
-We use a CIFAR-native ResNet-18 \cite{he2016deep} trained from scratch on
-the active dataset.
-\prism monitors activations at $L=3$ residual block outputs
-(\texttt{layer2}, \texttt{layer3}, \texttt{layer4}) weighted 0.30, 0.30, 0.40.
+The main CIFAR-10 results use a CIFAR-native ResNet-18 \cite{he2016deep}
+trained from scratch. For cross-architecture validation we additionally
+train a WRN-28-10 \cite{zagoruyko2016wide} on CIFAR-10; for cross-dataset
+validation we use ResNet-18 on CIFAR-100. \prism monitors activations at
+$L=3$ residual block outputs (\texttt{layer2}, \texttt{layer3},
+\texttt{layer4}) weighted 0.30, 0.30, 0.40 in all settings.
 All inputs remain native $3\times 32\times 32$ images with dataset-specific
 CIFAR normalization; no ImageNet pretraining or 224x224 upsampling is used.
 
@@ -34,7 +38,7 @@ We evaluate four attack classes:
 \begin{itemize}[leftmargin=*,noitemsep]
   \item \textbf{FGSM} \cite{goodfellow2015explaining}: single-step gradient attack, $\varepsilon=8/255$ ($\ell_\infty$).
   \item \textbf{PGD-40} \cite{madry2017towards}: 40-step projected gradient descent, $\varepsilon=8/255$, step size $\alpha=\varepsilon/4$ ($\ell_\infty$).
-  \item \textbf{CW-L2} \cite{carlini2017adversarial}: optimization-based attack, 40 iterations and 5 binary-search steps in the Vast.ai gate run.
+  \item \textbf{CW-L2} \cite{carlini2017adversarial}: optimization-based attack, canonical configuration \texttt{max\_iter}=100, \texttt{binary\_search\_steps}=9 (matches Table~\ref{tab:main} \texttt{results\_cw\_n1000\_ms5\_seed*}). A weakened-CW run (\texttt{max\_iter}=5, \texttt{binary\_search\_steps}=5) is reported in Appendix~\ref{app:weak_cw} for detector-fidelity analysis only.
   \item \textbf{Square Attack} \cite{andriushchenko2020square}: black-box score-based attack, 5000 queries, $\varepsilon=8/255$ ($\ell_\infty$).
   \item \textbf{AutoAttack} \cite{croce2020reliable}: standard ensemble evaluation.
   \item \textbf{Adaptive PGD}: BPDA-style activation-matching attack with $\lambda$ sweep, 100 steps, 10 restarts, and EOT verification metadata.
@@ -70,21 +74,158 @@ Attack-specific conclusions are drawn from the generated table and the
 gate summary emitted by \texttt{run\_vastai\_full.sh} and
 \texttt{run\_vastai\_cifar100.sh}; no hand-entered historical values are used.
 
+% ── Multi-backbone / multi-dataset ───────────────────────────────────────
+\subsection{Multi-Backbone and Multi-Dataset Validation}
+\label{sec:multi_backbone}
+
+To test whether \prism's detection generalizes beyond the main CIFAR-10
+ResNet-18 setting, we re-ran the full detection and baseline protocol on
+(i) CIFAR-10 with a WRN-28-10 backbone and (ii) CIFAR-100 with a
+ResNet-18 backbone, using the same calibration scheme
+($\alpha \in \{0.10, 0.03, 0.005\}$) and the same five seeds
+($n=1000$ adversarials per attack per seed).
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/main_attacks_multi.tex}
+\caption{%
+  Cross-architecture and cross-dataset detection.
+  All three settings clear the L1 design FPR ($\le 0.10$);
+  per-tier FPR (L2/L3) values are reported in
+  Appendix~\ref{app:cifar100} and the per-seed JSONs.
+  WRN-28-10 lifts CIFAR-10 TPR by $+5$--$10$~pp over ResNet-18 across
+  FGSM/Square; CIFAR-100 is harder for score-based and
+  optimisation-based attacks (Square $0.672$, CW $0.687$) while
+  white-box PGD-40 and AutoAttack remain at $\ge 0.98$.
+  The $n_{\text{adv}}$ column reports the pooled adversarial count
+  across all 5 seeds and (where applicable) attack-config repeats.
+  CIFAR-10/ResNet-18 and CIFAR-100/ResNet-18 use one config per seed
+  ($5\times 1000 = 5000$). For WRN-28-10, FGSM/PGD pool the
+  \texttt{fgsm\_pgd\_l3fix\_wrn} and \texttt{paper\_wrn} runs
+  ($5+2$ seed-repeats $= 7000$), Square pools
+  \texttt{prism\_square\_wrn} and \texttt{paper\_wrn}
+  ($4+2 = 6000$), and AutoAttack pools the \texttt{fast\_wrn} run
+  plus the \texttt{paper\_wrn} 5-seed sweep ($5+5 = 10000$); CW
+  uses the canonical 5-seed run ($5000$).
+}
+\label{tab:main_multi}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/baselines_multi.tex}
+\caption{%
+  Matched-FPR baseline comparison across all three settings (5 seeds,
+  $n=1000$). \prism is the only detector that holds $\ge 0.8$ mean TPR
+  on all three settings while keeping FPR below the design target;
+  every baseline collapses on at least one attack in every setting
+  (ODIN/Energy on PGD; LID on Square; Mahalanobis on FGSM/Square on
+  CIFAR-100). \textbf{FPR-target disclosure}: in the WRN-28-10 setting,
+  Mahalanobis ($0.122$) and LID ($0.105$) exceed the $\alpha{=}0.10$
+  design FPR; in the CIFAR-100 setting, ODIN ($0.116$) exceeds it.
+  Re-calibrating these detectors at a tighter conformal $\alpha{=}0.073$
+  (matched to \prism's empirical FPR) would lower their reported TPR
+  further; the present table reports the published-protocol values
+  unfiltered for transparency.
+}
+\label{tab:baselines_multi}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_baselines_cifar10.pdf}
+    \caption{CIFAR-10 (WRN-28-10).}
+    \label{fig:bars_c10}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_baselines_cifar100.pdf}
+    \caption{CIFAR-100 (ResNet-18).}
+    \label{fig:bars_c100}
+  \end{subfigure}
+  \caption{Per-attack TPR at matched FPR ($\le 0.10$). \prism (blue) is
+  the only detector that holds $\ge 0.85$ on at least three of four
+  attacks per dataset; ODIN/Energy collapse to $0$ on PGD; LID and
+  Mahalanobis collapse on Square or FGSM. AutoAttack column has only
+  \prism because baselines were not run on AutoAttack.}
+  \label{fig:baselines_panel}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_tiers_cifar10.pdf}
+    \caption{CIFAR-10 (WRN-28-10).}
+    \label{fig:tiers_c10}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_tiers_cifar100.pdf}
+    \caption{CIFAR-100 (ResNet-18).}
+    \label{fig:tiers_c100}
+  \end{subfigure}
+  \caption{\prism three-tier operating points (L1, L2, L3) per attack.
+  AutoAttack and PGD-40 saturate near $\mathrm{TPR}{=}1$ even at the
+  tight L3 FPR (${\le}0.005$); Square trades TPR for tighter FPR most
+  steeply, consistent with its score-based attack signature being the
+  weakest of the four in the ensemble feature space.}
+  \label{fig:tiers_panel}
+\end{figure}
+
+\paragraph{Cross-setting take-aways.}
+(i)~\prism transfers to a deeper architecture (WRN-28-10) without
+re-tuning: the WRN run lifts every CIFAR-10 attack TPR while holding
+FPR at $0.073$, indicating that the discriminative signal is in the
+ensemble channels, not in a ResNet-18-specific calibration.
+(ii)~Cross-dataset to CIFAR-100 (10$\times$ more classes), white-box
+gradient attacks remain trivially detectable (PGD-40 $0.984$,
+AutoAttack $0.999$), but score-based Square ($0.672$) and the
+optimisation-based CW-L2 ($0.687$) drop below the $0.85$ design target.
+Per-channel ablation (Appendix~\ref{app:cifar100}, Table~\ref{tab:c100_abl})
+shows the gap is concentrated in the StabilityV2 channel, suggesting
+per-dataset retuning of stability features as a natural next step.
+(iii)~Even where \prism underperforms its $0.85$ target on CIFAR-100,
+it still beats the strongest baseline on every CIFAR-100 attack
+(Square: $+22.7$~pp vs ODIN; FGSM: $+6.8$~pp vs ODIN).
+Figure~\ref{fig:baselines_panel} visualises both points; the steeper
+L3 trade-off on CIFAR-100 in Figure~\ref{fig:tiers_panel} (subfigure
+\ref{fig:tiers_c100}) reflects the larger 100-class label space.
+
 % ── Adaptive attacks ──────────────────────────────────────────────────────
 \subsection{Adaptive Attack Evaluation}
 \label{sec:adaptive}
 
-Following Carlini et al.~\cite{carlini2019evaluating}, we evaluate \prism
-against a white-box adaptive attacker who has access to the Wasserstein
-scoring channel and crafts perturbations that explicitly suppress its
-signal. The attack is a BPDA-style PGD that augments the classification
-loss with a weighted activation-matching term
-$\mathcal{L} = \mathcal{L}_\text{CE}(x', y) - \lambda \cdot
-\|\phi_\ell(x') - \mu_\ell\|_2$, where $\mu_\ell$ is the clean-profile
-medoid activation at the monitored layer $\ell$ and $\lambda$ controls
-the trade-off between misclassification and \prism-evasion. We sweep
-$\lambda \in \{0, 0.5, 1, 2, 5, 10\}$ at 100 PGD steps with 10 random
-restarts and verify success via EOT-style stochastic re-evaluation.
+Following Carlini et al.~\cite{carlini2019evaluating}, we evaluate
+\prism against a white-box adaptive attacker that crafts perturbations
+explicitly suppressing the detector's signals. The canonical adaptive
+attack used to generate Table~\ref{tab:adaptive_pgd} is the BPDA-style
+PGD launched with \texttt{run\_adaptive\_pgd.py --through-scorer},
+whose loss is
+\[
+  \mathcal{L} = -\mathcal{L}_\text{CE}(x', y_\text{pred})
+    \;+\; \lambda \sum_{\ell} \tfrac{1}{D_\ell}\|a_\ell(x') - a_\ell(x)\|_2
+    \;+\; 0.5 \cdot |\mathrm{HF}_\text{DCT}(x') - \mathrm{HF}_\text{DCT}(x)|,
+\]
+where $a_\ell(x)$ is the per-sample clean activation at monitored layer
+$\ell$ and $\mathrm{HF}_\text{DCT}$ is the differentiable
+high-frequency DCT-energy proxy. The activation-matching term targets
+\tamm and the DCT-energy term targets the ensemble scorer's
+high-frequency channel, so \emph{two} of \prism's channels are attacked
+jointly. The remaining ensemble channels --- StabilityV2 (a jitter-stability
+statistic with no closed-form differentiable surrogate), gradient-norm,
+and softmax-entropy --- are not part of the loss, and we explicitly
+return to this partial coverage in \S\ref{sec:conclusion} and
+Appendix~\ref{app:cifar100}. We sweep
+$\lambda \in \{0, 0.5, 1, 2, 5, 10\}$ at $100$ PGD steps with $10$ random
+restarts; runs use the deterministic \prism forward pass, so EOT
+averaging is verified as a no-op via $20$ resampling passes
+(\texttt{eot\_verify\_samples}=20 recorded in the per-seed JSON
+metadata).
 
 \begin{table}[h]
 \centering
@@ -99,19 +240,26 @@ restarts and verify success via EOT-style stochastic re-evaluation.
 \label{tab:adaptive_pgd}
 \end{table}
 
-\paragraph{Honest framing.} As $\lambda$ grows, an attacker who is willing
-to spend perturbation budget on activation-matching can substantially
-reduce \prism's detection rate (TPR drops from $0.832$ at $\lambda{=}0$
-to $0.429$ at $\lambda{=}10$); FPR is unaffected because the conformal
-threshold is fixed on clean calibration scores and does not depend on the
-adversary's loss. The reported attack targets the Wasserstein channel
-specifically; a fully end-to-end adaptive attack that also penalises the
-DCT-energy, gradient-norm, and softmax-entropy ensemble channels is
-implemented in \texttt{run\_adaptive\_pgd.py} via the
-\texttt{--through-scorer} flag and is left for future evaluation. We do
-not claim adaptive-attack robustness; instead, we report degradation
-curves so deployments can choose operating points and so future work can
-benchmark against a documented baseline.
+\paragraph{Honest framing.} As $\lambda$ grows, an attacker who is
+willing to spend perturbation budget on suppressing the TAMM
+activation-matching and DCT-energy channels can substantially reduce
+\prism's CIFAR-10 detection rate (TPR drops from $0.832$ at
+$\lambda{=}0$ to $0.429$ at $\lambda{=}10$); FPR is unaffected because
+the conformal threshold is fixed on clean calibration scores and does
+not depend on the adversary's loss. On CIFAR-100 the same attack only
+moves TPR from $0.950$ to $0.925$; we attribute this to the
+StabilityV2 channel, which the present attack does not target and
+which the ablation (Table~\ref{tab:c100_abl}) identifies as
+CIFAR-100's dominant discriminative channel
+(Appendix~\ref{app:cifar100}). A genuinely ensemble-complete adaptive
+attack --- adding differentiable surrogates for the StabilityV2,
+gradient-norm, and softmax-entropy losses --- is the most important
+open evaluation gap (\S\ref{sec:conclusion}); the present sweep bounds
+the achievable damage of the two-channel attacker. We do not claim
+adaptive-attack robustness against an ensemble-complete attacker;
+instead, we report degradation curves so deployments can choose
+operating points and so future work can benchmark against a documented
+baseline.
 
 % ── Ablation ──────────────────────────────────────────────────────────────
 \subsection{Ablation Study}
@@ -195,11 +343,37 @@ calibration alphas, or the active dataset change.
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.75\linewidth]{figures/fig2_score_dist.pdf}
-  \caption{Score distributions for clean and adversarial inputs.
+  \caption{Score distributions for clean and adversarial inputs
+           (CIFAR-10, ResNet-18, single-attack reference).
            Dashed lines: conformal thresholds L1, L2, L3.
            Clean and PGD-40 distributions are clearly separated;
            FGSM at low $\varepsilon$ overlaps the clean tail.}
   \label{fig:score_dist}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_score_dist_cifar10.pdf}
+    \caption{CIFAR-10 (WRN-28-10).}
+    \label{fig:sd_c10}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_score_dist_cifar100.pdf}
+    \caption{CIFAR-100 (ResNet-18).}
+    \label{fig:sd_c100}
+  \end{subfigure}
+  \caption{Per-attack score envelopes (p5--p95 whiskers, IQR boxes,
+  medians) for clean (blue) vs adversarial (red) inputs across all
+  four attacks per dataset. AutoAttack pushes scores furthest from
+  the clean median (CIFAR-10 median $\approx 15$); Square has the
+  tightest separation, matching the lower Square TPR in
+  Table~\ref{tab:main_multi}. CIFAR-100 (right) shows the same
+  ordering with a slightly larger clean spread, reflecting the
+  100-class softmax temperature.}
+  \label{fig:score_dist_panel}
 \end{figure}
 
 % ── Campaign detection ───────────────────────────────────────────────────
@@ -245,12 +419,23 @@ learns of an attack within 3 queries can deploy mitigations
 has issued more than a handful of queries against the deployed system.
 
 \paragraph{Clean-only false alarm rate.}
-After the F1 CUSUM drift-floor fix, L0 activation fraction on clean-only
-streams is $0.000$ on all 5 seeds (pre-fix: up to $0.594$ on 2 of 5 seeds,
-a defect that would not have survived peer review pre-fix). For 50-query
-clean windows (warmup$=35$, 15 at-risk steps), empirical false alarm
-probability is $< 5\%$; longer-window deployments should periodically reset
-L0 or auto-deactivate on return to the clean score baseline.
+After the F1 CUSUM drift-floor fix, L0 activation fraction on the
+500-step calibration clean streams is $0.000$ on all 5 seeds (pre-fix:
+up to $0.594$ on 2 of 5 seeds, a defect that would not have survived
+peer review pre-fix). For 50-query clean windows (warmup$=20$, 30
+at-risk steps), empirical false alarm probability is $< 5\%$.
+A stress test on longer clean streams (bootstrap-resampled from
+$n{=}1{,}000$ real post-fusion ensemble scores generated end-to-end on
+the VAL split) confirms that the deployed $C^*=5.0$ holds the
+$0.000$ active-fraction through $1{,}000$ steps and starts admitting
+its first spurious trigger between step $\approx 1{,}800$ and step
+$\approx 4{,}500$ on real long streams
+(Appendix~\ref{app:l0_stress}, Table~\ref{tab:l0_stress}). The
+alternative feasible cells $C^* \in \{8.0, 10.0, 12.0\}$ from the
+calibration grid hold $0.000$ across all stream lengths up to
+$10{,}000$ steps. Longer-window deployments should either pick one of
+these conservative cells or periodically reset L0 / auto-deactivate on
+return to the clean score baseline.
 
 \paragraph{Two distinct false-alarm rates.}
 The \emph{FPR (clean steps)} column in Table~\ref{tab:campaign}

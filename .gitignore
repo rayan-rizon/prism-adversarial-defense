@@ -32,6 +32,7 @@ ENV/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
 # Logs
 logs/
@@ -45,12 +46,45 @@ datasets/
 models/
 checkpoints/
 
-# Experiment results
-experiments/
+# Experiment results: ignore most subdirs (heavy result JSONs / .npy / .pkl).
+# Patterns use `**/` to match at any depth (the experiments/ tree lives
+# under prism/experiments/ in this repo). The `!**/experiments/stress/`
+# whitelist re-includes the small stress-test subdir that the paper
+# appendix references for reproducibility.
+**/experiments/ablation/
+**/experiments/calibration/
+**/experiments/campaign/
+**/experiments/evaluation/
+**/experiments/recovery_uniform/
+**/experiments/wrn/
+**/experiments/feasibility/
+**/experiments/federation/
+**/experiments/generalization/
 results/
 
-# System files
+# Whitelist new local stress-test scripts + their small JSON outputs.
+!**/experiments/stress/
+!**/experiments/stress/**
+
+# Even with the whitelist, do not commit large binaries that may land here.
+**/experiments/stress/*.pt
+**/experiments/stress/*.pth
+**/experiments/stress/*.pkl
+
+# Top-level reference / artifact dirs (mirrored Vast.ai downloads, kept local
+# only — paper tables \input{} the JSONs but the bulk shouldn't go in git).
+# Paths with spaces use backslash-escape per gitignore spec.
+/Cifar\ 10/
+/Cifar\ 100/
+/WRN/
+/vastai_full_download_*/
+/thunder_handoff_*/
+
+# Mac metadata garbage from zip extracts
+__MACOSX/
 .DS_Store
+
+# System files
 Thumbs.db
 
 # Local configuration
@@ -62,3 +96,15 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# LaTeX build intermediates (PDFs are committed; intermediates regenerate)
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.toc

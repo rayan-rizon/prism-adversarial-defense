@@ -1,0 +1,76 @@
+{
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce GTX 1060 6GB",
+  "n_samples": 100,
+  "seed": 42,
+  "split": "VAL",
+  "eval_idx_range": [
+    7000,
+    8000
+  ],
+  "stages": [
+    {
+      "stage": "backbone_fwd",
+      "mean_ms": 4.919,
+      "p50_ms": 4.194,
+      "p95_ms": 7.1,
+      "pct_of_total": 6.9
+    },
+    {
+      "stage": "tamm_extract",
+      "mean_ms": 5.015,
+      "p50_ms": 4.087,
+      "p95_ms": 9.148,
+      "pct_of_total": 7.0
+    },
+    {
+      "stage": "tda_diagrams",
+      "mean_ms": 12.3,
+      "p50_ms": 11.782,
+      "p95_ms": 15.22,
+      "pct_of_total": 17.3
+    },
+    {
+      "stage": "grad_norm",
+      "mean_ms": 11.479,
+      "p50_ms": 10.363,
+      "p95_ms": 13.933,
+      "pct_of_total": 16.1
+    },
+    {
+      "stage": "logit_profile",
+      "mean_ms": 0.179,
+      "p50_ms": 0.145,
+      "p95_ms": 0.328,
+      "pct_of_total": 0.3
+    },
+    {
+      "stage": "stability",
+      "mean_ms": 21.587,
+      "p50_ms": 20.603,
+      "p95_ms": 29.375,
+      "pct_of_total": 30.3
+    },
+    {
+      "stage": "dct_prep",
+      "mean_ms": 0.022,
+      "p50_ms": 0.014,
+      "p95_ms": 0.066,
+      "pct_of_total": 0.0
+    },
+    {
+      "stage": "ensemble_fusion",
+      "mean_ms": 15.683,
+      "p50_ms": 14.403,
+      "p95_ms": 26.501,
+      "pct_of_total": 22.0
+    },
+    {
+      "stage": "total",
+      "mean_ms": 71.185,
+      "p50_ms": 66.562,
+      "p95_ms": 93.517,
+      "pct_of_total": 100.0
+    }
+  ]
+}

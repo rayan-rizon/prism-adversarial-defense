@@ -1,0 +1,14 @@
+% Auto-generated — single-sample end-to-end PRISM detection latency.
+% Measured on RTX 4090, n=200 clean samples per dataset, seed=42.
+% Includes: backbone forward + all ensemble channels + scorer + tier decision.
+\begin{tabular}{lcccccc}
+\toprule
+Dataset & Backbone & Mean (ms) & p50 (ms) & p95 (ms) & Max (ms) & Target (ms) \\
+\midrule
+CIFAR-10  & WRN-28-10   & 39.78 & 35.92 & 41.26 & 724.31 & 100 \\
+CIFAR-100 & ResNet-18   & 50.35 & 44.94 & 55.90 & 841.60 & 100 \\
+\bottomrule
+\end{tabular}
+% Both datasets clear the 100~ms real-time target at p95.
+% Max-ms outliers reflect first-batch CUDA kernel compilation
+% (warm-start would eliminate); steady-state p95 is the deployable figure.

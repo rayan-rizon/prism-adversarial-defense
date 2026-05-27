@@ -1,0 +1,14 @@
+% Single-sample end-to-end PRISM detection latency.
+% Measured on RTX 4090 (cloud Vast.ai), n=200 clean samples per dataset, seed=42.
+% Pipeline: backbone forward + all ensemble channels + scorer + tier decision.
+% Sources:
+%   ResNet-18 CIFAR-10 : vastai_full_download_2026-05-20_0830UTC/.../results_latency_standalone.json
+%   ResNet-18 CIFAR-100: ../Cifar 100/.../experiments/evaluation/results_cifar100_latency_standalone.json
+\begin{tabular}{llccccc}
+\toprule
+Dataset & Backbone & Mean (ms) & p50 (ms) & p95 (ms) & Max (ms) & Target (ms) \\
+\midrule
+CIFAR-10  & ResNet-18  & 39.78 & 35.92 & 41.26 & 724.31 & 100 \\
+CIFAR-100 & ResNet-18  & 50.35 & 44.94 & 55.90 & 841.60 & 100 \\
+\bottomrule
+\end{tabular}

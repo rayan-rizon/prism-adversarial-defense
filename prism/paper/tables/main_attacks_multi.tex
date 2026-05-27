@@ -1,0 +1,30 @@
+% Multi-backbone, multi-dataset main detection comparison.
+% Sources (all directly readable from result JSONs):
+%   ResNet-18 CIFAR-10  : tables/main_attacks.tex (paper-original Vast.ai pool)
+%   WRN-28-10 CIFAR-10  : experiments/wrn/evaluation/results_{prism_square,fgsm_pgd_l3fix,fast,cw}_wrn_seed{42,123,456,789,999}.json
+%                         + experiments/wrn/evaluation/results_paper_seed{42,123,456,789,999}_wrn.json
+%                         (note: filename has _seed{N}_wrn, not _wrn_seed{N})
+%   ResNet-18 CIFAR-100 : ../Cifar 100/Cifar 100/project/experiments/evaluation/results_cifar100_{fast,cw}_n1000_ms5_seed{42,123,456,789,999}.json
+\begin{tabular}{lllccccc}
+\toprule
+Dataset & Backbone & Attack & TPR & 95\% CI & FPR & $n_{\text{adv}}$ \\
+\midrule
+CIFAR-10  & ResNet-18  & FGSM       & 0.882 & [0.872, 0.890] & 0.074 & 5000 \\
+CIFAR-10  & ResNet-18  & PGD-40     & 0.987 & [0.984, 0.990] & 0.074 & 5000 \\
+CIFAR-10  & ResNet-18  & Square     & 0.886 & [0.877, 0.894] & 0.074 & 5000 \\
+CIFAR-10  & ResNet-18  & CW-L2      & 0.938 & [0.931, 0.945] & 0.075 & 5000 \\
+CIFAR-10  & ResNet-18  & AutoAttack & 1.000 & [0.999, 1.000] & 0.075 & 5000 \\
+\midrule
+CIFAR-10  & WRN-28-10  & FGSM       & 0.985 & [0.982, 0.987] & 0.073 & 7000 \\
+CIFAR-10  & WRN-28-10  & PGD-40     & 0.995 & [0.993, 0.996] & 0.073 & 7000 \\
+CIFAR-10  & WRN-28-10  & Square     & 0.944 & [0.938, 0.949] & 0.076 & 6000 \\
+CIFAR-10  & WRN-28-10  & CW-L2      & 0.933 & [0.926, 0.940] & 0.079 & 5000 \\
+CIFAR-10  & WRN-28-10  & AutoAttack & 1.000 & [1.000, 1.000] & 0.075 & 10000 \\
+\midrule
+CIFAR-100 & ResNet-18  & FGSM       & 0.835 & [0.825, 0.845] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18  & PGD-40     & 0.984 & [0.980, 0.987] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18  & Square     & 0.672 & [0.659, 0.685] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18  & CW-L2      & 0.687 & [0.674, 0.700] & 0.073 & 5000 \\
+CIFAR-100 & ResNet-18  & AutoAttack & 0.999 & [0.998, 1.000] & 0.077 & 5000 \\
+\bottomrule
+\end{tabular}

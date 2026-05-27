@@ -1,0 +1,762 @@
+{
+  "thresholds": [
+    5.0,
+    8.0,
+    10.0,
+    12.0
+  ],
+  "drifts": [
+    1.0
+  ],
+  "lengths": [
+    500,
+    1000,
+    2000,
+    5000
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "results": [
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.116,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.023200000000000002,
+      "max_fraction": 0.116,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.558,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1116,
+      "max_fraction": 0.558,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.779,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1558,
+      "max_fraction": 0.779,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.9116,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.18231999999999998,
+      "max_fraction": 0.9116,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        null,
+        442,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.908,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1816,
+      "max_fraction": 0.908,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        46,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.954,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.1908,
+      "max_fraction": 0.954,
+      "seeds_with_trigger": 1,
+      "first_triggers": [
+        null,
+        46,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.977,
+        0.0,
+        0.4555,
+        0.0
+      ],
+      "mean_fraction": 0.28650000000000003,
+      "max_fraction": 0.977,
+      "seeds_with_trigger": 2,
+      "first_triggers": [
+        null,
+        46,
+        null,
+        1089,
+        null
+      ]
+    },
+    {
+      "threshold": 5.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.9908,
+        0.34,
+        0.7822,
+        0.5728
+      ],
+      "mean_fraction": 0.53716,
+      "max_fraction": 0.9908,
+      "seeds_with_trigger": 4,
+      "first_triggers": [
+        null,
+        46,
+        3300,
+        1089,
+        2136
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 8.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 10.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "gaussian",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 500,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 1000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 2000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "threshold": 12.0,
+      "drift": 1.0,
+      "stream_model": "bootstrap",
+      "length": 5000,
+      "per_seed_fraction": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_fraction": 0.0,
+      "max_fraction": 0.0,
+      "seeds_with_trigger": 0,
+      "first_triggers": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ]
+}

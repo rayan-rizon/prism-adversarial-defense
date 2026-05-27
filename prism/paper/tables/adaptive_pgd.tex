@@ -15,3 +15,8 @@ CIFAR-10 & 5.0  & 0.490 & [0.476, 0.504] & 0.075 \\
 CIFAR-10 & 10.0 & 0.429 & [0.416, 0.443] & 0.075 \\
 \bottomrule
 \end{tabular}
+% Note: $\lambda=0$ disables the activation-matching (TAMM) term but the
+% DCT high-frequency suppression term (coefficient $0.5$, fixed) remains
+% active, so the $\lambda=0$ row is not a non-adaptive PGD reference;
+% see Eq.~(adaptive loss) in \S\ref{sec:adaptive}. The non-adaptive
+% PGD-40 reference for CIFAR-10 is $0.987$ (Table~\ref{tab:main}).
