@@ -242,13 +242,14 @@ deployments regardless of $C^*$.
 
 The headline latency numbers in Table~\ref{tab:latency} are end-to-end.
 This appendix decomposes a single PRISM forward pass into eight stages,
-measured on $n{=}100$ clean VAL-split images via
-\texttt{experiments/stress/test\_latency\_breakdown.py}. Numbers below
-are from a local GTX~1060~6GB run; the deployed RTX~4090 figures are
-${\sim}1.8\times$ faster (mean $39.78$~ms end-to-end,
-Table~\ref{tab:latency}). The breakdown identifies which channels
-dominate the budget --- relevant for ensemble-pruning ablations and for
-deciding which channels are worth a closed-form differentiable
+measured on $n{=}200$ clean EVAL-split images on the deployed
+RTX~4090 hardware via
+\texttt{experiments/stress/vastai\_latency\_breakdown.py}. The
+end-to-end mean here is $44.95$~ms, consistent with the
+$39.78$~ms in Table~\ref{tab:latency} (which used the same hardware on
+a different EVAL subsample). The breakdown identifies which channels
+dominate the budget --- relevant for ensemble-pruning ablations and
+for deciding which channels are worth a closed-form differentiable
 surrogate in a future ensemble-complete adaptive attack
 (\S\ref{sec:conclusion}).
 
@@ -259,40 +260,46 @@ surrogate in a future ensemble-complete adaptive attack
 \toprule
 Stage & mean (ms) & p50 (ms) & p95 (ms) & \% of total \\
 \midrule
-Backbone forward (logits)           & 4.92  & 4.19  & 7.10  & 6.9\% \\
-TAMM activation extraction           & 5.02  & 4.09  & 9.15  & 7.0\% \\
-TDA persistence diagrams (3 layers)  & 12.30 & 11.78 & 15.22 & 17.3\% \\
-Input gradient norm (autograd back)  & 11.48 & 10.36 & 13.93 & 16.1\% \\
-Logit-profile features               & 0.18  & 0.14  & 0.33  & 0.3\% \\
-StabilityV2 ($M{=}5$ jittered fwd)   & \textbf{21.59} & 20.60 & 29.37 & \textbf{30.3\%} \\
-DCT image prep                       & 0.02  & 0.01  & 0.07  & 0.0\% \\
-Ensemble logistic + Wasserstein fusion & 15.68 & 14.40 & 26.50 & 22.0\% \\
+Backbone forward (logits)              & 1.98  & 1.98  & 2.03  & 4.4\% \\
+TAMM activation extraction             & 2.00  & 2.00  & 2.05  & 4.5\% \\
+TDA persistence diagrams (3 layers)    & \textbf{14.24} & 14.06 & 16.29 & \textbf{31.7\%} \\
+Input gradient norm (autograd back)    & 7.07  & 6.35  & 6.72  & 15.7\% \\
+Logit-profile features                 & 0.11  & 0.10  & 0.15  & 0.2\% \\
+StabilityV2 ($M{=}5$ jittered fwd)     & 8.81  & 8.77  & 8.89  & 19.6\% \\
+DCT image prep                         & 0.01  & 0.01  & 0.01  & 0.0\% \\
+Ensemble logistic + Wasserstein fusion & 10.72 & 10.25 & 14.13 & 23.8\% \\
 \midrule
-\textbf{Total}                       & \textbf{71.18} & 66.56 & 93.52 & 100.0\% \\
+\textbf{Total}                         & \textbf{44.95} & 43.72 & 48.38 & 100.0\% \\
 \bottomrule
 \end{tabular}
-\caption{Per-stage latency on GTX~1060~6GB ($n{=}100$ clean VAL
-samples). Stability features (the multi-jitter, no-closed-form-surrogate
-channel that the present adaptive attack does \emph{not} target) are
-the largest single contributor (30.3\%), exceeding even the TDA
-diagram computation (17.3\%). This corrects an earlier intuition that
-persistent homology would dominate the budget; at $n_\text{sub}{=}150$
-the TDA stage is competitive with backbone-side work, and the dominant
-cost is the StabilityV2 channel's repeated forward passes. The ensemble
-fusion stage's variance (p95 $26.5$ ms vs. p50 $14.4$ ms) reflects
-occasional gudhi-side allocation overhead. Source:
-\texttt{experiments/stress/results\_latency\_breakdown.json}.}
+\caption{Per-stage latency on RTX~4090 ($n{=}200$ clean EVAL samples,
+single seed). TDA persistence-diagram computation is the largest
+single contributor at $31.7\%$ ($14.24$~ms), consistent with the
+\S\ref{sec:conclusion} limitation note that persistent homology
+dominates the inference budget. Ensemble fusion ($23.8\%$),
+StabilityV2 ($19.6\%$), and gradient-norm ($15.7\%$) follow in
+order. We additionally ran the same breakdown on a GTX~1060~6GB and
+observed StabilityV2 dominating ($30.3\%$ of a total $71.18$~ms) while
+TDA dropped to $17.3\%$: TDA is CPU-bound (gudhi auction algorithm on
+the persistence-diagram side), so it benefits little from a faster
+GPU, whereas StabilityV2's $M{=}5$ forward passes are GPU-bound and
+scale proportionally with backbone throughput. The relative ordering
+in this table is therefore RTX-4090-specific; consumer GPUs will see
+StabilityV2 climb. Source:
+\texttt{experiments/stress/vastai\_latency\_breakdown.json}.}
 \label{tab:latency_breakdown}
 \end{table}
 
 \paragraph{Implications for adaptive-attack design.}
-The $30.3\%$ StabilityV2 budget is also the channel that the canonical
-adaptive attack (\S\ref{sec:adaptive}) does not target, because the
-$M{=}5$ jitter-stability statistic has no closed-form differentiable
-surrogate. A genuine ensemble-complete BPDA must either (i) construct
-a surrogate (e.g., end-to-end backprop through $M$ noise draws with
-straight-through estimator on the argmax) or (ii) accept the
-defender's $30\%$ of the latency budget as an attack-cost asymmetry.
+The combined gradient-norm + StabilityV2 + ensemble-fusion budget
+($\sim 60\%$ of forward time) is also the portion of the pipeline that
+the canonical adaptive attack (\S\ref{sec:adaptive}) does not target,
+because StabilityV2's $M{=}5$ jitter-stability statistic has no
+closed-form differentiable surrogate, and gradient-norm is itself a
+gradient quantity. A genuine ensemble-complete BPDA must either
+(i) construct a surrogate (e.g., end-to-end backprop through $M$ noise
+draws with straight-through estimator on the argmax), or (ii) accept
+the defender's untargeted budget as an attack-cost asymmetry.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -302,37 +309,40 @@ defender's $30\%$ of the latency budget as an attack-cost asymmetry.
 The canonical CW evaluation in Table~\ref{tab:main} uses
 $\kappa{=}0$. Carlini~\cite{carlini2017adversarial} recommends a
 confidence-margin sweep for robust detector evaluation, so we
-additionally measure TPR at $\kappa \in \{0, 10, 20\}$ on $n{=}100$
-VAL-split inputs using the native PyTorch CW implementation
-(\texttt{src/attacks/cw\_torch.py}, $\text{max\_iter}{=}40$,
-$\text{bss}{=}5$). All three configurations achieve $100\%$
-attack-success against the unwrapped backbone.
+additionally measure TPR at $\kappa \in \{0, 10, 20\}$ on $n{=}1000$
+EVAL-split inputs per seed across all 5 fixed seeds (paper-grade
+protocol matching Table~\ref{tab:main}), using the native PyTorch CW
+implementation (\texttt{src/attacks/cw\_torch.py},
+$\text{max\_iter}{=}40$, $\text{bss}{=}5$). All three configurations
+achieve $\geq 99.9\%$ attack-success against the unwrapped backbone.
 
 \begin{table}[h]
 \centering
 \small
 \begin{tabular}{cccccc}
 \toprule
-$\kappa$ & Attack success & mean $L_2$ & TPR @ L1 & TPR @ L2 & TPR @ L3 \\
+$\kappa$ & Attack success & mean $L_2$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L3 \\
 \midrule
-0 (canonical)  & 1.000 & 0.150 & 0.860 & 0.730 & 0.290 \\
-10             & 1.000 & 0.179 & 0.690 & 0.410 & 0.130 \\
-20             & 1.000 & 0.181 & 0.690 & 0.430 & 0.150 \\
+0 (canonical)  & 0.999 & 0.141 & \textbf{0.9014} [0.893, 0.909] & 0.704 & 0.247 \\
+10             & 1.000 & 0.167 & \textbf{0.6696} [0.656, 0.683] & 0.417 & 0.108 \\
+20             & 1.000 & 0.168 & \textbf{0.6794} [0.666, 0.692] & 0.439 & 0.120 \\
 \bottomrule
 \end{tabular}
-\caption{CW confidence-margin sensitivity ($n{=}100$, VAL split,
-local GTX~1060 run; clean FPR L1 $=0.090$, L2 $=0.020$, L3 $=0.000$ on
-the same input pool). Higher-confidence CW reduces TPR at L1 by
-$\approx 17$~pp from $\kappa{=}0$ to $\kappa{=}10$, plateauing
-afterwards. The detector still discriminates adversarial from clean
-($0.69$ vs $0.09$ at L1, a $7.7\times$ ratio), but the margin is
-narrower than the canonical-CW headline ($0.94$ at $\kappa{=}0$,
-$5$-seed pool, Table~\ref{tab:main}). The drop is consistent with the
-detector being trained on $\kappa{=}0$ CW signatures and not having
-seen high-confidence variants during ensemble training; per-attack
-training augmentation with $\kappa{>}0$ samples is a natural
-robustness lever for future work. Source:
-\texttt{experiments/stress/test\_stronger\_cw.py}.}
+\caption{CW confidence-margin sensitivity (5 seeds $\times n{=}1000$ =
+$5{,}000$ EVAL adversarials per $\kappa$, RTX~4090, deployed scorer).
+Pooled clean FPR on the same EVAL pool is L1 $=0.078$, L2 $=0.017$,
+L3 $=0.002$. Higher-confidence CW reduces TPR at L1 by
+$\approx 23$~pp from $\kappa{=}0$ ($0.901$) to $\kappa{=}10$
+($0.670$), plateauing at $\kappa{=}20$ ($0.679$). The detector still
+discriminates adversarial from clean ($0.67$ vs $0.08$ at L1, an
+$8.6\times$ ratio), but the margin narrows substantially relative to
+the canonical-CW headline ($0.94$ at $\kappa{=}0$ on a different
+calibration split, Table~\ref{tab:main}). The drop is consistent with
+the detector being trained on $\kappa{=}0$ CW signatures and not
+having seen high-confidence variants during ensemble training;
+per-attack training augmentation with $\kappa{>}0$ samples is a
+natural robustness lever for future work. Source:
+\texttt{experiments/stress/vastai\_stronger\_cw.json}.}
 \label{tab:strong_cw}
 \end{table}
 
@@ -343,55 +353,73 @@ robustness lever for future work. Source:
 
 The main recovery table (Table~\ref{tab:recovery}) reports L3 recovery
 only on PGD adversarials. We additionally measure recovery on FGSM,
-Square, and CW-L2 on $n{=}80$ VAL-split inputs to characterise how the
-TAMSH router generalises across attack families. ART's FGSM
-($\varepsilon{=}8/255$) and SquareAttack ($\text{max\_iter}{=}500$,
-$1$ restart) generate the perturbations; CW uses the same canonical
-$\kappa{=}0$ configuration as Table~\ref{tab:strong_cw}.
+Square, and CW-L2 on $n{=}1000$ EVAL-split inputs per seed across
+all 5 fixed seeds (paper-grade protocol matching
+Table~\ref{tab:recovery}) to characterise how the TAMSH router
+generalises across attack families. ART's FGSM ($\varepsilon{=}8/255$)
+and SquareAttack ($\text{max\_iter}{=}5000$, $1$ restart) generate the
+perturbations; CW uses the same canonical $\kappa{=}0$ configuration
+as Table~\ref{tab:strong_cw}.
 
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
-Attack & L3 trigger rate & Passthrough & Topology router & Force-PGD & Oracle \\
+Attack & $n_{L3}$ pool & Trigger rate & Passthrough & Uniform router & Topology router & Oracle \\
 \midrule
-FGSM   & 0.200 & 0.562 & 0.375 & 0.062 & 0.750 \\
-Square & 0.287 & 0.043 & 0.261 & 0.000 & 0.913 \\
-CW     & 0.338 & 0.000 & \textbf{0.481} & 0.037 & 0.926 \\
+FGSM   & 783  & 0.157 & 0.346 & 0.420 ($+7.4$pp) & 0.377 ($+3.1$pp) & 0.670 \\
+Square & 1211 & 0.242 & 0.014 & \textbf{0.486 ($+47.2$pp)} & 0.449 ($+43.5$pp) & 0.893 \\
+CW     & 1254 & 0.251 & 0.017 & \textbf{0.487 ($+47.0$pp)} & 0.407 ($+39.0$pp) & 0.857 \\
 \bottomrule
 \end{tabular}
-\caption{L3-recovery on FGSM/Square/CW adversarials, $n{=}80$, single
-seed (VAL split). ``Topology router'' is the combined
-$H_0{+}H_1$ Wasserstein gate, matching \S\ref{sec:recovery}. Three
-points stand out:
-(i) On \textbf{CW}, the topology router recovers $48.1\%$ of L3-rejected
-adversarials from a $0.000$ passthrough baseline --- a much larger gap
-than the PGD-only $+10.6$~pp main-result.
-(ii) On \textbf{Square}, the topology router still helps ($+21.7$~pp
-over passthrough), confirming the C4 contribution transfers beyond
-white-box gradient attacks.
-(iii) On \textbf{FGSM}, the topology router \emph{hurts}
-($-18.8$~pp): the PGD-trained expert is mis-selected for low-budget
-single-step perturbations, while the unrouted backbone still recovers
-$56.2\%$ of L3 cases. Force-routing to the PGD specialist is
-catastrophic for FGSM ($-50$~pp) and ineffective for Square / CW,
-underscoring that the prior-augmented variant in
-Table~\ref{tab:recovery} is a PGD-specific upper-bound, not a
-deployable cross-attack policy. Oracle (per-input best-of-4) ceilings
-of $0.91$/$0.93$ on Square/CW indicate large remaining headroom for a
-stronger learned router. Source:
-\texttt{experiments/stress/test\_recovery\_multi\_attack.py}.}
+\caption{L3-recovery on FGSM/Square/CW adversarials, pooled across 5
+seeds $\times n{=}1000$ = $5{,}000$ EVAL adversarials per attack
+(RTX~4090, deployed scorer). ``Topology router'' is the combined
+$H_0{+}H_1$ Wasserstein gate, matching \S\ref{sec:recovery}; Wilson
+95\% CIs on the topology row are FGSM [0.343, 0.411], Square [0.421,
+0.477], CW [0.380, 0.434]. Four points stand out:
+(i) On \textbf{CW}, the topology router recovers $40.7\%$ of
+L3-rejected adversarials from a $1.7\%$ passthrough baseline
+($+39.0$~pp), nearly $4{\times}$ the paper's PGD-only $+10.6$~pp
+main result.
+(ii) On \textbf{Square}, the topology router lifts recovery to
+$44.9\%$ ($+43.5$~pp), confirming the C4 contribution transfers
+beyond white-box gradient attacks.
+(iii) On \textbf{FGSM}, the topology router gives only $+3.1$~pp
+because the unrouted backbone already recovers $34.6\%$ of L3 cases
+(FGSM at $\varepsilon{=}8/255$ is a low-budget single-step
+perturbation that does not always flip the argmax even when L3
+triggers). Force-routing to the PGD specialist (Table~\ref{tab:recovery})
+is catastrophic on every cross-attack ($0.10$, $0.04$, $0.05$ recovery
+respectively), confirming that the prior-augmented variant is a
+PGD-specific upper-bound, not a deployable cross-attack policy.
+(iv) The \textbf{uniform-router control} consistently matches or
+beats the topology router across all three attacks; for the
+deployed expert pool (trained on clean/FGSM/PGD/mixed) the topology
+signal does \emph{not} add over uniform $1/K$ mixing on
+non-PGD attacks. The PGD-only paper claim that uniform is degenerate
+to passthrough (Table~\ref{tab:recovery}, $\texttt{tamsh\_uniform}$
+paired gap $0$~pp) is therefore attack-specific and does not extend
+to FGSM/Square/CW; on these attacks uniform mixing of the
+attack-specialist experts beats argmax of the unrouted backbone.
+Oracle (per-input best-of-4) ceilings of $0.89$/$0.86$ on Square/CW
+indicate substantial remaining headroom for a stronger learned router.
+Source: \texttt{experiments/stress/vastai\_recovery\_multi.json}.}
 \label{tab:recovery_multi}
 \end{table}
 
 \paragraph{Take-away.}
-TAMSH's C4 contribution is \emph{attack-family-dependent}. CW and
-Square benefit substantially from the topology router; FGSM does not
-and would require either an FGSM-specialist expert in the pool or a
-router that down-weights the PGD specialist for low-budget
-perturbations. Future work on TAMSH should treat per-attack-family
-recovery as the primary metric rather than only PGD.
+TAMSH's C4 contribution is \emph{attack-family-dependent} and the
+ranking of router strategies shifts across attacks. CW and Square
+benefit substantially from \emph{any} mixture of the deployed
+experts (topology or uniform); FGSM does not, and the paper's
+``uniform = degenerate'' claim from Table~\ref{tab:recovery} does
+not transfer beyond PGD. Future work on TAMSH should treat
+per-attack-family recovery and uniform-vs-topology comparison as the
+primary metrics, train an FGSM specialist (the current expert pool
+under-serves single-step perturbations), and characterise the gap
+between uniform mixing and topology routing across the attack matrix.
 
 % ─────────────────────────────────────────────────────────────────────────────
 

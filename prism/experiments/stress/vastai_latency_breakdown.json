@@ -1,0 +1,76 @@
+{
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce RTX 4090",
+  "n_samples": 200,
+  "seed": 42,
+  "split": "EVAL",
+  "eval_idx_range": [
+    8000,
+    10000
+  ],
+  "stages": [
+    {
+      "stage": "backbone_fwd",
+      "mean_ms": 1.984,
+      "p50_ms": 1.979,
+      "p95_ms": 2.032,
+      "pct_of_total": 4.4
+    },
+    {
+      "stage": "tamm_extract",
+      "mean_ms": 2.005,
+      "p50_ms": 2.001,
+      "p95_ms": 2.05,
+      "pct_of_total": 4.5
+    },
+    {
+      "stage": "tda_diagrams",
+      "mean_ms": 14.237,
+      "p50_ms": 14.057,
+      "p95_ms": 16.292,
+      "pct_of_total": 31.7
+    },
+    {
+      "stage": "grad_norm",
+      "mean_ms": 7.073,
+      "p50_ms": 6.35,
+      "p95_ms": 6.717,
+      "pct_of_total": 15.7
+    },
+    {
+      "stage": "logit_profile",
+      "mean_ms": 0.111,
+      "p50_ms": 0.102,
+      "p95_ms": 0.151,
+      "pct_of_total": 0.2
+    },
+    {
+      "stage": "stability",
+      "mean_ms": 8.815,
+      "p50_ms": 8.77,
+      "p95_ms": 8.891,
+      "pct_of_total": 19.6
+    },
+    {
+      "stage": "dct_prep",
+      "mean_ms": 0.01,
+      "p50_ms": 0.01,
+      "p95_ms": 0.011,
+      "pct_of_total": 0.0
+    },
+    {
+      "stage": "ensemble_fusion",
+      "mean_ms": 10.716,
+      "p50_ms": 10.252,
+      "p95_ms": 14.131,
+      "pct_of_total": 23.8
+    },
+    {
+      "stage": "total",
+      "mean_ms": 44.951,
+      "p50_ms": 43.72,
+      "p95_ms": 48.379,
+      "pct_of_total": 100.0
+    }
+  ]
+}
