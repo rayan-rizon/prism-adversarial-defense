@@ -14,8 +14,9 @@ false-alarm activation on clean-only streams. On L3-rejected PGD
 adversarials, a \tamsh router trained directly on the L3 pool (logistic
 regression on final-layer activations) recovers $28.7\%$ of inputs ---
 $9.1\times$ the uniform $1/K$ control ($3.2\%$) and $2.1\times$ the
-lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$), reaching $88\%$ of
-the per-input best-of-$K$ oracle and clearing the pre-registered C4 gate
+lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$), matching the
+prior-augmented upper bound ($29.3\%$) without its hardcoded prior and
+clearing the pre-registered C4 gate
 (Appendix~\ref{app:tamsh_diag}); the large margin over the uniform
 control isolates the routing-signal contribution \emph{on PGD}. This
 uniform-is-degenerate result is PGD-specific: on CW and Square the
@@ -85,9 +86,10 @@ prediction guarantees;
 distribution shift;
 (5) closing the residual \tamsh recovery gap: a learned router trained
 directly on the L3-rejected pool (logistic regression on final-layer
-activations) already reaches $88\%$ of the per-input oracle and $9.1\times$
-the uniform control (Appendix~\ref{app:tamsh_diag}); richer multi-layer or
-expert-capacity improvements are needed to close the final gap to the
+activations) already matches the prior-augmented upper bound and is
+$9.1\times$ the uniform control (Appendix~\ref{app:tamsh_diag}); richer
+multi-layer or expert-capacity improvements are needed to close the final
+gap to the
 oracle ceiling.
 
 \paragraph{Cross-architecture and cross-dataset generalisation.}

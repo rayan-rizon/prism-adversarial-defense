@@ -101,14 +101,34 @@ combining six channels:
     moments of $f(x)$ (max-margin, top-2 gap, entropy of $|f(x)|$),
     capturing classifier-confidence anomalies orthogonal to TDA.
 \end{itemize}
+Concretely, the raw feature vector has $d_\text{ens}=55$ dimensions:
+$36$ TDA persistence statistics ($6$ statistics $\times\,2$ homology
+dimensions $\times\,3$ monitored layers), plus $f_\mathrm{DCT}$,
+$f_\mathrm{ent}$, $8$ logit-profile features, $8$ StabilityV2 features,
+and $1$ gradient-norm feature. The deployed contract is recorded as
+\texttt{feature\_space\_version =
+pixel-stability-v2+logitprofile+sidequad+gradnorm}. The linear heads
+additionally consume a \emph{side-quadratic} interaction basis: the
+$190$ pairwise products (upper triangle including the diagonal) of the
+$19$ non-TDA side channels (raw indices $36$--$54$), expanding the
+logistic-regression input to $55+190=245$ dimensions. Persistence
+extraction, the external $55$-feature contract, and the split-conformal
+calibration all operate on the raw $55$ features; the $245$-dimensional
+expansion affects only the linear head.
 The ensemble logit is the logistic regression
-$\ell_\mathrm{ens}(x) = \mathbf{w}^\top \mathbf{f}(x) + b$, centred on
-the calibration distribution. The final \prism score
-$S(x) = \ell_\mathrm{ens}(x) + \beta\, S_\mathrm{TDA}(x)$
-($\beta = 1$ in the deployed configuration) is the quantity fed to the
-\cadg conformal calibrator. The \emph{ensemble-no-TDA} ablation zeroes
-$\mathbf{f}_\mathrm{TDA}$ (and the TDA fusion term) to isolate the
-marginal value of persistence features, and the \emph{channel-mask}
+$\ell_\mathrm{ens}(x) = \mathbf{w}^\top \psi(\mathbf{f}(x)) + b$, where
+$\psi$ appends the side-quadratic terms; it is centred on
+the calibration distribution to yield
+$\tilde\ell_\mathrm{ens}(x) = \ell_\mathrm{ens}(x) - \ell_\mathrm{shift}$.
+The final \prism score is the convex combination
+$S(x) = \alpha\, S_\mathrm{TDA}(x) + (1 - \alpha)\, \tilde\ell_\mathrm{ens}(x)$
+fed to the \cadg conformal calibrator, with $\alpha$ controlling the
+TDA-vs-ensemble trade-off. The deployed configuration uses
+$\alpha = 0.2$ for both CIFAR-10/100 ResNet-18 and $\alpha = 0.5$ for
+WRN-28-10 (re-tuned per backbone on the same calibration split). The
+\emph{ensemble-no-TDA} ablation sets $\alpha = 0$ (equivalently, zeros
+$\mathbf{f}_\mathrm{TDA}$ and skips the TDA term) to isolate the
+marginal value of persistence features. The \emph{channel-mask}
 ablations (\S\ref{sec:ablation}) zero one of
 $\{f_\mathrm{DCT}, f_\mathrm{grad}, \mathbf{f}_\mathrm{stab},
 \mathbf{f}_\mathrm{logit}\}$ at scoring time while reusing the
@@ -150,6 +170,16 @@ fixed numeric thresholds are not hand-transcribed. All reported TPR/FPR
 confidence intervals are Wilson 95\% binomial intervals computed from
 pooled per-seed $(TP,FP,FN,TN)$ counts; per-seed standard deviations are
 the sample standard deviation across the five fixed seeds.
+\paragraph{Eval-pool overlap (CI caveat).} Each seed subsamples
+$n{=}1000$ adversarials from the shared $2{,}000$-image evaluation
+window (\texttt{eval\_idx}$=[8000,10000]$), so the five per-seed pools
+overlap heavily: a pooled $n{=}5000$ count covers only $\approx 1929$
+\emph{unique} source images. The pooled Wilson interval therefore treats
+overlapping draws as independent and is mildly anti-conservative (too
+narrow); we report the per-seed standard deviation alongside every
+pooled interval as the seed-level dispersion check, and flag disjoint
+per-seed eval windows (or image-clustered CIs) as the clean statistical
+fix for future runs.
 
 \begin{table}[h]
 \centering
@@ -278,6 +308,10 @@ the routing contribution:
 configurations. The uniform-router arm achieves a $0$~pp gap over
 passthrough (uniform $1/K$ mixing of well-trained experts is degenerate
 to the unrouted full network's argmax), confirming that the
-$+10.6$~pp gap of the combined-metric router is attributable to the
+$+10.6$~pp gap of the combined-metric topology gate is attributable to the
 gating signal, and the further $+15.4$~pp lift of the prior-augmented
-router reflects correct expert specialization under a strong prior.
+router reflects correct expert specialization under a strong prior. A
+\emph{learned} router trained on the L3 pool (logistic regression on
+final-layer activations) clears the pre-registered target, matching the
+prior-augmented router without its hardcoded prior
+(\S\ref{sec:recovery}, Appendix~\ref{app:tamsh_diag}).

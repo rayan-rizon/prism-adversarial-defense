@@ -58,10 +58,10 @@ final-layer activation, trained on a held-out L3 pool and evaluated on a
 disjoint split (5 seeds)---recovers $28.7\%$ of L3-rejected PGD
 adversarials, $9.1\times$ the uniform $1/K$ control ($3.2\%$) and
 $2.1\times$ the lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$),
-reaching $88\%$ of the per-input best-of-$K$ oracle ($32.5\%$) and matching
-an oracle-prior baseline that hardcodes the PGD specialist---without that
-hardcoding. The large margin over the uniform control isolates the
-contribution to the routing signal rather than expert capacity
+matching a prior-augmented upper bound ($29.3\%$) that hardcodes the PGD
+specialist---without that hardcoding. The large margin over the uniform
+control isolates the contribution to the routing signal rather than
+expert capacity
 (Appendix~\ref{app:tamsh_diag}).
 
 \end{enumerate}

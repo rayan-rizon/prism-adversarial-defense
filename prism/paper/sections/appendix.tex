@@ -633,12 +633,15 @@ logistic regression mapping the pooled \texttt{layer4} activation to an expert
 index, trained on the CAL-split L3 pool ($\sim$390 recoverable samples) and
 evaluated on the \emph{disjoint} EVAL split (5 seeds, $n_{L3}{=}4018$). The
 learned router achieves $\mathbf{28.7\% \pm 1.0}$ recovery (Wilson pooled),
-versus the uniform control $3.2\%$ ($9.1\times$), the topology router $13.7\%$
-($2.1\times$), and $88\%$ of the best-of-$K$ oracle ($32.5\%$). It matches the
+versus the uniform control $3.2\%$ ($9.1\times$) and the topology gate
+$13.7\%$ ($2.1\times$) --- reproducing the uniform/topology/force baselines
+of the preceding paragraph and Table~\ref{tab:recovery} --- and it matches the
 always-route-to-expert-2 upper baseline ($29.3\%$) \emph{without} hardcoding
-the target expert, and---critically---the $+25.5$~pp gain over the uniform
-control isolates the routing signal from expert capacity, which is what the
-uniform control was designed to test. The router is opt-in
+the target expert. (Best-of-$K$ oracle on this router-evaluation pool is
+$32.5\%$; the $39.9\%$ figure above is the canonical recovery pool of
+Table~\ref{tab:recovery}, a different L3 sample.) Critically, the $+25.5$~pp
+gain over the uniform control isolates the routing signal from expert
+capacity, which is what the uniform control was designed to test. The router is opt-in
 (\texttt{TopologyAwareMoE.set\_learned\_router}); detection (TAMM/CADG/SACD)
 is upstream of routing and is unchanged. Source:
 \texttt{scripts/train\_tamsh\_router.py},
