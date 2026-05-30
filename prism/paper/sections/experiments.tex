@@ -41,7 +41,7 @@ reported from the resulting JSON files rather than manually transcribed.
 We evaluate four attack classes:
 \begin{itemize}[leftmargin=*,noitemsep]
   \item \textbf{FGSM} \cite{goodfellow2015explaining}: single-step gradient attack, $\varepsilon=8/255$ ($\ell_\infty$).
-  \item \textbf{PGD-40} \cite{madry2017towards}: 40-step projected gradient descent, $\varepsilon=8/255$, step size $\alpha=\varepsilon/4$ ($\ell_\infty$).
+  \item \textbf{PGD-40} \cite{madry2017towards}: 40-step projected gradient descent, $\varepsilon=8/255$, step size $\alpha=\varepsilon/4$, 1 random restart ($\ell_\infty$). (The orchestration script \texttt{run\_vastai\_full.sh} declares a stronger PGD-50$\times$10 default; the deployed detection numbers in Table~\ref{tab:main} are the PGD-40$\times$1 run of \texttt{run\_ablation\_paper.py}, the source of \texttt{results\_ablation\_multiseed.json}.)
   \item \textbf{CW-L2} \cite{carlini2017adversarial}: optimization-based attack, canonical configuration \texttt{max\_iter}=100, \texttt{binary\_search\_steps}=9 (matches Table~\ref{tab:main} \texttt{results\_cw\_n1000\_ms5\_seed*}). A weakened-CW run (\texttt{max\_iter}=5, \texttt{binary\_search\_steps}=5) is reported in Appendix~\ref{app:weak_cw} for detector-fidelity analysis only.
   \item \textbf{Square Attack} \cite{andriushchenko2020square}: black-box score-based attack, 5000 queries, $\varepsilon=8/255$ ($\ell_\infty$).
   \item \textbf{AutoAttack} \cite{croce2020reliable}: standard ensemble evaluation.
@@ -343,6 +343,13 @@ Energy's empirical FPR ($0.105$) modestly exceeds its $\alpha{=}0.10$
 design target on this test split, which we report unfiltered; recomputing
 at a tighter conformal $\alpha{=}0.075$ (matched to \prism's empirical
 FPR) would lower Energy's mean TPR further.
+\emph{Supervision disclosure.} \prism is a supervised detector (its ensemble
+head is trained on an FGSM/PGD/Square mix, \S\ref{sec:tamm}), whereas the four
+detectors here are run as unsupervised variants (clean-only threshold
+calibration); part of \prism's margin reflects this supervision. For a
+like-for-like comparison against \emph{supervised} detectors we benchmark
+SpectralDefense in Appendix~\ref{app:recent_baselines}, where \prism still wins
+--- decisively on CW/AutoAttack, which it never trains on.
 We additionally benchmark two recent (2021) detectors---SID
 \cite{tian2021detecting} and the supervised SpectralDefense
 \cite{harder2021spectraldefense}---in Appendix~\ref{app:recent_baselines}.

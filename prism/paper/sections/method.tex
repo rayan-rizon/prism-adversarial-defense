@@ -120,6 +120,16 @@ $\ell_\mathrm{ens}(x) = \mathbf{w}^\top \psi(\mathbf{f}(x)) + b$, where
 $\psi$ appends the side-quadratic terms; it is centred on
 the calibration distribution to yield
 $\tilde\ell_\mathrm{ens}(x) = \ell_\mathrm{ens}(x) - \ell_\mathrm{shift}$.
+The weights $(\mathbf{w}, b)$ are fit by supervised logistic regression on a
+dedicated training split (CIFAR test indices $[0,4999]$, disjoint from
+calibration $[5000,7999]$ and evaluation $[8000,9999]$) labelled clean vs.\
+adversarial, with adversarials drawn from a \emph{balanced FGSM/PGD/Square mix}
+($n{=}1500$); CW-L2 and AutoAttack are deliberately \emph{excluded} from the
+training mix. \prism is therefore a supervised \emph{multi-attack} detector ---
+a single model trained on three attack families and evaluated on two further
+\emph{unseen} families (CW, AutoAttack), in contrast to per-attack detectors
+that retrain on each target attack (\S\ref{sec:experiments},
+Appendix~\ref{app:recent_baselines}).
 The final \prism score is the convex combination
 $S(x) = \alpha\, S_\mathrm{TDA}(x) + (1 - \alpha)\, \tilde\ell_\mathrm{ens}(x)$
 fed to the \cadg conformal calibrator, with $\alpha$ controlling the

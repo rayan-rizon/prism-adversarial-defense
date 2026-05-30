@@ -90,7 +90,12 @@ This drives the full pipeline end-to-end on a single seed:
 
 1. Pre-train CIFAR-10 ResNet-18 backbone (or reuse existing checkpoint).
 2. Build reference profiles on `test[0:5000]`.
-3. Train ensemble scorer (CW-aware weighted attack mix; FGSM/PGD/Square/CW).
+3. Train ensemble scorer (balanced FGSM/PGD/Square mix; CW is **not** in the
+   training mix — `--include-cw` is off in the deployed pipeline, and the
+   provenance gate in `run_vastai_full.sh` rejects a scorer whose
+   `training_attacks` is anything other than {FGSM, PGD, Square}. CW-L2 is
+   detected at eval purely by signature transfer; see `appendix.tex`
+   "Weakened-CW Detector-Fidelity Ablation").
 4. Train MoE experts.
 5. Calibrate L1/L2/L3 conformal thresholds on `test[5000:7000]`.
 6. Validate FPR gate on `test[7000:8000]`.
@@ -112,7 +117,7 @@ Defaults (overridable via env vars or `configs/vastai_cw_full.yaml`):
 
 - 5 seeds: `42 123 456 789 999`
 - n=1000 test images per attack per seed
-- Attacks: FGSM, PGD-40, CW-L2 (max_iter=40, bss=5), Square (5000 queries), AutoAttack-standard
+- Attacks: FGSM, PGD-40 (40 steps, 1 restart), CW-L2 (canonical: max_iter=100, bss=9, kappa=1.0; the weakened max_iter=40/bss=5 config is appendix-only for detector-fidelity analysis), Square (5000 queries), AutoAttack-standard
 - Adaptive PGD: λ ∈ {0, 0.5, 1, 2, 5, 10}, 100 steps × 10 restarts, through-scorer BPDA
 - Baselines (matched FPR): LID, Mahalanobis, ODIN, Energy
 - Tier calibration: L1=0.85, L2=0.70, L3=0.50 alpha factors

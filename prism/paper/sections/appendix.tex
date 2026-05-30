@@ -306,8 +306,10 @@ the defender's untargeted budget as an attack-cost asymmetry.
 \section{High-Confidence CW Sensitivity ($\kappa$ Sweep)}
 \label{app:strong_cw}
 
-The canonical CW evaluation in Table~\ref{tab:main} uses
-$\kappa{=}0$. Carlini~\cite{carlini2017adversarial} recommends a
+The canonical CW evaluation in Table~\ref{tab:main} uses a small
+confidence margin $\kappa{=}1.0$ (\texttt{src/attacks/cw\_torch.py},
+where the \texttt{confidence} argument is $\kappa$).
+Carlini~\cite{carlini2017adversarial} recommends a
 confidence-margin sweep for robust detector evaluation, so we
 additionally measure TPR at $\kappa \in \{0, 10, 20\}$ on $n{=}1000$
 EVAL-split inputs per seed across all 5 fixed seeds (paper-grade
@@ -325,7 +327,7 @@ $L_2 \leq 0.151$.
 \toprule
 $\kappa$ & Attack success & mean $L_2$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L3 \\
 \midrule
-0 (canonical)  & 0.998 & 0.128 & \textbf{0.9486} [0.942, 0.954] & 0.805 & 0.339 \\
+0              & 0.998 & 0.128 & \textbf{0.9486} [0.942, 0.954] & 0.805 & 0.339 \\
 10             & 0.998 & 0.149 & \textbf{0.7762} [0.764, 0.788] & 0.565 & 0.194 \\
 20             & 0.999 & 0.151 & \textbf{0.7906} [0.779, 0.802] & 0.578 & 0.198 \\
 \bottomrule
@@ -334,9 +336,10 @@ $\kappa$ & Attack success & mean $L_2$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L
 budget ($\text{max\_iter}{=}100$, $\text{bss}{=}9$), 5 seeds
 $\times n{=}1000 = 5{,}000$ EVAL adversarials per $\kappa$ on RTX~4090
 with the deployed scorer. Pooled clean FPR on the same EVAL pool is
-L1 $=0.078$, L2 $=0.017$, L3 $=0.002$. The $\kappa{=}0$ headline
-($0.9486$) lands within $1$~pp of the main-table value ($0.938$,
-Table~\ref{tab:main}), confirming the canonical result is reproducible
+L1 $=0.078$, L2 $=0.017$, L3 $=0.002$. The $\kappa{=}0$ sweep point
+($0.9486$) lands within $1$~pp of the main-table value ($0.938$, which
+uses $\kappa{=}1.0$, Table~\ref{tab:main}); the unit confidence margin has
+negligible effect, confirming the canonical result is reproducible
 under the stronger attack budget. Higher-confidence CW reduces TPR at
 L1 by $\approx 17$~pp from $\kappa{=}0$ to $\kappa{=}10$ ($0.776$),
 \emph{plateauing} at $\kappa{=}20$ ($0.791$, statistically tied with
@@ -1042,11 +1045,14 @@ $\varepsilon{=}8/255$ attack configs (5 seeds $\times n{=}1000$):
   a logistic-regression detector on the log-magnitude $2$D-FFT, in both
   published variants: \emph{InputMFS} (Fourier spectrum of the input image)
   and the stronger \emph{LayerMFS} (Fourier spectrum of feature maps,
-  channel-averaged per layer over \texttt{layer2/3/4}). Unlike PRISM and the
-  other baselines, both are \emph{supervised, attack-specific}: one classifier
-  is trained per attack on (clean, adversarial) pairs from the disjoint REF
-  split. They therefore see strictly more information than PRISM, which never
-  trains on adversarials.
+  channel-averaged per layer over \texttt{layer2/3/4}). Both are
+  \emph{supervised and attack-specific}: one classifier is trained \emph{per
+  attack} on (clean, adversarial) pairs from the disjoint REF split. PRISM is
+  also supervised but trains a \emph{single} detector on a fixed
+  FGSM/PGD/Square mix; the key difference is that SpectralDefense retrains on
+  each target attack (so on CW/AutoAttack it sees the target family at training
+  time), whereas PRISM never trains on CW or AutoAttack and must generalize to
+  them.
 \end{itemize}
 
 \begin{table}[h]
@@ -1065,10 +1071,15 @@ not localized black-box patches or minimal-norm $L_2$ perturbations. The
 stronger \textbf{LayerMFS} variant (feature-map Fourier) substantially
 improves Square ($0.21{\to}0.71$) and CW ($0.24{\to}0.46$), confirming the
 gap is not an artifact of the weaker input-space variant---yet it still
-trails PRISM on both ($0.71$ vs $0.89$; $0.46$ vs $0.94$), and is still
-supervised. PRISM is the only detector that holds $\ge 0.88$ on every family,
-without supervision. (Bold marks the per-column best; the FGSM/PGD wins are
-supervised and in-distribution, not apples-to-apples with unsupervised PRISM.)}
+trails PRISM on both ($0.71$ vs $0.89$; $0.46$ vs $0.94$). PRISM is also
+supervised, but it trains a \emph{single} detector on a fixed FGSM/PGD/Square
+mix (\texttt{training\_attacks}${=}\{$FGSM,PGD,Square$\}$) rather than one
+detector per attack: its FGSM/PGD/Square columns are in-distribution, but
+\textbf{CW is an unseen attack family for PRISM}, and it still detects CW at
+$0.938$ --- $3.8\times$ the CW-\emph{trained} SpectralDefense ($0.244$). PRISM
+is the only detector that holds $\ge 0.88$ on every family with one model that
+generalizes to an untrained family. (Bold marks the per-column best; the
+FGSM/PGD wins are per-attack-supervised and in-distribution.)}
 \label{tab:recent_baselines}
 \end{table}
 
