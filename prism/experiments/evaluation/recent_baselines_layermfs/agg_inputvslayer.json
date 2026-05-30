@@ -1,0 +1,100 @@
+{
+  "detectors": [
+    "SpectralDefense",
+    "SpectralDefense-LayerMFS"
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "aggregate": {
+    "SpectralDefense": {
+      "FGSM": {
+        "TPR_mean": 1.0,
+        "TPR_std": 0.0,
+        "FPR_mean": 0.1052,
+        "FPR_std": 0.0049,
+        "F1_mean": 0.95,
+        "F1_std": 0.0022,
+        "n_seeds": 5
+      },
+      "PGD": {
+        "TPR_mean": 0.9992,
+        "TPR_std": 0.0004,
+        "FPR_mean": 0.1028,
+        "FPR_std": 0.0092,
+        "F1_mean": 0.9507,
+        "F1_std": 0.0043,
+        "n_seeds": 5
+      },
+      "Square": {
+        "TPR_mean": 0.2076,
+        "TPR_std": 0.0176,
+        "FPR_mean": 0.0964,
+        "FPR_std": 0.0112,
+        "F1_mean": 0.3181,
+        "F1_std": 0.0205,
+        "n_seeds": 5
+      },
+      "CW": {
+        "TPR_mean": 0.2436,
+        "TPR_std": 0.0127,
+        "FPR_mean": 0.1084,
+        "FPR_std": 0.0061,
+        "F1_mean": 0.3602,
+        "F1_std": 0.0145,
+        "n_seeds": 5
+      },
+      "mean_TPR_across_attacks": 0.6126
+    },
+    "SpectralDefense-LayerMFS": {
+      "FGSM": {
+        "TPR_mean": 0.8606,
+        "TPR_std": 0.0068,
+        "FPR_mean": 0.1126,
+        "FPR_std": 0.0088,
+        "F1_mean": 0.8723,
+        "F1_std": 0.0014,
+        "n_seeds": 5
+      },
+      "PGD": {
+        "TPR_mean": 0.8986,
+        "TPR_std": 0.0222,
+        "FPR_mean": 0.114,
+        "FPR_std": 0.0078,
+        "F1_mean": 0.8929,
+        "F1_std": 0.0099,
+        "n_seeds": 5
+      },
+      "Square": {
+        "TPR_mean": 0.7108,
+        "TPR_std": 0.0287,
+        "FPR_mean": 0.1096,
+        "FPR_std": 0.0151,
+        "F1_mean": 0.7807,
+        "F1_std": 0.0126,
+        "n_seeds": 5
+      },
+      "CW": {
+        "TPR_mean": 0.4578,
+        "TPR_std": 0.0147,
+        "FPR_mean": 0.1184,
+        "FPR_std": 0.0095,
+        "F1_mean": 0.5808,
+        "F1_std": 0.0128,
+        "n_seeds": 5
+      },
+      "mean_TPR_across_attacks": 0.7319
+    }
+  },
+  "_source_files": [
+    "results_inputvslayer_seed42.json",
+    "results_inputvslayer_seed123.json",
+    "results_inputvslayer_seed456.json",
+    "results_inputvslayer_seed789.json",
+    "results_inputvslayer_seed999.json"
+  ]
+}

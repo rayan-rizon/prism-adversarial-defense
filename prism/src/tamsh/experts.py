@@ -98,6 +98,11 @@ class TopologyAwareMoE:
         self.comparison_mode = comparison_mode
         self.h0_weight = float(h0_weight)
         self.h1_weight = float(h1_weight)
+        # Opt-in learned router (scaler, clf) trained on the L3 pool. None =>
+        # topology gating unchanged. Set via set_learned_router(); only used by
+        # forward_learned(), so default behaviour and the detection path are
+        # entirely unaffected.
+        self.learned_router = None
 
     @staticmethod
     def _safe_wass(a: np.ndarray, b: np.ndarray) -> float:
@@ -187,6 +192,32 @@ class TopologyAwareMoE:
             mixed = contribution if mixed is None else mixed + contribution
         hard_idx = int(mixed.argmax(1).item()) if mixed is not None else 0  # not used; surface for telemetry
         return mixed, 0
+
+    def set_learned_router(self, scaler, clf):
+        """Attach a trained router (sklearn scaler + classifier) mapping pooled
+        activations -> expert index. Opt-in; does not change any other path."""
+        self.learned_router = (scaler, clf)
+
+    def forward_learned(
+        self, activation: torch.Tensor
+    ) -> Tuple[torch.Tensor, int]:
+        """
+        Route via the trained router (set_learned_router): predict the expert
+        index from the pooled activation, then run that expert. Falls back to
+        topology routing if no learned router is attached.
+        """
+        if self.learned_router is None:
+            idx, expert, _ = self.select_expert(
+                [np.zeros((0, 2))])  # degenerate; forces caller to set router
+            with torch.no_grad():
+                return expert(activation), idx
+        scaler, clf = self.learned_router
+        feat = activation.detach().cpu().numpy().reshape(1, -1)
+        idx = int(clf.predict(scaler.transform(feat))[0])
+        expert = self.experts[idx]
+        expert.eval()
+        with torch.no_grad():
+            return expert(activation), idx
 
     def forward_max_confidence(
         self, activation: torch.Tensor

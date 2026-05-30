@@ -1015,12 +1015,14 @@ $\varepsilon{=}8/255$ attack configs (5 seeds $\times n{=}1000$):
   (keep fraction $0.70$, selected on a held-out PGD probe). Threshold is
   fit on the clean split only, exactly as for LID/Mahalanobis/ODIN/Energy.
 \item \textbf{SpectralDefense} \cite{harder2021spectraldefense} ---
-  InputMFS variant: a logistic-regression detector on the log-magnitude
-  $2$D-FFT of the input. Unlike PRISM and the other baselines, this is a
-  \emph{supervised, attack-specific} detector: one classifier is trained
-  per attack on (clean, adversarial) pairs from the disjoint REF split. It
-  therefore sees strictly more information than PRISM, which never trains
-  on adversarials.
+  a logistic-regression detector on the log-magnitude $2$D-FFT, in both
+  published variants: \emph{InputMFS} (Fourier spectrum of the input image)
+  and the stronger \emph{LayerMFS} (Fourier spectrum of feature maps,
+  channel-averaged per layer over \texttt{layer2/3/4}). Unlike PRISM and the
+  other baselines, both are \emph{supervised, attack-specific}: one classifier
+  is trained per attack on (clean, adversarial) pairs from the disjoint REF
+  split. They therefore see strictly more information than PRISM, which never
+  trains on adversarials.
 \end{itemize}
 
 \begin{table}[h]
@@ -1031,28 +1033,35 @@ $\varepsilon{=}8/255$ attack configs (5 seeds $\times n{=}1000$):
 $\times n{=}1000$, design FPR $\le 0.10$). SpectralDefense numbers are the
 \emph{in-distribution} diagonal (detector trained on the same attack it is
 evaluated on). \textbf{SID} (unsupervised) is weak across all four families
-(mean TPR $0.43$), far below PRISM ($0.92$). \textbf{SpectralDefense} is
-near-perfect on the gradient-$L_\infty$ attacks (FGSM/PGD) but---even when
-\emph{trained on the target attack}---is barely better than chance on Square
-(black-box, $0.21$) and CW ($L_2$, $0.25$): its input-Fourier signal captures
-dense gradient-$L_\infty$ perturbations but not localized black-box patches or
-minimal-norm $L_2$ perturbations. PRISM is the only detector that holds
-$\ge 0.88$ on every family, without supervision. (SpectralDefense FGSM/PGD
-cells are bold only to mark where it exceeds PRISM; the comparison is not
-apples-to-apples, as those cells are supervised and in-distribution.)}
+(mean TPR $0.43$), far below PRISM ($0.92$). \textbf{SpectralDefense/InputMFS}
+is near-perfect on gradient-$L_\infty$ (FGSM/PGD) but---even \emph{trained on
+the target attack}---barely beats chance on Square ($0.21$) and CW ($0.24$):
+its input-Fourier signal captures dense gradient-$L_\infty$ perturbations but
+not localized black-box patches or minimal-norm $L_2$ perturbations. The
+stronger \textbf{LayerMFS} variant (feature-map Fourier) substantially
+improves Square ($0.21{\to}0.71$) and CW ($0.24{\to}0.46$), confirming the
+gap is not an artifact of the weaker input-space variant---yet it still
+trails PRISM on both ($0.71$ vs $0.89$; $0.46$ vs $0.94$), and is still
+supervised. PRISM is the only detector that holds $\ge 0.88$ on every family,
+without supervision. (Bold marks the per-column best; the FGSM/PGD wins are
+supervised and in-distribution, not apples-to-apples with unsupervised PRISM.)}
 \label{tab:recent_baselines}
 \end{table}
 
 \paragraph{Cross-attack transfer.}
 Because SpectralDefense trains one detector per attack, we can measure how
 well a detector trained on attack $A$ transfers to attack $B$
-(Table~\ref{tab:spectral_cross}). The two gradient-$L_\infty$ attacks
+(Table~\ref{tab:spectral_cross}, InputMFS). The two gradient-$L_\infty$ attacks
 (FGSM, PGD) transfer to each other almost perfectly ($\ge 0.999$), confirming
 they share a Fourier signature. But a detector trained on FGSM or PGD
 collapses to a mean TPR of $0.17$ when evaluated on Square or CW, and
 \emph{no} training attack yields a detector that covers all four families.
-This is the supervised counterpart of PRISM's design goal: a single,
-attack-agnostic detector that does not need to anticipate the attack.
+The stronger LayerMFS variant does \emph{not} resolve this: its mean
+in-distribution (diagonal) TPR is higher ($0.73$ vs InputMFS $0.61$), but its
+cross-attack (off-diagonal) mean is \emph{lower} ($0.38$ vs $0.54$)---i.e.\
+LayerMFS is \emph{more} attack-specific, collapsing $0.73{\to}0.38$ off its
+training attack. This is the supervised counterpart of PRISM's design goal: a
+single, attack-agnostic detector that does not need to anticipate the attack.
 
 \begin{table}[h]
 \centering
@@ -1075,7 +1084,8 @@ $8000$--$9999$). For tractability CW here uses a standard detection-benchmark
 configuration ($\text{bss}{=}5$, $\text{max\_iter}{=}10$, attack success rate
 $0.93$ on the EVAL split) rather than the heavier canonical CW of
 Table~\ref{tab:main}; this does not affect the qualitative conclusion, since
-CW is undetected by SpectralDefense even in-distribution. We report the
-\emph{InputMFS} variant of SpectralDefense; the feature-space \emph{LayerMFS}
-variant is expected to improve Square/CW detection at the cost of per-layer
-feature hooks, and is left to future work.
+CW is poorly detected by both SpectralDefense variants and PRISM beats them
+regardless. We report both the \emph{InputMFS} and the feature-space
+\emph{LayerMFS} variants (LayerMFS features are the per-layer channel-averaged
+$2$D-FFT log-magnitude of \texttt{layer2/3/4} activations); LayerMFS data are
+in \texttt{experiments/evaluation/recent\_baselines\_layermfs/}.

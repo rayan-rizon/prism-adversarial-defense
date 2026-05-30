@@ -1,0 +1,328 @@
+{
+  "SID": {
+    "FGSM": {
+      "TPR": 0.316,
+      "TPR_CI_95": [
+        0.2879,
+        0.3455
+      ],
+      "FPR": 0.096,
+      "FPR_CI_95": [
+        0.0793,
+        0.1158
+      ],
+      "FPR_target": 0.1,
+      "Precision": 0.767,
+      "F1": 0.4476,
+      "TP": 316,
+      "FP": 96,
+      "FN": 684,
+      "TN": 904,
+      "n_adv": 1000,
+      "n_clean": 1000,
+      "threshold": 0.290783,
+      "tiers": {
+        "L1": {
+          "TPR": 0.316,
+          "TPR_CI_95": [
+            0.2879,
+            0.3455
+          ],
+          "FPR": 0.096,
+          "FPR_CI_95": [
+            0.0793,
+            0.1158
+          ],
+          "FPR_target": 0.1,
+          "Precision": 0.767,
+          "F1": 0.4476,
+          "TP": 316,
+          "FP": 96,
+          "FN": 684,
+          "TN": 904,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.290783
+        },
+        "L2": {
+          "TPR": 0.118,
+          "TPR_CI_95": [
+            0.0995,
+            0.1395
+          ],
+          "FPR": 0.037,
+          "FPR_CI_95": [
+            0.027,
+            0.0506
+          ],
+          "FPR_target": 0.03,
+          "Precision": 0.7613,
+          "F1": 0.2043,
+          "TP": 118,
+          "FP": 37,
+          "FN": 882,
+          "TN": 963,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.612291
+        },
+        "L3": {
+          "TPR": 0.013,
+          "TPR_CI_95": [
+            0.0076,
+            0.0221
+          ],
+          "FPR": 0.004,
+          "FPR_CI_95": [
+            0.0016,
+            0.0102
+          ],
+          "FPR_target": 0.005,
+          "Precision": 0.7647,
+          "F1": 0.0256,
+          "TP": 13,
+          "FP": 4,
+          "FN": 987,
+          "TN": 996,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.687121
+        }
+      }
+    },
+    "PGD": {
+      "TPR": 0.624,
+      "TPR_CI_95": [
+        0.5936,
+        0.6535
+      ],
+      "FPR": 0.096,
+      "FPR_CI_95": [
+        0.0793,
+        0.1158
+      ],
+      "FPR_target": 0.1,
+      "Precision": 0.8667,
+      "F1": 0.7256,
+      "TP": 624,
+      "FP": 96,
+      "FN": 376,
+      "TN": 904,
+      "n_adv": 1000,
+      "n_clean": 1000,
+      "threshold": 0.290783,
+      "tiers": {
+        "L1": {
+          "TPR": 0.624,
+          "TPR_CI_95": [
+            0.5936,
+            0.6535
+          ],
+          "FPR": 0.096,
+          "FPR_CI_95": [
+            0.0793,
+            0.1158
+          ],
+          "FPR_target": 0.1,
+          "Precision": 0.8667,
+          "F1": 0.7256,
+          "TP": 624,
+          "FP": 96,
+          "FN": 376,
+          "TN": 904,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.290783
+        },
+        "L2": {
+          "TPR": 0.442,
+          "TPR_CI_95": [
+            0.4115,
+            0.4729
+          ],
+          "FPR": 0.037,
+          "FPR_CI_95": [
+            0.027,
+            0.0506
+          ],
+          "FPR_target": 0.03,
+          "Precision": 0.9228,
+          "F1": 0.5977,
+          "TP": 442,
+          "FP": 37,
+          "FN": 558,
+          "TN": 963,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.612291
+        },
+        "L3": {
+          "TPR": 0.225,
+          "TPR_CI_95": [
+            0.2002,
+            0.2519
+          ],
+          "FPR": 0.004,
+          "FPR_CI_95": [
+            0.0016,
+            0.0102
+          ],
+          "FPR_target": 0.005,
+          "Precision": 0.9825,
+          "F1": 0.3662,
+          "TP": 225,
+          "FP": 4,
+          "FN": 775,
+          "TN": 996,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.687121
+        }
+      }
+    },
+    "Square": {
+      "TPR": 0.238,
+      "TPR_CI_95": [
+        0.2126,
+        0.2654
+      ],
+      "FPR": 0.096,
+      "FPR_CI_95": [
+        0.0793,
+        0.1158
+      ],
+      "FPR_target": 0.1,
+      "Precision": 0.7126,
+      "F1": 0.3568,
+      "TP": 238,
+      "FP": 96,
+      "FN": 762,
+      "TN": 904,
+      "n_adv": 1000,
+      "n_clean": 1000,
+      "threshold": 0.290783,
+      "tiers": {
+        "L1": {
+          "TPR": 0.238,
+          "TPR_CI_95": [
+            0.2126,
+            0.2654
+          ],
+          "FPR": 0.096,
+          "FPR_CI_95": [
+            0.0793,
+            0.1158
+          ],
+          "FPR_target": 0.1,
+          "Precision": 0.7126,
+          "F1": 0.3568,
+          "TP": 238,
+          "FP": 96,
+          "FN": 762,
+          "TN": 904,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.290783
+        },
+        "L2": {
+          "TPR": 0.021,
+          "TPR_CI_95": [
+            0.0138,
+            0.0319
+          ],
+          "FPR": 0.037,
+          "FPR_CI_95": [
+            0.027,
+            0.0506
+          ],
+          "FPR_target": 0.03,
+          "Precision": 0.3621,
+          "F1": 0.0397,
+          "TP": 21,
+          "FP": 37,
+          "FN": 979,
+          "TN": 963,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.612291
+        },
+        "L3": {
+          "TPR": 0.001,
+          "TPR_CI_95": [
+            0.0002,
+            0.0056
+          ],
+          "FPR": 0.004,
+          "FPR_CI_95": [
+            0.0016,
+            0.0102
+          ],
+          "FPR_target": 0.005,
+          "Precision": 0.2,
+          "F1": 0.002,
+          "TP": 1,
+          "FP": 4,
+          "FN": 999,
+          "TN": 996,
+          "n_adv": 1000,
+          "n_clean": 1000,
+          "threshold": 0.687121
+        }
+      }
+    }
+  },
+  "_meta": {
+    "n_test": 1000,
+    "n_actual": 1000,
+    "dataset": "cifar10",
+    "eval_split": "CIFAR10 test idx 8000-9999",
+    "ref_split": "CIFAR10 test idx 5000-5999",
+    "thresh_split": "CIFAR10 test idx 6000-6999",
+    "seed": 123,
+    "device": "cuda",
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square"
+    ],
+    "methods": [
+      "sid"
+    ],
+    "eps": 0.031373,
+    "sid_keep_frac": 0.7,
+    "n_ref_spectral": 1000,
+    "fpr_tiers": [
+      {
+        "name": "L1",
+        "target_fpr": 0.1,
+        "percentile": 90.0
+      },
+      {
+        "name": "L2",
+        "target_fpr": 0.03,
+        "percentile": 97.0
+      },
+      {
+        "name": "L3",
+        "target_fpr": 0.005,
+        "percentile": 99.5
+      }
+    ],
+    "sid_thresholds": {
+      "L1": 0.290783,
+      "L2": 0.612291,
+      "L3": 0.687121
+    },
+    "spectral_thresholds": {},
+    "protocol_notes": {
+      "SID": "unsupervised, clean-only threshold calibration (like LID/Maha/ODIN/Energy)",
+      "SpectralDefense": "SUPERVISED, attack-specific LR trained on ref-split (clean,adv) pairs; sees more info than PRISM (conservative)"
+    },
+    "spectral_cross_attack_enabled": false,
+    "spectral_cross_summary": {},
+    "elapsed_s": 1410.7,
+    "references": {
+      "SID": "Tian et al., 2021. Detecting Adversarial Examples from Sensitivity Inconsistency of Spatial-Transform Domain. AAAI 2021. (no-training DCT sensitivity-inconsistency variant)"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "detectors": [
+    "SID"
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "aggregate": {
+    "SID": {
+      "FGSM": {
+        "TPR_mean": 0.1496,
+        "TPR_std": 0.0087,
+        "FPR_mean": 0.1092,
+        "FPR_std": 0.0054,
+        "F1_mean": 0.2376,
+        "F1_std": 0.0121,
+        "n_seeds": 5
+      },
+      "PGD": {
+        "TPR_mean": 0.2306,
+        "TPR_std": 0.0092,
+        "FPR_mean": 0.1092,
+        "FPR_std": 0.0054,
+        "F1_mean": 0.3442,
+        "F1_std": 0.0112,
+        "n_seeds": 5
+      },
+      "Square": {
+        "TPR_mean": 0.0824,
+        "TPR_std": 0.0051,
+        "FPR_mean": 0.1092,
+        "FPR_std": 0.0054,
+        "F1_mean": 0.1383,
+        "F1_std": 0.0075,
+        "n_seeds": 5
+      },
+      "mean_TPR_across_attacks": 0.1542
+    }
+  },
+  "_source_files": [
+    "results_sid_cifar100_seed42.json",
+    "results_sid_cifar100_seed123.json",
+    "results_sid_cifar100_seed456.json",
+    "results_sid_cifar100_seed789.json",
+    "results_sid_cifar100_seed999.json"
+  ]
+}

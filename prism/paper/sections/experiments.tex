@@ -134,9 +134,14 @@ ResNet-18 backbone, using the same calibration scheme
   on all three settings while keeping FPR below the design target;
   every baseline collapses on at least one attack in every setting
   (ODIN/Energy on PGD; LID on Square; Mahalanobis on FGSM/Square on
-  CIFAR-100). \textbf{FPR-target disclosure}: in the WRN-28-10 setting,
+  CIFAR-100). The recent unsupervised detector SID
+  \cite{tian2021detecting} (2021) is the weakest in every setting
+  (mean TPR $0.15$--$0.40$), confirming that PRISM's margin is not an
+  artifact of comparing only against pre-2021 baselines.
+  \textbf{FPR-target disclosure}: in the WRN-28-10 setting,
   Mahalanobis ($0.122$) and LID ($0.105$) exceed the $\alpha{=}0.10$
-  design FPR; in the CIFAR-100 setting, ODIN ($0.116$) exceeds it.
+  design FPR; in the CIFAR-100 setting, ODIN ($0.116$) and SID
+  ($0.109$) exceed it.
   Re-calibrating these detectors at a tighter conformal $\alpha{=}0.073$
   (matched to \prism's empirical FPR) would lower their reported TPR
   further; the present table reports the published-protocol values
