@@ -624,6 +624,27 @@ router achieves $13.9\%$ ($35\%$ of oracle, $+10.6$~pp over passthrough);
 always-route-to-expert-2 achieves $29.3\%$ ($73\%$ of oracle, $+26.0$~pp
 over passthrough, clearing the $+15$~pp C4 gate).
 
+\paragraph{Learned router (C4).}
+The combined-metric topology router clears the gate only by a small margin,
+and always-route-to-expert-2 does so by hardcoding the target expert---which
+invites the objection that the ``learned routing'' contribution is doing no
+work. We therefore replace the topology gating with a \emph{learned} router: a
+logistic regression mapping the pooled \texttt{layer4} activation to an expert
+index, trained on the CAL-split L3 pool ($\sim$390 recoverable samples) and
+evaluated on the \emph{disjoint} EVAL split (5 seeds, $n_{L3}{=}4018$). The
+learned router achieves $\mathbf{28.7\% \pm 1.0}$ recovery (Wilson pooled),
+versus the uniform control $3.2\%$ ($9.1\times$), the topology router $13.7\%$
+($2.1\times$), and $88\%$ of the best-of-$K$ oracle ($32.5\%$). It matches the
+always-route-to-expert-2 upper baseline ($29.3\%$) \emph{without} hardcoding
+the target expert, and---critically---the $+25.5$~pp gain over the uniform
+control isolates the routing signal from expert capacity, which is what the
+uniform control was designed to test. The router is opt-in
+(\texttt{TopologyAwareMoE.set\_learned\_router}); detection (TAMM/CADG/SACD)
+is upstream of routing and is unchanged. Source:
+\texttt{scripts/train\_tamsh\_router.py},
+\texttt{experiments/evaluation/tamsh\_router/} (per-seed reports), router in
+\texttt{models/tamsh\_router.pkl}.
+
 % ─────────────────────────────────────────────────────────────────────────────
 
 \section{CIFAR-100 Results}

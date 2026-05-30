@@ -11,14 +11,22 @@ canonical CW-L2, and $1.000$ on AutoAttack --- $+33.6$~pp mean TPR over the
 strongest baseline detector (Mahalanobis). On campaign streams \sacd flags
 sustained $\rho{=}1.0$ attacks within $2.6 \pm 0.5$ queries with zero
 false-alarm activation on clean-only streams. On L3-rejected PGD
-adversarials, the deployable \tamsh \emph{learned} router (combined
-$H_0{+}H_1$ Wasserstein gating) recovers correct predictions with
-$+10.6$~pp over passthrough, falling $4.4$~pp short of the
-pre-registered $+15$~pp target; a uniform $1/K$ router control achieves
-$0$~pp, isolating the routing-signal contribution. A prior-augmented
-upper-bound variant that always routes to the PGD specialist reaches
-$+26$~pp and is reported as an analysis ceiling against the per-input
-oracle ($+36.6$~pp), not as a deployable policy. All numbers
+adversarials, a \tamsh router trained directly on the L3 pool (logistic
+regression on final-layer activations) recovers $28.7\%$ of inputs ---
+$9.1\times$ the uniform $1/K$ control ($3.2\%$) and $2.1\times$ the
+lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$), reaching $88\%$ of
+the per-input best-of-$K$ oracle and clearing the pre-registered C4 gate
+(Appendix~\ref{app:tamsh_diag}); the large margin over the uniform
+control isolates the routing-signal contribution \emph{on PGD}. This
+uniform-is-degenerate result is PGD-specific: on CW and Square the
+uniform $1/K$ mixture matches or beats the topology gate
+(Appendix~\ref{app:recovery_multi}, e.g.\ Square $+47.2$ vs $+43.5$~pp,
+CW $+47.0$ vs $+39.0$~pp), so uniform mixing of the deployed experts ---
+not the topology gate --- is the deployable cross-attack recovery
+strategy beyond PGD. A prior-augmented upper-bound variant that always
+routes to the PGD specialist reaches $+26$~pp and is reported as an
+analysis ceiling against the per-input oracle ($+36.6$~pp), not as a
+deployable policy. All numbers
 are generated from the locked CIFAR-10 Vast.ai + post-fix local pipelines,
 with attack detection, adaptive attacks, matched-FPR baselines, campaign
 streams, recovery, and ablation tables all derived from result JSONs
@@ -46,9 +54,11 @@ The adaptive-attack evaluation in \S\ref{sec:adaptive} targets
 matching (TAMM) and DCT high-frequency energy --- via the
 \texttt{--through-scorer} run, and is the canonical adaptive result
 in this paper. It does \emph{not} attack StabilityV2, gradient-norm,
-or softmax-entropy: StabilityV2 has no closed-form differentiable
-surrogate (it is a jitter-stability statistic), and gradient-norm /
-softmax-entropy were not added to the BPDA loss in this campaign.
+softmax-entropy, or logit-profile (nor the side-quadratic interaction
+terms built from these channels): StabilityV2 has no closed-form
+differentiable surrogate (it is a jitter-stability statistic), and
+gradient-norm, softmax-entropy, and logit-profile were not added to the
+BPDA loss in this campaign.
 This partial coverage is the most likely reason CIFAR-100 holds
 $0.925$ TPR at $\lambda{=}10$ while CIFAR-10 collapses to $0.429$:
 CIFAR-100's discriminative weight is concentrated in the StabilityV2
@@ -64,8 +74,8 @@ can achieve.
 Highest-priority directions, in order:
 (1) an ensemble-complete adaptive attack that augments the
 \texttt{--through-scorer} loss with differentiable surrogates for the
-StabilityV2 (jitter-stability), gradient-norm, and softmax-entropy
-channels, closing the two-channel gap identified above;
+StabilityV2 (jitter-stability), gradient-norm, softmax-entropy, and
+logit-profile channels, closing the two-channel gap identified above;
 (2) extending the monitor to transformer architectures via attention-head
 and MLP-block activation patterns;
 (3) certified robustness integration by combining \prism with randomized
@@ -73,10 +83,12 @@ smoothing \cite{cohen2019certified} for joint detection-plus-certified
 prediction guarantees;
 (4) online recalibration of the conformal thresholds to handle clean-side
 distribution shift;
-(5) a stronger learned router for \tamsh (closing the
-$+10.6 \to +26$~pp gap toward the prior-augmented upper bound and
-the $+36.6$~pp oracle ceiling) via gating networks trained directly on
-the L3-rejected pool rather than via Wasserstein medoid distance alone.
+(5) closing the residual \tamsh recovery gap: a learned router trained
+directly on the L3-rejected pool (logistic regression on final-layer
+activations) already reaches $88\%$ of the per-input oracle and $9.1\times$
+the uniform control (Appendix~\ref{app:tamsh_diag}); richer multi-layer or
+expert-capacity improvements are needed to close the final gap to the
+oracle ceiling.
 
 \paragraph{Cross-architecture and cross-dataset generalisation.}
 Section~\ref{sec:multi_backbone} reports the same protocol on

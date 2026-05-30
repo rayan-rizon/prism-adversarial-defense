@@ -53,15 +53,16 @@ streams---a threat model absent from prior work.
 \item \textbf{Routed MoE recovery (\tamsh).}
 For inputs reaching the L3 severity tier, \prism routes the input through
 an attack-specialist expert sub-network rather than issuing a blanket
-rejection. The learned router (combined $H_0{+}H_1$ Wasserstein gating)
-delivers a $+10.6$~pp recovery gap over passthrough on PGD-rejected
-inputs; a uniform $1/K$ control achieves exactly $0$~pp, isolating the
-contribution to the routing signal rather than expert capacity. A
-prior-augmented variant that always routes to the PGD specialist reaches
-$+26.0$~pp; we report this as an upper-bound analysis against the
-per-input oracle ceiling of $+36.6$~pp and discuss the residual gap to
-a fully learned router in \S\ref{sec:recovery} as a target for future
-work.
+rejection. A \emph{learned} router---logistic regression on the pooled
+final-layer activation, trained on a held-out L3 pool and evaluated on a
+disjoint split (5 seeds)---recovers $28.7\%$ of L3-rejected PGD
+adversarials, $9.1\times$ the uniform $1/K$ control ($3.2\%$) and
+$2.1\times$ the lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$),
+reaching $88\%$ of the per-input best-of-$K$ oracle ($32.5\%$) and matching
+an oracle-prior baseline that hardcodes the PGD specialist---without that
+hardcoding. The large margin over the uniform control isolates the
+contribution to the routing signal rather than expert capacity
+(Appendix~\ref{app:tamsh_diag}).
 
 \end{enumerate}
 

@@ -1,0 +1,38 @@
+{
+  "n_l3_eval": 822,
+  "n_experts": 4,
+  "per_expert_acc": [
+    0.0353,
+    0.0608,
+    0.2968,
+    0.0353
+  ],
+  "uniform_acc": 0.0353,
+  "topology_acc": 0.1338,
+  "force_best_expert_acc": 0.2968,
+  "learned_acc": 0.2956,
+  "learned_CI95": [
+    0.2654,
+    0.3277
+  ],
+  "oracle_acc": 0.3321,
+  "oracle_CI95": [
+    0.3008,
+    0.365
+  ],
+  "learned_router_idx_hist": [
+    108,
+    71,
+    643,
+    0
+  ],
+  "train": {
+    "n_recoverable": 383,
+    "router_train_acc": 0.9478
+  },
+  "splits": {
+    "train": "5000-6999",
+    "eval": "8000-9999"
+  },
+  "seed": 123
+}
