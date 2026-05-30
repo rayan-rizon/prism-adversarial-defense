@@ -89,7 +89,7 @@ from sklearn.preprocessing import StandardScaler
 from src.config import (
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE, BACKBONE_NUM_CLASSES,
     EPS_LINF_STANDARD,
-    EVAL_IDX, CAL_IDX, DATASET, PATHS,
+    EVAL_IDX, CAL_IDX, DATASET, PATHS, LAYER_NAMES,
 )
 from src.data_loader import load_test_dataset
 from src.models import load_backbone
@@ -197,8 +197,60 @@ def input_mfs_features(x_np_batch):
     return feats
 
 
+def _find_module(model, name):
+    """Find a submodule by bare name (e.g. 'layer3') under a wrapped backbone."""
+    for n, m in model.named_modules():
+        if n == name or n.endswith('.' + name):
+            return m
+    raise KeyError(f"module '{name}' not found in {type(model).__name__}")
+
+
+def layer_mfs_features(norm_model, x_np_batch, layer_names, device, batch=128):
+    """
+    LayerMFS feature extractor (Harder et al. 2021, feature-space variant).
+
+    For each monitored layer, take the 2D-FFT log-magnitude spectrum of the
+    feature maps and average over channels, giving a per-layer spatial-frequency
+    signature; concatenate across layers. norm_model has normalisation baked in
+    (input in [0,1]). Returns (N, sum_l H_l*W_l) float32.
+
+    Averaging over channels keeps the feature dimension tractable for the
+    logistic-regression detector (a few hundred to ~1.3k dims) while preserving
+    the per-layer Fourier signature the detector keys on.
+    """
+    acts = {}
+    handles = []
+
+    def mk(name):
+        def hook(_m, _i, out):
+            acts[name] = out.detach()
+        return hook
+
+    for name in layer_names:
+        handles.append(_find_module(norm_model, name).register_forward_hook(mk(name)))
+
+    feats_all = []
+    try:
+        with torch.no_grad():
+            for s in range(0, len(x_np_batch), batch):
+                xb = torch.from_numpy(x_np_batch[s:s + batch]).to(device).float()
+                acts.clear()
+                norm_model(xb)
+                per_layer = []
+                for name in layer_names:
+                    a = acts[name]                       # (b, C, H, W)
+                    f = torch.fft.fft2(a, dim=(-2, -1))
+                    mag = torch.log1p(torch.abs(f)).mean(dim=1)  # avg channels -> (b,H,W)
+                    per_layer.append(mag.reshape(mag.shape[0], -1).cpu().numpy())
+                feats_all.append(np.concatenate(per_layer, axis=1))
+    finally:
+        for h in handles:
+            h.remove()
+    return np.concatenate(feats_all, axis=0).astype(np.float32)
+
+
 def fit_spectral_detector(clean_feats, adv_feats):
-    """Train StandardScaler + LogisticRegression on (clean, adv) InputMFS feats."""
+    """Train StandardScaler + LogisticRegression on (clean, adv) MFS features."""
     X = np.concatenate([clean_feats, adv_feats], axis=0)
     y = np.concatenate([np.zeros(len(clean_feats)), np.ones(len(adv_feats))])
     scaler = StandardScaler().fit(X)
@@ -208,17 +260,23 @@ def fit_spectral_detector(clean_feats, adv_feats):
     return scaler, lr
 
 
-def spectral_score(scaler, lr, x_np_batch):
+def supervised_score(feat_fn, scaler, lr, x_np_batch):
     """Decision-function score (higher => more adversarial) for a batch."""
-    feats = input_mfs_features(x_np_batch)
-    return lr.decision_function(scaler.transform(feats))
+    return lr.decision_function(scaler.transform(feat_fn(x_np_batch)))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Main
 # ═════════════════════════════════════════════════════════════════════════════
 
-_METHOD_DISPLAY = {'sid': 'SID', 'spectral': 'SpectralDefense'}
+# Supervised MFS detectors share the per-attack LR + cross-attack machinery;
+# they differ only in the feature extractor (input image vs. feature maps).
+_METHOD_DISPLAY = {
+    'sid': 'SID',
+    'spectral': 'SpectralDefense',            # InputMFS  (input-image Fourier)
+    'layermfs': 'SpectralDefense-LayerMFS',   # LayerMFS  (feature-map Fourier)
+}
+_SUPERVISED = ('spectral', 'layermfs')
 _DEFAULT_METHODS = ['sid', 'spectral']
 
 
@@ -306,42 +364,48 @@ def run_recent_baselines(
 
     results = {_METHOD_DISPLAY[m]: {} for m in methods}
 
+    sup_methods = [m for m in methods if m in _SUPERVISED]
+    # Feature extractor per supervised method: input-image FFT vs. feature-map FFT.
+    feat_fns = {}
+    if 'spectral' in sup_methods:
+        feat_fns['spectral'] = input_mfs_features
+    if 'layermfs' in sup_methods:
+        feat_fns['layermfs'] = lambda X: layer_mfs_features(
+            norm_model, X, LAYER_NAMES, device)
+
     # ═══════════════════════════════════════════════════════════════════════
-    # SpectralDefense: train per-attack LR on REF split, calibrate threshold.
+    # Supervised MFS detectors: per-method, per-attack LR on REF split.
     # ═══════════════════════════════════════════════════════════════════════
-    spectral_models = {}        # attack -> (scaler, lr)
-    spectral_thresholds = {}    # attack -> {tier: thr}
-    if 'spectral' in methods:
+    sup_models = {m: {} for m in sup_methods}        # method -> attack -> (scaler, lr)
+    sup_thresholds = {m: {} for m in sup_methods}    # method -> attack -> {tier: thr}
+    clean_sup_eval = {m: {} for m in sup_methods}    # method -> attack -> clean eval scores
+    if sup_methods:
         ref_sub = ref_indices[:n_ref_spectral]
         X_ref = _load_pixels(ref_sub)
-        clean_ref_feats = input_mfs_features(X_ref)
-        print(f"\n[SpectralDefense] Training per-attack LR on {len(X_ref)} ref images...")
-        for atk in attacks_to_run:
-            if atk not in all_attacks:
-                continue
-            atk_obj = all_attacks[atk]()
-            X_ref_adv = atk_obj.generate(X_ref)
-            adv_ref_feats = input_mfs_features(X_ref_adv)
-            scaler, lr = fit_spectral_detector(clean_ref_feats, adv_ref_feats)
-            spectral_models[atk] = (scaler, lr)
-            # threshold on clean thresh split scored by THIS attack's LR
-            clean_thr_scores = spectral_score(scaler, lr, X_thresh)
-            spectral_thresholds[atk] = {
-                tier: float(np.percentile(clean_thr_scores, pct))
-                for (tier, _f, pct) in _FPR_TIERS
-            }
-            tr_acc = lr.score(scaler.transform(
-                np.concatenate([clean_ref_feats, adv_ref_feats])),
-                np.concatenate([np.zeros(len(clean_ref_feats)), np.ones(len(adv_ref_feats))]))
-            print(f"  {atk:>6}: LR train-acc={tr_acc:.3f}, "
-                  f"L1 thr={spectral_thresholds[atk]['L1']:.3f}")
-
-    # Clean eval scores per LR (FPR is a property of LR[t]+threshold[t], so it is
-    # computed once per train-attack and reused across every eval attack).
-    clean_spectral_eval = {}  # train_attack -> clean eval scores
-    if 'spectral' in methods:
-        for t, (scaler, lr) in spectral_models.items():
-            clean_spectral_eval[t] = spectral_score(scaler, lr, X_eval)
+        ref_adv_cache = {}  # attack -> adversarial ref pixels (shared across methods)
+        for m in sup_methods:
+            ff = feat_fns[m]
+            clean_ref_feats = ff(X_ref)
+            print(f"\n[{_METHOD_DISPLAY[m]}] Training per-attack LR on {len(X_ref)} ref images...")
+            for atk in attacks_to_run:
+                if atk not in all_attacks:
+                    continue
+                if atk not in ref_adv_cache:
+                    ref_adv_cache[atk] = all_attacks[atk]().generate(X_ref)
+                adv_ref_feats = ff(ref_adv_cache[atk])
+                scaler, lr = fit_spectral_detector(clean_ref_feats, adv_ref_feats)
+                sup_models[m][atk] = (scaler, lr)
+                clean_thr_scores = supervised_score(ff, scaler, lr, X_thresh)
+                sup_thresholds[m][atk] = {
+                    tier: float(np.percentile(clean_thr_scores, pct))
+                    for (tier, _f, pct) in _FPR_TIERS
+                }
+                clean_sup_eval[m][atk] = supervised_score(ff, scaler, lr, X_eval)
+                tr_acc = lr.score(scaler.transform(
+                    np.concatenate([clean_ref_feats, adv_ref_feats])),
+                    np.concatenate([np.zeros(len(clean_ref_feats)), np.ones(len(adv_ref_feats))]))
+                print(f"  {atk:>6}: LR train-acc={tr_acc:.3f}, "
+                      f"L1 thr={sup_thresholds[m][atk]['L1']:.3f}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # SID: attack-agnostic threshold on clean thresh split.
@@ -386,11 +450,11 @@ def run_recent_baselines(
             }
         return per_tier
 
-    # spectral_cross_matrix[train_attack][eval_attack] = per_tier dict.
-    # Diagonal (train==eval) is the in-distribution result; off-diagonal is
-    # cross-attack transfer (the headline collapse showing SpectralDefense is
-    # attack-specific while PRISM is attack-agnostic).
-    spectral_cross_matrix = {t: {} for t in spectral_models}
+    # sup_cross[method][train_attack][eval_attack] = per_tier dict.
+    # Diagonal (train==eval) is in-distribution; off-diagonal is cross-attack
+    # transfer (the collapse showing these detectors are attack-specific while
+    # PRISM is attack-agnostic).
+    sup_cross = {m: {t: {} for t in sup_models[m]} for m in sup_methods}
 
     t_start = time.time()
     for atk in attacks_to_run:
@@ -418,55 +482,59 @@ def run_recent_baselines(
             print(f"  SID: L1 TPR={l1['TPR']:.4f} FPR={l1['FPR']:.4f} | "
                   f"L2 TPR={per_tier['L2']['TPR']:.4f} | L3 TPR={per_tier['L3']['TPR']:.4f}")
 
-        if 'spectral' in methods:
+        for m in sup_methods:
+            ff = feat_fns[m]
+            disp = _METHOD_DISPLAY[m]
             # Score this eval attack's adversarials with EVERY train-attack LR.
-            train_attacks = list(spectral_models) if spectral_cross else (
-                [atk] if atk in spectral_models else [])
+            train_attacks = list(sup_models[m]) if spectral_cross else (
+                [atk] if atk in sup_models[m] else [])
+            adv_feats = ff(X_eval_adv)  # features computed ONCE, scored by each LR
             for t in train_attacks:
-                scaler, lr = spectral_models[t]
-                adv_scores = spectral_score(scaler, lr, X_eval_adv)
+                scaler, lr = sup_models[m][t]
+                adv_scores = lr.decision_function(scaler.transform(adv_feats))
                 per_tier = _tiers_from_scores(
-                    adv_scores, clean_spectral_eval[t], spectral_thresholds[t])
-                spectral_cross_matrix[t][atk] = per_tier
+                    adv_scores, clean_sup_eval[m][t], sup_thresholds[m][t])
+                sup_cross[m][t][atk] = per_tier
                 if t == atk:  # diagonal = in-distribution, table-facing detector entry
-                    results['SpectralDefense'][atk] = {**per_tier['L1'], 'tiers': per_tier}
+                    results[disp][atk] = {**per_tier['L1'], 'tiers': per_tier}
                     l1 = per_tier['L1']
-                    print(f"  SpectralDefense (train={t}): L1 TPR={l1['TPR']:.4f} "
+                    print(f"  {disp} (train={t}): L1 TPR={l1['TPR']:.4f} "
                           f"FPR={l1['FPR']:.4f} [in-dist]")
                 else:
-                    print(f"  SpectralDefense (train={t}->eval={atk}): "
-                          f"L1 TPR={spectral_cross_matrix[t][atk]['L1']['TPR']:.4f} [cross]")
+                    print(f"  {disp} (train={t}->eval={atk}): "
+                          f"L1 TPR={sup_cross[m][t][atk]['L1']['TPR']:.4f} [cross]")
 
     elapsed = time.time() - t_start
 
-    # ── Cross-attack summary: in-dist (diagonal) vs cross-attack (off-diagonal mean) ──
-    spectral_cross_summary = {}
-    if 'spectral' in methods and spectral_cross:
-        print(f"\n{'='*70}\nSpectralDefense cross-attack matrix (L1 TPR; rows=train, cols=eval)\n{'-'*70}")
-        evals = [a for a in attacks_to_run if a in all_attacks]
-        hdr = "train\\eval".ljust(12) + "".join(f"{e:>10}" for e in evals)
-        print(hdr)
-        for t in spectral_models:
-            row = t.ljust(12)
-            for e in evals:
-                cell = spectral_cross_matrix[t].get(e)
-                row += f"{cell['L1']['TPR']:>10.3f}" if cell else f"{'-':>10}"
-            print(row)
-        for t in spectral_models:
-            diag = spectral_cross_matrix[t].get(t, {}).get('L1', {}).get('TPR')
-            off = [spectral_cross_matrix[t][e]['L1']['TPR']
-                   for e in evals if e != t and e in spectral_cross_matrix[t]]
-            spectral_cross_summary[t] = {
-                'in_dist_TPR': diag,
-                'cross_attack_mean_TPR': round(float(np.mean(off)), 4) if off else None,
-                'cross_attack_min_TPR': round(float(np.min(off)), 4) if off else None,
-                'n_cross': len(off),
-            }
-        print(f"{'-'*70}")
-        for t, s in spectral_cross_summary.items():
-            print(f"  train={t:>6}: in-dist TPR={s['in_dist_TPR']}, "
-                  f"cross-attack mean={s['cross_attack_mean_TPR']}, "
-                  f"min={s['cross_attack_min_TPR']}")
+    # ── Cross-attack summary per supervised method: in-dist vs off-diagonal ──
+    sup_cross_summary = {m: {} for m in sup_methods}  # method -> train -> {...}
+    evals = [a for a in attacks_to_run if a in all_attacks]
+    if spectral_cross:
+        for m in sup_methods:
+            disp = _METHOD_DISPLAY[m]
+            print(f"\n{'='*70}\n{disp} cross-attack matrix (L1 TPR; rows=train, cols=eval)\n{'-'*70}")
+            print("train\\eval".ljust(12) + "".join(f"{e:>10}" for e in evals))
+            for t in sup_models[m]:
+                row = t.ljust(12)
+                for e in evals:
+                    cell = sup_cross[m][t].get(e)
+                    row += f"{cell['L1']['TPR']:>10.3f}" if cell else f"{'-':>10}"
+                print(row)
+            for t in sup_models[m]:
+                diag = sup_cross[m][t].get(t, {}).get('L1', {}).get('TPR')
+                off = [sup_cross[m][t][e]['L1']['TPR']
+                       for e in evals if e != t and e in sup_cross[m][t]]
+                sup_cross_summary[m][t] = {
+                    'in_dist_TPR': diag,
+                    'cross_attack_mean_TPR': round(float(np.mean(off)), 4) if off else None,
+                    'cross_attack_min_TPR': round(float(np.min(off)), 4) if off else None,
+                    'n_cross': len(off),
+                }
+            print(f"{'-'*70}")
+            for t, s in sup_cross_summary[m].items():
+                print(f"  train={t:>6}: in-dist TPR={s['in_dist_TPR']}, "
+                      f"cross-attack mean={s['cross_attack_mean_TPR']}, "
+                      f"min={s['cross_attack_min_TPR']}")
 
     # ── Summary ──
     print(f"\n{'='*70}\n{'Detector':>16} {'Attack':>8} {'TPR':>8} {'FPR':>8} {'F1':>8}\n{'-'*70}")
@@ -483,8 +551,12 @@ def run_recent_baselines(
                '(no-training DCT sensitivity-inconsistency variant)',
         'SpectralDefense': 'Harder et al., 2021. SpectralDefense: Detecting Adversarial '
                            'Attacks on CNNs in the Fourier Domain. IJCNN 2021. '
-                           '(InputMFS: log-magnitude FFT + logistic regression, '
-                           'supervised per-attack)',
+                           '(InputMFS: log-magnitude FFT of the input image + logistic '
+                           'regression, supervised per-attack)',
+        'SpectralDefense-LayerMFS': 'Harder et al., 2021. SpectralDefense (LayerMFS): '
+                           'log-magnitude FFT of feature maps (channel-averaged per '
+                           'layer, layers=' + ','.join(LAYER_NAMES) + ') + logistic '
+                           'regression, supervised per-attack.',
     }
     results['_meta'] = {
         'n_test': n_test, 'n_actual': int(len(sample_idx)),
@@ -495,25 +567,30 @@ def run_recent_baselines(
         'seed': seed, 'device': str(device), 'attacks': attacks_to_run,
         'methods': methods, 'eps': round(eps, 6),
         'sid_keep_frac': sid_keep, 'n_ref_spectral': n_ref_spectral,
+        'layermfs_layers': list(LAYER_NAMES) if 'layermfs' in methods else None,
         'fpr_tiers': [{'name': n, 'target_fpr': f / 100.0, 'percentile': p}
                       for (n, f, p) in _FPR_TIERS],
         'sid_thresholds': {t: round(v, 6) for t, v in sid_thresholds.items()},
-        'spectral_thresholds': {a: {t: round(v, 6) for t, v in d.items()}
-                                for a, d in spectral_thresholds.items()},
+        'supervised_thresholds': {
+            _METHOD_DISPLAY[m]: {a: {t: round(v, 6) for t, v in d.items()}
+                                 for a, d in sup_thresholds[m].items()}
+            for m in sup_methods},
         'protocol_notes': {
             'SID': 'unsupervised, clean-only threshold calibration (like LID/Maha/ODIN/Energy)',
-            'SpectralDefense': 'SUPERVISED, attack-specific LR trained on ref-split '
+            'SpectralDefense*': 'SUPERVISED, attack-specific LR trained on ref-split '
                                '(clean,adv) pairs; sees more info than PRISM (conservative)',
         },
-        'spectral_cross_attack_enabled': bool(spectral_cross and 'spectral' in methods),
-        'spectral_cross_summary': spectral_cross_summary,
+        'spectral_cross_attack_enabled': bool(spectral_cross and sup_methods),
+        'spectral_cross_summary': {_METHOD_DISPLAY[m]: sup_cross_summary[m]
+                                   for m in sup_methods},
         'elapsed_s': round(elapsed, 1),
         'references': {_METHOD_DISPLAY[m]: refs[_METHOD_DISPLAY[m]] for m in methods},
     }
 
-    # Full cross-attack matrix (underscore-prefixed so aggregate_baselines.py skips it).
-    if 'spectral' in methods and spectral_cross:
-        results['_spectral_cross_attack'] = spectral_cross_matrix
+    # Full cross-attack matrices (underscore-prefixed so aggregate_baselines.py skips).
+    if spectral_cross and sup_methods:
+        results['_spectral_cross_attack'] = {
+            _METHOD_DISPLAY[m]: sup_cross[m] for m in sup_methods}
 
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
