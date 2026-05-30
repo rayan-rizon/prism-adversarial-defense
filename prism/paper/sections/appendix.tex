@@ -312,9 +312,11 @@ confidence-margin sweep for robust detector evaluation, so we
 additionally measure TPR at $\kappa \in \{0, 10, 20\}$ on $n{=}1000$
 EVAL-split inputs per seed across all 5 fixed seeds (paper-grade
 protocol matching Table~\ref{tab:main}), using the native PyTorch CW
-implementation (\texttt{src/attacks/cw\_torch.py},
-$\text{max\_iter}{=}40$, $\text{bss}{=}5$). All three configurations
-achieve $\geq 99.9\%$ attack-success against the unwrapped backbone.
+implementation (\texttt{src/attacks/cw\_torch.py}) at the
+\emph{paper-canonical} attack budget $\text{max\_iter}{=}100$,
+$\text{bss}{=}9$. All three configurations achieve
+$\geq 99.8\%$ attack-success against the unwrapped backbone with mean
+$L_2 \leq 0.151$.
 
 \begin{table}[h]
 \centering
@@ -323,27 +325,87 @@ achieve $\geq 99.9\%$ attack-success against the unwrapped backbone.
 \toprule
 $\kappa$ & Attack success & mean $L_2$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L3 \\
 \midrule
-0 (canonical)  & 0.999 & 0.141 & \textbf{0.9014} [0.893, 0.909] & 0.704 & 0.247 \\
-10             & 1.000 & 0.167 & \textbf{0.6696} [0.656, 0.683] & 0.417 & 0.108 \\
-20             & 1.000 & 0.168 & \textbf{0.6794} [0.666, 0.692] & 0.439 & 0.120 \\
+0 (canonical)  & 0.998 & 0.128 & \textbf{0.9486} [0.942, 0.954] & 0.805 & 0.339 \\
+10             & 0.998 & 0.149 & \textbf{0.7762} [0.764, 0.788] & 0.565 & 0.194 \\
+20             & 0.999 & 0.151 & \textbf{0.7906} [0.779, 0.802] & 0.578 & 0.198 \\
 \bottomrule
 \end{tabular}
-\caption{CW confidence-margin sensitivity (5 seeds $\times n{=}1000$ =
-$5{,}000$ EVAL adversarials per $\kappa$, RTX~4090, deployed scorer).
-Pooled clean FPR on the same EVAL pool is L1 $=0.078$, L2 $=0.017$,
-L3 $=0.002$. Higher-confidence CW reduces TPR at L1 by
-$\approx 23$~pp from $\kappa{=}0$ ($0.901$) to $\kappa{=}10$
-($0.670$), plateauing at $\kappa{=}20$ ($0.679$). The detector still
-discriminates adversarial from clean ($0.67$ vs $0.08$ at L1, an
-$8.6\times$ ratio), but the margin narrows substantially relative to
-the canonical-CW headline ($0.94$ at $\kappa{=}0$ on a different
-calibration split, Table~\ref{tab:main}). The drop is consistent with
-the detector being trained on $\kappa{=}0$ CW signatures and not
-having seen high-confidence variants during ensemble training;
-per-attack training augmentation with $\kappa{>}0$ samples is a
-natural robustness lever for future work. Source:
-\texttt{experiments/stress/vastai\_stronger\_cw.json}.}
+\caption{CW confidence-margin sensitivity at paper-canonical attack
+budget ($\text{max\_iter}{=}100$, $\text{bss}{=}9$), 5 seeds
+$\times n{=}1000 = 5{,}000$ EVAL adversarials per $\kappa$ on RTX~4090
+with the deployed scorer. Pooled clean FPR on the same EVAL pool is
+L1 $=0.078$, L2 $=0.017$, L3 $=0.002$. The $\kappa{=}0$ headline
+($0.9486$) lands within $1$~pp of the main-table value ($0.938$,
+Table~\ref{tab:main}), confirming the canonical result is reproducible
+under the stronger attack budget. Higher-confidence CW reduces TPR at
+L1 by $\approx 17$~pp from $\kappa{=}0$ to $\kappa{=}10$ ($0.776$),
+\emph{plateauing} at $\kappa{=}20$ ($0.791$, statistically tied with
+$\kappa{=}10$) rather than further collapsing. The detector still
+discriminates adversarial from clean ($0.78$ vs $0.08$ at L1, a
+$10\times$ ratio) at the strongest tested margin. The drop is
+consistent with the ensemble being trained on FGSM/PGD/Square only (CW is
+\emph{not} in the training mix; see Appendix~\ref{app:weak_cw}): the
+canonical $\kappa{=}0$ CW signature is caught via transfer from the
+gradient-following statistics the ensemble has learned, whereas
+higher-confidence ($\kappa{>}0$) CW drifts off that transferable
+signature. Per-attack training augmentation with $\kappa{>}0$ (or CW)
+samples is a natural robustness lever for future work. Source:
+\texttt{experiments/stress/vastai\_stronger\_cw\_canonical.json}.}
 \label{tab:strong_cw}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{AutoAttack-$L_\infty$ Evaluation}
+\label{app:autoattack}
+
+AutoAttack~\cite{croce2020reliable} is the de-facto standard
+adversarial-robustness benchmark, combining four parameter-free attacks
+(APGD-CE, APGD-DLR, FAB-T, and Square) into a strong, reproducible
+ensemble. We evaluate the deployed PRISM detector at the canonical
+$\varepsilon_\infty{=}8/255$ budget on $n{=}1000$ EVAL-split inputs per
+seed across all 5 fixed seeds (paper-grade protocol matching
+Table~\ref{tab:main}). Each sub-attack is run independently so per-attack
+TPR can be reported; Square is constrained to $n_\text{queries}{=}1000$
+for tractability.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Sub-attack & Attack success & mean $L_\infty$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L3 \\
+\midrule
+APGD-CE  & 0.999 & 0.0299 & \textbf{0.9708} [0.966, 0.975] & 0.9608 & \textbf{0.9500} \\
+APGD-DLR & 1.000 & 0.0299 & \textbf{0.9112} [0.903, 0.919] & 0.7782 & 0.3156 \\
+FAB-T    & 0.971 & 0.0038 & \textbf{0.9314} [0.924, 0.938] & 0.8338 & 0.4494 \\
+Square   & 0.830 & 0.0246 & \textbf{0.7062} [0.693, 0.719] & 0.5080 & 0.1590 \\
+\bottomrule
+\end{tabular}
+\caption{AutoAttack-$L_\infty$ ($\varepsilon{=}8/255$) per-sub-attack TPR
+on 5 seeds $\times n{=}1000 = 5{,}000$ EVAL adversarials per attack
+(RTX~4090, deployed scorer). Pooled clean FPR on the same EVAL pool is
+L1 $=0.078$, L2 $=0.017$, L3 $=0.002$. Three observations:
+(i) The gradient-based AA components (APGD-CE / APGD-DLR / FAB-T) are
+all detected at $\geq 0.91$ TPR @ L1, with APGD-CE persisting at
+$0.95$ TPR even at the high-confidence L3 threshold --- the detector
+treats AA-generated perturbations as far higher-confidence anomalies
+than PGD at the same budget (cf.\ Table~\ref{tab:main} PGD L1
+$=0.987$, but with much shallower L3 tail).
+(ii) FAB-T converges with $L_\infty \approx 0.0038$ ($\sim 8{\times}$
+under the budget) yet is still detected at $0.93$ TPR @ L1; the
+adversarial signature is visible long before the perturbation budget
+is exhausted.
+(iii) The black-box Square component achieves the lowest TPR
+($0.706$ @ L1) at the highest attack-failure rate ($17\%$). This does
+\emph{not} exceed the strongest Square-specific baseline (Energy at
+$0.974$ Square TPR, Table~\ref{tab:baselines}); but Energy buys that
+Square number at the cost of collapsing to $0.001$ on PGD, whereas
+\prism holds $\ge 0.71$ TPR on \emph{every} AutoAttack sub-attack and
+$\ge 0.88$ across the four headline attacks --- Energy has no robust
+mean-TPR floor across attacks. Source:
+\texttt{experiments/stress/vastai\_autoattack.json}.}
+\label{tab:autoattack}
 \end{table}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -574,6 +636,46 @@ the same three FPR tiers L1/L2/L3 = $0.10, 0.03, 0.005$).
 Headline detection numbers are in Table~\ref{tab:main_multi}; this
 appendix collects the per-component artifacts.
 
+\paragraph{High-confidence CW sensitivity (CIFAR-100).}
+We additionally measure CW TPR at $\kappa \in \{0, 10, 20\}$ on the
+CIFAR-100/ResNet-18 setting, mirroring the CIFAR-10 protocol of
+Table~\ref{tab:strong_cw}. Five seeds $\times n{=}1000$ EVAL-split
+adversarials per $\kappa$ with the paper-canonical CW configuration
+($\text{max\_iter}{=}100$, $\text{bss}{=}9$) yields the numbers in
+Table~\ref{tab:strong_cw_c100}. Two observations: (i) the $\kappa{=}0$
+headline ($0.7212$) is $\sim 23$~pp below the CIFAR-10 canonical CW
+TPR ($0.9486$, Table~\ref{tab:strong_cw}), consistent with the
+CIFAR-100 result being harder for optimisation-based attacks across
+the board (Table~\ref{tab:main_multi}); (ii) the $\kappa{=}0 \to
+\kappa{=}10$ drop is $\sim 10$~pp on CIFAR-100 vs $\sim 17$~pp on
+CIFAR-10, and $\kappa{=}10$ and $\kappa{=}20$ are statistically tied
+on both datasets --- the detector saturates rather than collapses
+under high-confidence CW. At the strongest tested margin
+($\kappa{=}20$) the detector still produces a $8.7{\times}$
+discrimination ratio between adversarial ($0.612$) and clean
+($0.073$) at L1 on CIFAR-100.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{cccccc}
+\toprule
+$\kappa$ & Attack success & mean $L_2$ & TPR @ L1 [95\% CI] & TPR @ L2 & TPR @ L3 \\
+\midrule
+0 (canonical)  & 0.994 & 0.079 & \textbf{0.7212} [0.709, 0.733] & 0.3908 & 0.0866 \\
+10             & 0.992 & 0.085 & \textbf{0.6098} [0.596, 0.623] & 0.3104 & 0.0716 \\
+20             & 0.993 & 0.085 & \textbf{0.6124} [0.599, 0.626] & 0.3106 & 0.0702 \\
+\bottomrule
+\end{tabular}
+\caption{CIFAR-100 CW confidence-margin sensitivity at paper-canonical
+attack budget ($\text{max\_iter}{=}100$, $\text{bss}{=}9$), 5 seeds
+$\times n{=}1000 = 5{,}000$ EVAL adversarials per $\kappa$ on RTX~4090
+with the deployed CIFAR-100 scorer. Pooled clean FPR on the same EVAL
+pool is L1 $=0.073$, L2 $=0.025$, L3 $=0.002$. Source:
+\texttt{experiments/stress/vastai\_stronger\_cw\_canonical\_c100.json}.}
+\label{tab:strong_cw_c100}
+\end{table}
+
 \paragraph{Adaptive PGD ($\lambda$ sweep).}
 Table~\ref{tab:c100_adaptive} reports adaptive PGD (BPDA,
 activation-matching + DCT-energy matching via
@@ -611,8 +713,11 @@ StabilityV2, gradient-norm, and softmax-entropy losses --- is the
 required next step (see \S\ref{sec:conclusion}); the
 $\lambda$-sweep results bound the partial-coverage attacker.
 
-The corresponding WRN-28-10 adaptive-PGD evaluation was not part of
-the locked WRN campaign and is left for future work.
+The corresponding WRN-28-10 adaptive-PGD evaluation is reported in
+\S\ref{app:wrn_adaptive} (Table~\ref{tab:wrn_adaptive}): WRN behaves
+identically to ResNet-18 on CIFAR-10 under the same attack, so the
+architecture-agnostic interpretation is that the channel-coverage
+analysis above governs both settings.
 
 \begin{table}[h]
 \centering
@@ -625,14 +730,17 @@ the locked WRN campaign and is left for future work.
 \paragraph{Channel-mask ablation (with FPR disclosure).}
 The CIFAR-100 ablation in Table~\ref{tab:c100_abl} mirrors the
 CIFAR-10 methodology: each row removes one feature family while reusing
-the Full-PRISM threshold. As on CIFAR-10, several configurations
-inflate FPR rather than improve discrimination: No-LogitProfile,
-No-DCT, and especially No-GradNorm (FPR~$0.658$, i.e.\ flags two-thirds
-of clean inputs) appear to ``improve'' TPR only because their
-calibrated threshold has collapsed. We surface this directly via the
-explicit FPR column so the table cannot be misread as an argument for
+the Full-PRISM threshold. Unlike CIFAR-10 (where No-LogitProfile
+inflates FPR to $0.938$), on CIFAR-100 only \emph{one} configuration
+inflates FPR rather than improving discrimination: No-GradNorm
+(FPR~$0.658$, i.e.\ flags two-thirds of clean inputs) appears to
+``improve'' TPR only because its calibrated threshold has collapsed.
+The other masked rows hold FPR at or below the $0.10$ design target
+(No-LogitProfile $0.077$, No-DCT $0.058$, No-StabilityV2 $0.019$) and
+mostly \emph{lose} TPR on removal. We surface FPR directly via the
+explicit column so the table cannot be misread as an argument for
 dropping any single channel. The legitimate signal is that StabilityV2
-(PGD/Square TPR collapses on its removal), TDA (FGSM TPR collapses
+(PGD/Square/CW TPR collapses on its removal), TDA (FGSM TPR collapses
 without it), DCT, and LogitProfile each contribute non-redundant
 discriminative information at the calibrated FPR.
 
@@ -645,6 +753,18 @@ discriminative information at the calibrated FPR.
   Rows whose FPR exceeds the $0.10$ design target indicate threshold
   collapse, not improved detection; they are reported here for
   symmetry with Table~\ref{tab:ablation} only.
+  \textbf{Baseline row.} ``Full PRISM (ablation cal.)'' is the
+  \emph{ablation-internal} baseline: the ablation pipeline refits one
+  split-conformal threshold shared by every channel-mask arm, so each
+  masked row is measured against a common operating point. The canonical
+  Full PRISM numbers are the CIFAR-100 row of Table~\ref{tab:main_multi}
+  (FGSM $0.835$, PGD $0.984$, Square $0.672$, CW $0.687$, FPR $0.077$),
+  from the detection pipeline's canonical calibrator on the \emph{same}
+  eval split $[8000,10000]$, 5 seeds, $n{=}1000$. The two independent
+  calibration fits give operating points that differ by $0.1$--$0.8$~pp
+  TPR (mean $0.4$~pp; largest on CW, $0.679$ vs $0.687$) and $0.4$~pp FPR
+  ($0.073$ vs $0.077$); every value here lies within the Wilson 95\% CIs
+  of Table~\ref{tab:main_multi}, which is the row to cite as canonical.
 }
 \label{tab:c100_abl}
 \end{table}
@@ -697,6 +817,54 @@ appendix-only secondary result on CIFAR-100.
 \label{tab:c100_rec}
 \end{table}
 
+\paragraph{L3 recovery on FGSM/Square/CW (CIFAR-100).}
+The PGD-only collapse above does \emph{not} extend to the rest of the
+attack mix. Re-running the same recovery harness with FGSM, Square,
+and CW-L2 adversarials on $n{=}1000$ EVAL-split inputs per seed
+across all 5 fixed seeds reveals a strongly attack-conditional
+recovery profile (Table~\ref{tab:c100_rec_multi}). The topology
+router recovers $+42.4$~pp over passthrough on CW and $+31.4$~pp on
+Square --- exceeding the C4 $+15$~pp gate by a wide margin --- while
+remaining neutral or marginally negative on FGSM. The uniform $1/K$
+control is statistically tied with the topology router on Square/CW
+(same pattern as the PGD-on-CIFAR-10 result in
+Table~\ref{tab:recovery}), confirming that recovery on optimization-
+and query-based attacks is driven by expert capacity at the
+calibrated FPR, with the topology gate not adding measurable signal
+above $1/K$. The force-PGD specialist that delivers $+26$~pp on
+CIFAR-10/PGD collapses to $\le +7.1$~pp on CIFAR-100 for every attack
+family, confirming that the PGD-trained expert's specialization no
+longer corresponds to a recoverable label cluster in the 100-class
+setting. The FGSM column tracks the CIFAR-10 FGSM result
+(Table~\ref{tab:recovery_multi}) qualitatively (small, mixed-sign
+deltas) but the per-seed signal is too noisy at $n_{L3}\approx 185$
+per seed to claim a positive recovery; we report the negative outcome
+honestly.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccccc}
+\toprule
+Attack & $n_{L3}$ pool & Trigger rate & Passthrough & Uniform router & Topology router & Oracle \\
+\midrule
+FGSM   & 924  & 0.185 & 0.121 & 0.142 ($+2.1$pp) & 0.102 ($-1.9$pp) & 0.306 \\
+Square & 449  & 0.090 & 0.020 & \textbf{0.354 ($+33.4$pp)} & \textbf{0.334 ($+31.4$pp)} & 0.626 \\
+CW     & 394  & 0.079 & 0.015 & \textbf{0.447 ($+43.1$pp)} & \textbf{0.439 ($+42.4$pp)} & 0.744 \\
+\bottomrule
+\end{tabular}
+\caption{CIFAR-100 L3-recovery on FGSM/Square/CW adversarials, pooled
+across 5 seeds $\times n{=}1000$ = $5{,}000$ EVAL adversarials per
+attack (RTX~4090, deployed C100 scorer, $L_3$ threshold
+$=5.584$). Wilson 95\% CIs on the topology row are FGSM
+$[0.084, 0.123]$, Square $[0.292, 0.379]$, CW $[0.391, 0.488]$. The
+$+42.4$~pp CW and $+31.4$~pp Square recovery decisively exceed the
+$+15$~pp C4 gate, so the C4 demotion clause in plan P0.5 applies
+only to the PGD/FGSM sub-cases on CIFAR-100. Source:
+\texttt{experiments/stress/vastai\_recovery\_multi\_c100.json}.}
+\label{tab:c100_rec_multi}
+\end{table}
+
 \paragraph{Latency.}
 Single-sample end-to-end PRISM detection latency
 (Table~\ref{tab:latency}) is well below the 100~ms real-time target
@@ -710,3 +878,204 @@ CUDA kernel compilation; steady-state p95 is the deployable figure.
 \caption{End-to-end PRISM detection latency (RTX 4090, $n=200$).}
 \label{tab:latency}
 \end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{WRN-28-10 Adaptive PGD}
+\label{app:wrn_adaptive}
+
+The headline adaptive-PGD result (Table~\ref{tab:adaptive_pgd},
+\S\ref{sec:adaptive}) uses CIFAR-10/ResNet-18. To check whether the
+$\lambda$-sweep degradation is architecture-specific, we re-run the
+same attack on WRN-28-10/CIFAR-10 with identical hyperparameters
+($n{=}1000$ EVAL adversarials, $100$ PGD steps, $10$ restarts,
+$\varepsilon{=}8/255$, BPDA via \texttt{--through-scorer}). Results
+in Table~\ref{tab:wrn_adaptive}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{ccccc}
+\toprule
+$\lambda$ & WRN-28-10 TPR [95\% CI] & FPR & ResNet-18 TPR & $\Delta$ \\
+\midrule
+0    & \textbf{0.8420} [0.818, 0.863] & 0.081 & 0.832 & $+1.0$~pp \\
+0.5  & \textbf{0.7990} [0.773, 0.823] & 0.081 & 0.796 & $+0.3$~pp \\
+1    & \textbf{0.7450} [0.717, 0.771] & 0.081 & 0.753 & $-0.8$~pp \\
+2    & \textbf{0.6640} [0.634, 0.693] & 0.081 & 0.660 & $+0.4$~pp \\
+5    & \textbf{0.4880} [0.457, 0.519] & 0.081 & 0.490 & $-0.2$~pp \\
+10   & \textbf{0.4260} [0.396, 0.457] & 0.081 & 0.429 & $-0.3$~pp \\
+\bottomrule
+\end{tabular}
+\caption{WRN-28-10/CIFAR-10 adaptive PGD ($n{=}1000$, seed~42,
+$100$ steps $\times 10$ restarts, $\varepsilon{=}8/255$, BPDA through
+the scorer). FPR holds at the calibrated $0.081$ across all
+$\lambda$ (conformal coverage preserved). The ResNet-18 column
+reproduces the 5-seed pool from Table~\ref{tab:adaptive_pgd}
+($n{=}5{,}000$ each, FPR $0.075$); WRN here is a single-seed
+$n{=}1000$ rerun, so CIs are wider, but the two architectures
+agree within $\pm 1.0$~pp at every $\lambda$ on a $0.84 \to 0.43$
+collapse curve. The architecture-agnostic interpretation is that
+adaptive-PGD vulnerability on CIFAR-10 is governed by the
+ensemble-channel coverage of the attack, not by the backbone
+choice. Source:
+\texttt{experiments/stress/wrn/vastai\_wrn\_adaptive\_pgd*.\{json,jsonl\}}
+(consolidated in \texttt{vastai\_wrn\_adaptive\_pgd\_merged.json}).}
+\label{tab:wrn_adaptive}
+\end{table}
+
+\paragraph{Take-away.}
+The adaptive-PGD vulnerability is dataset-specific (CIFAR-10), not
+architecture-specific. WRN-28-10 inherits the same
+ensemble-channel-coverage gap that the CIFAR-10/ResNet-18 adaptive
+attack exploits (\S\ref{sec:adaptive}: TDA + DCT carry dominant
+discriminative weight on CIFAR-10; suppressing them via
+\texttt{--through-scorer} removes most of the detector's signal).
+The CIFAR-100 robustness gap (Table~\ref{tab:c100_adaptive},
+TPR $\in [0.92, 0.95]$ across the same $\lambda$ sweep) confirms the
+same mechanism in reverse: on CIFAR-100, StabilityV2 is the
+dominant signal and is not covered by the adaptive loss. An
+ensemble-complete adaptive attack (adding differentiable surrogates
+for StabilityV2, gradient-norm, and softmax-entropy) is required to
+re-evaluate WRN-28-10 and CIFAR-100; see \S\ref{sec:conclusion}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{AutoAttack $L_\infty$ Epsilon Sensitivity}
+\label{app:aa_eps_sweep}
+
+The canonical AA evaluation (\S\ref{app:autoattack}, Table~\ref{tab:autoattack})
+uses $\varepsilon{=}8/255$. To measure how PRISM's detection rate varies with
+the adversary's budget, we repeat the same protocol (5 seeds $\times n{=}1000$
+EVAL-split, sub-attacks APGD-CE/APGD-DLR/FAB-T/Square,
+$n_\text{queries}{=}1000$ for Square) at two larger budgets
+$\varepsilon \in \{12/255, 16/255\}$ on the deployed CIFAR-10/ResNet-18 scorer.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l|ccc|ccc|ccc}
+\toprule
+ & \multicolumn{3}{c|}{TPR @ L1} & \multicolumn{3}{c|}{TPR @ L2} & \multicolumn{3}{c}{TPR @ L3} \\
+Sub-attack & $8/255$ & $12/255$ & $16/255$ & $8/255$ & $12/255$ & $16/255$ & $8/255$ & $12/255$ & $16/255$ \\
+\midrule
+%% VALUES BELOW: 5-seed pooled from vastai_autoattack_eps_sweep.json
+APGD-CE  & 0.9708 & 0.9708 & 0.9708 & 0.9608 & 0.9620 & 0.9620 & 0.9500 & 0.9556 & 0.9560 \\
+APGD-DLR & 0.9112 & 0.9560 & 0.9646 & 0.7782 & 0.8960 & 0.9312 & 0.3156 & 0.5780 & 0.7834 \\
+FAB-T    & 0.9314 & 0.9290 & 0.9308 & 0.8338 & 0.8326 & 0.8308 & 0.4494 & 0.4482 & 0.4460 \\
+Square   & 0.7062 & 0.8162 & 0.8714 & 0.5080 & 0.5766 & 0.6380 & 0.1590 & 0.1578 & 0.1898 \\
+\bottomrule
+\end{tabular}
+\caption{AutoAttack $L_\infty$ TPR vs.\ $\varepsilon$ budget, 5 seeds
+$\times n{=}1000 = 5{,}000$ EVAL adversarials per (sub-attack, $\varepsilon$) cell
+(RTX~4090). The $\varepsilon{=}8/255$ column reproduces Table~\ref{tab:autoattack}
+for direct comparison; $\varepsilon \in \{12/255,16/255\}$ come from
+\texttt{vastai\_autoattack\_eps\_sweep.json}. Pooled clean FPR on the same EVAL
+pool is L1 $=0.078$, L2 $=0.017$, L3 $=0.002$. Four observations:
+(i) APGD-CE detection is exactly flat at L1 ($0.9708$ identically across all
+three budgets) with mild $+0.6$~pp growth at L3---larger perturbations do
+not improve evasion against the topological signal.
+(ii) APGD-DLR exhibits the strongest budget sensitivity: L3 TPR climbs
+$+47$~pp from $\varepsilon{=}8/255$ ($0.316$) to $\varepsilon{=}16/255$
+($0.783$), confirming that the L3 conformal tier reliably catches the
+higher-distortion adversarials the DLR loss is willing to produce.
+(iii) Square (black-box) TPR increases monotonically at L1 and L2
+($+11$~pp / $+13$~pp from $8/255$ to $16/255$); larger random perturbations
+produce stronger activation anomalies without any gradient information.
+(iv) FAB-T converges far below the nominal budget (mean $L_\infty \approx 0.004$
+in all three configurations) and so is essentially $\varepsilon$-invariant
+across all three tiers ($\Delta \le 0.003$); the attack's minimum-norm
+objective dominates the budget constraint.
+The bottom line: increasing the adversarial budget either improves PRISM
+TPR (APGD-CE, APGD-DLR, Square) or leaves it statistically unchanged
+(FAB-T, where the residual $\le 0.3$~pp drifts sit well inside the
+$\pm 1.4$~pp seed-pool 95\% CI). The threat model conclusion is that
+the adversary gains nothing from spending more $L_\infty$ budget against
+the detector.}
+\label{tab:aa_eps_sweep}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Recent Detector Baselines (2021): SID and SpectralDefense}
+\label{app:recent_baselines}
+
+The four matched-FPR baselines in \S\ref{sec:detection}
+(LID, Mahalanobis, ODIN, Energy) predate 2021. To check that PRISM's
+advantage holds against more recent detectors, we add two 2021 methods
+on the same CIFAR-10/ResNet-18 EVAL split, calibration scheme, and
+$\varepsilon{=}8/255$ attack configs (5 seeds $\times n{=}1000$):
+
+\begin{itemize}
+\item \textbf{SID} \cite{tian2021detecting} --- sensitivity-inconsistency
+  detector. We use the \emph{unsupervised, no-training} variant: the score
+  is the Jensen--Shannon divergence between $\mathrm{softmax}(f(x))$ and
+  $\mathrm{softmax}(f(T(x)))$, where $T$ is a DCT low-pass reconstruction
+  (keep fraction $0.70$, selected on a held-out PGD probe). Threshold is
+  fit on the clean split only, exactly as for LID/Mahalanobis/ODIN/Energy.
+\item \textbf{SpectralDefense} \cite{harder2021spectraldefense} ---
+  InputMFS variant: a logistic-regression detector on the log-magnitude
+  $2$D-FFT of the input. Unlike PRISM and the other baselines, this is a
+  \emph{supervised, attack-specific} detector: one classifier is trained
+  per attack on (clean, adversarial) pairs from the disjoint REF split. It
+  therefore sees strictly more information than PRISM, which never trains
+  on adversarials.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/recent_baselines.tex}
+\caption{Recent-detector comparison on CIFAR-10/ResNet-18 (5 seeds
+$\times n{=}1000$, design FPR $\le 0.10$). SpectralDefense numbers are the
+\emph{in-distribution} diagonal (detector trained on the same attack it is
+evaluated on). \textbf{SID} (unsupervised) is weak across all four families
+(mean TPR $0.43$), far below PRISM ($0.92$). \textbf{SpectralDefense} is
+near-perfect on the gradient-$L_\infty$ attacks (FGSM/PGD) but---even when
+\emph{trained on the target attack}---is barely better than chance on Square
+(black-box, $0.21$) and CW ($L_2$, $0.25$): its input-Fourier signal captures
+dense gradient-$L_\infty$ perturbations but not localized black-box patches or
+minimal-norm $L_2$ perturbations. PRISM is the only detector that holds
+$\ge 0.88$ on every family, without supervision. (SpectralDefense FGSM/PGD
+cells are bold only to mark where it exceeds PRISM; the comparison is not
+apples-to-apples, as those cells are supervised and in-distribution.)}
+\label{tab:recent_baselines}
+\end{table}
+
+\paragraph{Cross-attack transfer.}
+Because SpectralDefense trains one detector per attack, we can measure how
+well a detector trained on attack $A$ transfers to attack $B$
+(Table~\ref{tab:spectral_cross}). The two gradient-$L_\infty$ attacks
+(FGSM, PGD) transfer to each other almost perfectly ($\ge 0.999$), confirming
+they share a Fourier signature. But a detector trained on FGSM or PGD
+collapses to a mean TPR of $0.17$ when evaluated on Square or CW, and
+\emph{no} training attack yields a detector that covers all four families.
+This is the supervised counterpart of PRISM's design goal: a single,
+attack-agnostic detector that does not need to anticipate the attack.
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/spectral_cross_attack.tex}
+\caption{SpectralDefense (InputMFS) cross-attack transfer, 5-seed mean L1
+TPR. Underlined entries are in-distribution (train attack $=$ eval attack).
+Gradient-$L_\infty$ detectors (FGSM/PGD rows) transfer to each other
+($\ge 0.999$) but collapse on Square/CW ($\le 0.22$); no row covers all four
+columns. Source:
+\texttt{experiments/evaluation/recent\_baselines/} (per-seed JSONs,
+\texttt{analyze\_cross\_attack.py}).}
+\label{tab:spectral_cross}
+\end{table}
+
+\paragraph{Protocol notes.}
+SID and SpectralDefense use the same three disjoint test-index ranges as the
+other baselines (REF $5000$--$5999$, threshold-fit $6000$--$6999$, EVAL
+$8000$--$9999$). For tractability CW here uses a standard detection-benchmark
+configuration ($\text{bss}{=}5$, $\text{max\_iter}{=}10$, attack success rate
+$0.93$ on the EVAL split) rather than the heavier canonical CW of
+Table~\ref{tab:main}; this does not affect the qualitative conclusion, since
+CW is undetected by SpectralDefense even in-distribution. We report the
+\emph{InputMFS} variant of SpectralDefense; the feature-space \emph{LayerMFS}
+variant is expected to improve Square/CW detection at the cost of per-layer
+feature hooks, and is left to future work.

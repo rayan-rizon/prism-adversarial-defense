@@ -1,0 +1,17 @@
+% Auto-generated, 5-seed mean of SpectralDefense (InputMFS) L1 TPR.
+% Source: experiments/evaluation/recent_baselines/results_baselines_recent_seed*.json
+%   (_spectral_cross_attack), averaged by analyze_cross_attack.py.
+% Rows = attack the logistic-regression detector was TRAINED on (ref split);
+% cols = attack it was EVALUATED on (eval split). Underlined = in-distribution
+% diagonal (trained and evaluated on the same attack).
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{4}{c}{Evaluated on} \\
+Trained on & FGSM & PGD & Square & CW \\
+\midrule
+FGSM   & \underline{1.000} & 0.999 & 0.139 & 0.182 \\
+PGD    & 1.000 & \underline{0.999} & 0.150 & 0.219 \\
+Square & 0.952 & 0.811 & \underline{0.206} & 0.154 \\
+CW     & 0.894 & 0.809 & 0.143 & \underline{0.246} \\
+\bottomrule
+\end{tabular}

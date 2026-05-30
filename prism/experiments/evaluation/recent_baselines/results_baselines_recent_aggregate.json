@@ -1,0 +1,100 @@
+{
+  "detectors": [
+    "SID",
+    "SpectralDefense"
+  ],
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "aggregate": {
+    "SID": {
+      "FGSM": {
+        "TPR_mean": 0.2964,
+        "TPR_std": 0.0079,
+        "FPR_mean": 0.082,
+        "FPR_std": 0.0045,
+        "F1_mean": 0.43,
+        "F1_std": 0.0088,
+        "n_seeds": 5
+      },
+      "PGD": {
+        "TPR_mean": 0.5194,
+        "TPR_std": 0.0152,
+        "FPR_mean": 0.082,
+        "FPR_std": 0.0045,
+        "F1_mean": 0.6486,
+        "F1_std": 0.0139,
+        "n_seeds": 5
+      },
+      "Square": {
+        "TPR_mean": 0.2858,
+        "TPR_std": 0.0175,
+        "FPR_mean": 0.082,
+        "FPR_std": 0.0045,
+        "F1_mean": 0.4177,
+        "F1_std": 0.0215,
+        "n_seeds": 5
+      },
+      "CW": {
+        "TPR_mean": 0.6008,
+        "TPR_std": 0.0058,
+        "FPR_mean": 0.082,
+        "FPR_std": 0.0045,
+        "F1_mean": 0.714,
+        "F1_std": 0.0042,
+        "n_seeds": 5
+      },
+      "mean_TPR_across_attacks": 0.4256
+    },
+    "SpectralDefense": {
+      "FGSM": {
+        "TPR_mean": 1.0,
+        "TPR_std": 0.0,
+        "FPR_mean": 0.1052,
+        "FPR_std": 0.0049,
+        "F1_mean": 0.95,
+        "F1_std": 0.0022,
+        "n_seeds": 5
+      },
+      "PGD": {
+        "TPR_mean": 0.999,
+        "TPR_std": 0.0,
+        "FPR_mean": 0.1012,
+        "FPR_std": 0.005,
+        "F1_mean": 0.9513,
+        "F1_std": 0.0023,
+        "n_seeds": 5
+      },
+      "Square": {
+        "TPR_mean": 0.2058,
+        "TPR_std": 0.0196,
+        "FPR_mean": 0.0962,
+        "FPR_std": 0.0082,
+        "F1_mean": 0.3157,
+        "F1_std": 0.0238,
+        "n_seeds": 5
+      },
+      "CW": {
+        "TPR_mean": 0.2462,
+        "TPR_std": 0.0112,
+        "FPR_mean": 0.0964,
+        "FPR_std": 0.0027,
+        "F1_mean": 0.3666,
+        "F1_std": 0.0135,
+        "n_seeds": 5
+      },
+      "mean_TPR_across_attacks": 0.6128
+    }
+  },
+  "_source_files": [
+    "results_baselines_recent_seed42.json",
+    "results_baselines_recent_seed123.json",
+    "results_baselines_recent_seed456.json",
+    "results_baselines_recent_seed789.json",
+    "results_baselines_recent_seed999.json"
+  ]
+}

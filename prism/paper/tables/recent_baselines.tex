@@ -1,0 +1,16 @@
+% Auto-generated from 5-seed Vast.ai pool (RTX 4090), aggregated by
+%   scripts/aggregate_baselines.py ->
+%   experiments/evaluation/recent_baselines/results_baselines_recent_aggregate.json
+% SID: unsupervised no-train (DCT keep_frac=0.70). SpectralDefense: supervised
+%   InputMFS + per-attack logistic regression (in-distribution diagonal).
+% PRISM row from tables/main_attacks.tex (same EVAL split, eps=8/255).
+\begin{tabular}{llcccc}
+\toprule
+Detector & Type & FGSM & PGD & Square & CW \\
+\midrule
+SID \cite{tian2021detecting}            & unsup.\ (no train) & $0.296 \pm 0.008$ & $0.519 \pm 0.015$ & $0.286 \pm 0.018$ & $0.601 \pm 0.006$ \\
+SpectralDefense \cite{harder2021spectraldefense} & superv.\ (per attack) & $\mathbf{1.000} \pm 0.000$ & $\mathbf{0.999} \pm 0.000$ & $0.206 \pm 0.020$ & $0.246 \pm 0.011$ \\
+\midrule
+\textbf{PRISM (Full)} & unsup.\ (no train) & $0.882 \pm 0.004$ & $0.987 \pm 0.003$ & $\mathbf{0.886} \pm 0.011$ & $\mathbf{0.938} \pm 0.008$ \\
+\bottomrule
+\end{tabular}

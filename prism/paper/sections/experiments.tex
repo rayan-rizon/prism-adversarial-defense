@@ -19,9 +19,13 @@ deferred to Appendix~\ref{app:cifar100}.
 The main CIFAR-10 results use a CIFAR-native ResNet-18 \cite{he2016deep}
 trained from scratch. For cross-architecture validation we additionally
 train a WRN-28-10 \cite{zagoruyko2016wide} on CIFAR-10; for cross-dataset
-validation we use ResNet-18 on CIFAR-100. \prism monitors activations at
-$L=3$ residual block outputs (\texttt{layer2}, \texttt{layer3},
-\texttt{layer4}) weighted 0.30, 0.30, 0.40 in all settings.
+validation we use ResNet-18 on CIFAR-100. \prism monitors activations at $L=3$ residual block outputs weighted
+0.30, 0.30, 0.40 (shallow-to-deep) in all settings. For the ResNet-18
+backbones (CIFAR-10 and CIFAR-100) these are \texttt{layer2},
+\texttt{layer3}, \texttt{layer4}; for the WRN-28-10 backbone (which has
+three residual stages, not four) the analogous depth slice is
+\texttt{layer1}, \texttt{layer2}, \texttt{layer3} with the same
+0.30/0.30/0.40 weights, preserving the shallow-to-deep emphasis.
 All inputs remain native $3\times 32\times 32$ images with dataset-specific
 CIFAR normalization; no ImageNet pretraining or 224x224 upsampling is used.
 
@@ -64,6 +68,11 @@ We reproduce four matched-FPR baselines on the same splits:
 \caption{%
   Attack detection results generated directly from the Vast.ai result JSONs.
   TPR is adversarial detection rate; FPR is clean false-positive rate.
+  The final row is the unweighted mean of the five per-attack TPRs (a
+  macro-average across attack families), \emph{not} a pooled-binomial
+  meta-estimate over the $25{,}000$ adversarials; with equal per-attack
+  $n{=}5000$ the two point estimates coincide ($0.939$), so we report the
+  macro-average and claim no pooled confidence interval for it.
 }
 \label{tab:main}
 \end{table}
@@ -117,8 +126,11 @@ ResNet-18 backbone, using the same calibration scheme
 \small
 \input{tables/baselines_multi.tex}
 \caption{%
-  Matched-FPR baseline comparison across all three settings (5 seeds,
-  $n=1000$). \prism is the only detector that holds $\ge 0.8$ mean TPR
+  Design-FPR ($\le 10\%$) baseline comparison across all three settings
+  (5 seeds, $n=1000$). The comparison is at exactly matched FPR only on
+  CIFAR-10/ResNet-18; on WRN-28-10 and CIFAR-100 three baselines exceed
+  the $10\%$ design target (disclosed below) and are reported unfiltered.
+  \prism is the only detector that holds $\ge 0.8$ mean TPR
   on all three settings while keeping FPR below the design target;
   every baseline collapses on at least one attack in every setting
   (ODIN/Energy on PGD; LID on Square; Mahalanobis on FGSM/Square on
@@ -147,7 +159,9 @@ ResNet-18 backbone, using the same calibration scheme
     \caption{CIFAR-100 (ResNet-18).}
     \label{fig:bars_c100}
   \end{subfigure}
-  \caption{Per-attack TPR at matched FPR ($\le 0.10$). \prism (blue) is
+  \caption{Per-attack TPR at the design FPR target ($\le 0.10$; not all
+  baselines hit it on WRN/CIFAR-100, see Table~\ref{tab:baselines_multi}).
+  \prism (blue) is
   the only detector that holds $\ge 0.85$ on at least three of four
   attacks per dataset; ODIN/Energy collapse to $0$ on PGD; LID and
   Mahalanobis collapse on Square or FGSM. AutoAttack column has only
@@ -215,12 +229,14 @@ where $a_\ell(x)$ is the per-sample clean activation at monitored layer
 $\ell$ and $\mathrm{HF}_\text{DCT}$ is the differentiable
 high-frequency DCT-energy proxy. The activation-matching term targets
 \tamm and the DCT-energy term targets the ensemble scorer's
-high-frequency channel, so \emph{two} of \prism's channels are attacked
-jointly. The remaining ensemble channels --- StabilityV2 (a jitter-stability
-statistic with no closed-form differentiable surrogate), gradient-norm,
-and softmax-entropy --- are not part of the loss, and we explicitly
-return to this partial coverage in \S\ref{sec:conclusion} and
-Appendix~\ref{app:cifar100}. We sweep
+high-frequency channel, so \emph{two} of \prism's six raw feature
+channels are attacked jointly. The remaining channels --- StabilityV2 (a
+jitter-stability statistic with no closed-form differentiable
+surrogate), gradient-norm, softmax-entropy, and logit-profile (and the
+$190$ side-quadratic interaction terms built from these non-TDA
+channels, \S\ref{sec:tamm}) --- have no dedicated suppression term in the
+loss, and we explicitly return to this partial coverage in
+\S\ref{sec:conclusion} and Appendix~\ref{app:cifar100}. We sweep
 $\lambda \in \{0, 0.5, 1, 2, 5, 10\}$ at $100$ PGD steps with $10$ random
 restarts; runs use the deterministic \prism forward pass, so EOT
 averaging is verified as a no-op via $20$ resampling passes
@@ -235,7 +251,11 @@ metadata).
   Adaptive PGD with activation-matching term ($\lambda$ sweep, 100 steps,
   10 restarts, 5 seeds). TPR degrades monotonically as $\lambda$ grows,
   bottoming at $0.429$ at $\lambda{=}10$ while FPR holds at the calibrated
-  $0.075$.
+  $0.075$. The $\lambda{=}0$ row ($0.832$) is \emph{not} a non-adaptive
+  PGD reference: the fixed DCT high-frequency suppression term
+  (coefficient $0.5$) is still active at $\lambda{=}0$, making this row a
+  ``DCT-only adaptive'' attack. The non-adaptive PGD-40 reference is
+  $0.987$ (Table~\ref{tab:main}).
 }
 \label{tab:adaptive_pgd}
 \end{table}
@@ -295,6 +315,13 @@ not an IID detector.
   PGD signal); No-GradNorm FPR triples to 0.218 (gradient norm is a
   counter-evidence channel); No-DCT FGSM drops to 0.751 (DCT is the FGSM
   signal). All channel arms reach $p<0.001$ on at least one attack.
+  \textbf{Reading guide (matching Table~\ref{tab:c100_abl}).} Rows whose
+  mean FPR exceeds the $0.10$ design target --- No-LogitProfile ($0.938$),
+  No-GradNorm ($0.218$), and No-StabilityV2 ($0.107$) --- are threshold
+  collapses, not improved detection: their higher mean TPR is bought by
+  flagging far more clean inputs and is non-deployable. Only Full \prism
+  ($0.074$), No-DCT ($0.098$), and Ensemble-no-TDA ($0.077$) sit at the
+  design FPR, so only their TPRs are comparable to Full \prism.
 }
 \label{tab:ablation}
 \end{table}
@@ -311,6 +338,14 @@ Energy's empirical FPR ($0.105$) modestly exceeds its $\alpha{=}0.10$
 design target on this test split, which we report unfiltered; recomputing
 at a tighter conformal $\alpha{=}0.075$ (matched to \prism's empirical
 FPR) would lower Energy's mean TPR further.
+We additionally benchmark two recent (2021) detectors---SID
+\cite{tian2021detecting} and the supervised SpectralDefense
+\cite{harder2021spectraldefense}---in Appendix~\ref{app:recent_baselines}.
+Both underperform \prism: SID across all attack families, and
+SpectralDefense everywhere except the gradient-$L_\infty$ attacks it is
+trained on, collapsing on black-box (Square) and $L_2$ (CW) attacks even
+in-distribution (Table~\ref{tab:recent_baselines}) and failing to transfer
+across attack families (Table~\ref{tab:spectral_cross}).
 
 \begin{table}[h]
 \centering
@@ -366,13 +401,18 @@ calibration alphas, or the active dataset change.
     \label{fig:sd_c100}
   \end{subfigure}
   \caption{Per-attack score envelopes (p5--p95 whiskers, IQR boxes,
-  medians) for clean (blue) vs adversarial (red) inputs across all
-  four attacks per dataset. AutoAttack pushes scores furthest from
-  the clean median (CIFAR-10 median $\approx 15$); Square has the
-  tightest separation, matching the lower Square TPR in
-  Table~\ref{tab:main_multi}. CIFAR-100 (right) shows the same
-  ordering with a slightly larger clean spread, reflecting the
-  100-class softmax temperature.}
+  medians) of the fused ensemble score $S(x)$ for clean (blue) vs
+  adversarial (red) inputs across all four attacks per dataset. $S(x)$
+  is signed: clean inputs centre near zero (CIFAR-10 clean median
+  $\approx 0.3$) and attacks push it positive. AutoAttack pushes scores
+  furthest from the clean median (CIFAR-10 adversarial median
+  $\approx 17$); Square has the tightest separation, matching the lower
+  Square TPR in Table~\ref{tab:main_multi}. CIFAR-100 (right) shows the
+  same ordering with a slightly larger clean spread (clean median
+  $\approx 0.04$, p5--p95 width $5.9$ vs $4.1$ on CIFAR-10), reflecting
+  the 100-class softmax temperature. This is the same $S(x)$ scale as
+  the per-attack histograms in Appendix~\ref{app:score_hist}
+  (clean mean $0.27$).}
   \label{fig:score_dist_panel}
 \end{figure}
 
