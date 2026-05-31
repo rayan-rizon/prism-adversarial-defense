@@ -37,6 +37,7 @@ USAGE
 EVAL SPLIT: active dataset test indices from src.config.EVAL_IDX.
 """
 import torch
+import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
 import numpy as np
@@ -148,10 +149,245 @@ def _hf_energy_torch(x: torch.Tensor) -> torch.Tensor:
     return torch.log(mag.sum() + 1e-8)
 
 
+def _softmax_entropy_torch(logits: torch.Tensor) -> torch.Tensor:
+    probs = torch.softmax(logits, dim=1)
+    return -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=1)
+
+
+def _logit_profile_torch(logits: torch.Tensor) -> torch.Tensor:
+    """
+    Differentiable mirror of compute_logit_profile_features().
+
+    Returned order:
+      [top_confidence, top2_probability_gap, top3_probability_mass,
+       logit_margin, logit_range, centered_logit_l2, logsumexp_energy,
+       probability_l2]
+    """
+    probs = torch.softmax(logits, dim=1)
+    n_cls = logits.shape[1]
+    p_sorted, _ = torch.sort(probs, dim=1, descending=True)
+    z_sorted, _ = torch.sort(logits, dim=1, descending=True)
+    top_conf = p_sorted[:, 0]
+    top2_gap = p_sorted[:, 0] - (p_sorted[:, 1] if n_cls > 1 else 0.0)
+    top3_mass = p_sorted[:, : min(3, n_cls)].sum(dim=1)
+    margin = z_sorted[:, 0] - (z_sorted[:, 1] if n_cls > 1 else 0.0)
+    logit_range = z_sorted[:, 0] - z_sorted[:, -1]
+    centered_l2 = torch.norm(logits - logits.mean(dim=1, keepdim=True), p=2, dim=1)
+    energy = torch.logsumexp(logits, dim=1)
+    prob_l2 = torch.norm(probs, p=2, dim=1)
+    return torch.stack([
+        top_conf, top2_gap, top3_mass, margin,
+        logit_range, centered_l2, energy, prob_l2,
+    ], dim=1)
+
+
+def _shift_reflect_torch(pix: torch.Tensor, dy: int, dx: int) -> torch.Tensor:
+    _, _, height, width = pix.shape
+    padded = F.pad(pix, (1, 1, 1, 1), mode='reflect')
+    y0 = 1 - int(dy)
+    x0 = 1 - int(dx)
+    return padded[:, :, y0:y0 + height, x0:x0 + width]
+
+
+def _stability_transforms_torch(pix: torch.Tensor):
+    _, _, height, width = pix.shape
+    avg3 = F.avg_pool2d(
+        F.pad(pix, (1, 1, 1, 1), mode='reflect'),
+        kernel_size=3,
+        stride=1,
+    )
+    transforms = [
+        avg3,
+        _shift_reflect_torch(pix, dy=1, dx=0),
+        _shift_reflect_torch(pix, dy=0, dx=1),
+    ]
+    if height >= 2 and width >= 2:
+        low = F.avg_pool2d(pix, kernel_size=2, stride=2)
+        transforms.append(
+            F.interpolate(low, size=(height, width), mode='bilinear', align_corners=False)
+        )
+    return transforms
+
+
+def _stability_summary_torch(
+    model: torch.nn.Module,
+    x_pixel: torch.Tensor,
+    logits: torch.Tensor,
+    mean_t: torch.Tensor,
+    std_t: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Differentiable surrogate for the deployed stability-v2 block.
+
+    The deployed block contains a hard top-1-changed indicator.  The surrogate
+    uses probability disagreement for that slot so gradients remain useful.
+    """
+    pa = torch.softmax(logits, dim=1)
+    rows = []
+    for transformed in _stability_transforms_torch(x_pixel.clamp(0.0, 1.0)):
+        transformed_norm = (transformed.clamp(0.0, 1.0) - mean_t) / std_t
+        logits_b = model(transformed_norm)
+        pb = torch.softmax(logits_b, dim=1)
+        m = 0.5 * (pa + pb)
+        js = 0.5 * (pa * (torch.log(pa.clamp_min(1e-12)) - torch.log(m.clamp_min(1e-12)))).sum(dim=1)
+        js = js + 0.5 * (pb * (torch.log(pb.clamp_min(1e-12)) - torch.log(m.clamp_min(1e-12)))).sum(dim=1)
+        top1_proxy = 1.0 - (pa * pb).sum(dim=1)
+        conf_delta = (pa.max(dim=1).values - pb.max(dim=1).values).abs()
+        za = torch.sort(logits, dim=1, descending=True).values
+        zb = torch.sort(logits_b, dim=1, descending=True).values
+        margin_a = za[:, 0] - (za[:, 1] if za.shape[1] > 1 else 0.0)
+        margin_b = zb[:, 0] - (zb[:, 1] if zb.shape[1] > 1 else 0.0)
+        margin_delta = (margin_a - margin_b).abs()
+        rows.append(torch.stack([js, top1_proxy, conf_delta, margin_delta], dim=1))
+    arr = torch.stack(rows, dim=1)
+    return torch.stack([
+        arr[:, :, 0].max(dim=1).values,
+        arr[:, :, 0].mean(dim=1),
+        arr[:, :, 1].max(dim=1).values,
+        arr[:, :, 1].mean(dim=1),
+        arr[:, :, 2].max(dim=1).values,
+        arr[:, :, 2].mean(dim=1),
+        arr[:, :, 3].max(dim=1).values,
+        arr[:, :, 3].mean(dim=1),
+    ], dim=1)
+
+
+def _pred_logit_grad_norm_torch(
+    logits: torch.Tensor,
+    x_norm: torch.Tensor,
+    create_graph: bool,
+) -> torch.Tensor:
+    pred = logits.argmax(dim=1)
+    selected = logits.gather(1, pred.view(-1, 1)).sum()
+    (grad_x,) = torch.autograd.grad(
+        selected,
+        x_norm,
+        create_graph=create_graph,
+        retain_graph=True,
+    )
+    return grad_x.flatten(1).norm(p=2, dim=1)
+
+
+def _ensemble_feature_flags(
+    scorer,
+    through_scorer: bool,
+    ensemble_complete: bool,
+    include_gradnorm: bool,
+):
+    if not ensemble_complete:
+        return {
+            'dct': bool(through_scorer),
+            'entropy': False,
+            'logit_profile': False,
+            'stability': False,
+            'grad_norm': False,
+        }
+    if scorer is None:
+        return {
+            'dct': True,
+            'entropy': True,
+            'logit_profile': True,
+            'stability': True,
+            'grad_norm': bool(include_gradnorm),
+        }
+    return {
+        'dct': bool(getattr(scorer, 'use_dct', False) or through_scorer),
+        'entropy': bool(getattr(scorer, 'use_softmax_entropy', False)),
+        'logit_profile': bool(getattr(scorer, 'use_logit_profile_features', False)),
+        'stability': bool(getattr(scorer, 'use_stability_features', False)),
+        'grad_norm': bool(include_gradnorm and getattr(scorer, 'use_grad_norm', False)),
+    }
+
+
+def _side_feature_vector_torch(
+    model: torch.nn.Module,
+    x_pixel: torch.Tensor,
+    x_norm: torch.Tensor,
+    logits: torch.Tensor,
+    mean_t: torch.Tensor,
+    std_t: torch.Tensor,
+    flags,
+    create_graph: bool,
+) -> torch.Tensor:
+    parts = []
+    if flags.get('dct', False):
+        parts.append(_hf_energy_torch(x_pixel).view(1, 1))
+    if flags.get('entropy', False):
+        parts.append(_softmax_entropy_torch(logits).view(1, 1))
+    if flags.get('logit_profile', False):
+        parts.append(_logit_profile_torch(logits))
+    if flags.get('stability', False):
+        parts.append(_stability_summary_torch(model, x_pixel, logits, mean_t, std_t))
+    if flags.get('grad_norm', False):
+        parts.append(_pred_logit_grad_norm_torch(logits, x_norm, create_graph=create_graph).view(1, 1))
+    if not parts:
+        return torch.zeros((1, 0), device=x_pixel.device, dtype=x_pixel.dtype)
+    return torch.cat(parts, dim=1)
+
+
+def _relative_feature_mse(x: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+    denom = ref.detach().abs() + 1.0
+    return torch.mean(((x - ref.detach()) / denom) ** 2)
+
+
+def _side_logistic_surrogate(side_features: torch.Tensor, scorer):
+    """
+    Actual deployed side-channel logistic logit, with unavailable TDA columns
+    neutralized at their training mean.  If side-quadratic is enabled, this
+    also includes the deployed quadratic side interactions.
+    """
+    if scorer is None or not getattr(scorer, '_logistic_fitted', False):
+        return None
+    if getattr(scorer, 'feature_mean', None) is None or getattr(scorer, 'feature_std', None) is None:
+        return None
+    if getattr(scorer, 'logistic_weights', None) is None:
+        return None
+
+    raw_dim = int(getattr(scorer, 'n_features', 0))
+    weights_np = np.asarray(scorer.logistic_weights, dtype=np.float32).reshape(-1)
+    mean_np = np.asarray(scorer.feature_mean, dtype=np.float32).reshape(-1)
+    std_np = np.asarray(scorer.feature_std, dtype=np.float32).reshape(-1)
+    if raw_dim <= 0 or len(mean_np) != len(std_np) or len(weights_np) != len(mean_np):
+        return None
+
+    side_start = int(getattr(scorer, 'quadratic_feature_start', 36))
+    side_start = min(max(side_start, 0), raw_dim)
+    expected_side = raw_dim - side_start
+    if expected_side != side_features.shape[1]:
+        return None
+
+    device = side_features.device
+    dtype = side_features.dtype
+    raw_mean = torch.as_tensor(mean_np[:raw_dim], device=device, dtype=dtype).view(1, -1)
+    raw = raw_mean.clone()
+    raw[:, side_start:] = side_features
+
+    model_features = raw
+    if bool(getattr(scorer, 'use_side_quadratic_features', False)):
+        side = raw[:, side_start:]
+        tri = torch.triu_indices(side.shape[1], side.shape[1], device=device)
+        quad = side[:, tri[0]] * side[:, tri[1]]
+        model_features = torch.cat([raw, quad], dim=1)
+
+    if model_features.shape[1] != len(weights_np):
+        return None
+    mean = torch.as_tensor(mean_np, device=device, dtype=dtype).view(1, -1)
+    std = torch.as_tensor(std_np, device=device, dtype=dtype).view(1, -1)
+    weights = torch.as_tensor(weights_np, device=device, dtype=dtype).view(1, -1)
+    feat_norm = (model_features - mean) / (std + 1e-8)
+    bias = torch.as_tensor(float(scorer.logistic_bias), device=device, dtype=dtype)
+    return (feat_norm * weights).sum(dim=1) + bias
+
+
 def adaptive_pgd_attack(
     model, x_pixel, eps, steps, step_size, lam, layer_names, device,
     through_scorer: bool = False,
     eot_samples: int = 1,
+    ensemble_complete: bool = False,
+    ec_match_coeff: float = 0.5,
+    ec_score_coeff: float = 0.25,
+    ec_include_gradnorm: bool = True,
+    scorer=None,
 ):
     """
     Generate one adaptive PGD adversarial example.
@@ -165,6 +401,11 @@ def adaptive_pgd_attack(
     scorer and is active only when `through_scorer=True`.  Both terms force the
     adversary to erase the signals PRISM monitors, providing a stronger adaptive
     attack than activation-only evasion.
+
+    With `ensemble_complete=True`, the legacy DCT-only scorer term is replaced
+    by a differentiable side-channel surrogate that matches DCT, entropy,
+    logit-profile, stability-v2, and grad-norm features to the clean input and
+    also minimizes the fitted side-quadratic logistic score when available.
 
     Args:
         model: CIFAR backbone model receiving normalised input.
@@ -185,10 +426,16 @@ def adaptive_pgd_attack(
     ce_loss = torch.nn.CrossEntropyLoss()
 
     x = x_pixel.clone().to(device)
+    feature_flags = _ensemble_feature_flags(
+        scorer=scorer,
+        through_scorer=through_scorer,
+        ensemble_complete=ensemble_complete,
+        include_gradnorm=ec_include_gradnorm,
+    )
 
     # Pre-compute clean DCT energy reference (constant, no grad needed)
     with torch.no_grad():
-        clean_hf_energy = _hf_energy_torch(x).detach() if through_scorer else None
+        clean_hf_energy = _hf_energy_torch(x).detach() if through_scorer and not ensemble_complete else None
 
     # Get clean activations and predicted label (no grad needed)
     hooks = {}
@@ -214,6 +461,26 @@ def adaptive_pgd_attack(
     clean_acts_detached = {k: v.detach().clone() for k, v in clean_acts.items()}
     for h in handles:
         h.remove()
+
+    clean_side_features = None
+    clean_side_logit = None
+    if ensemble_complete:
+        x_norm_ref = ((x.detach() - mean_t) / std_t).requires_grad_(feature_flags.get('grad_norm', False))
+        with torch.enable_grad():
+            logits_ref = model(x_norm_ref)
+            clean_side_features = _side_feature_vector_torch(
+                model=model,
+                x_pixel=x.detach(),
+                x_norm=x_norm_ref,
+                logits=logits_ref,
+                mean_t=mean_t,
+                std_t=std_t,
+                flags=feature_flags,
+                create_graph=False,
+            ).detach()
+            clean_side_logit_tmp = _side_logistic_surrogate(clean_side_features, scorer)
+            if clean_side_logit_tmp is not None:
+                clean_side_logit = clean_side_logit_tmp.detach()
 
     # Initialise adversarial with uniform random perturbation
     delta = torch.zeros_like(x, requires_grad=True)
@@ -248,17 +515,39 @@ def adaptive_pgd_attack(
                     D = float(a_adv.numel())
                     loss_act = loss_act + torch.norm(a_adv - a_clean, p=2) / max(D, 1.0)
 
-            # DCT high-frequency energy matching (targets scorer's 37th feature)
-            loss_dct = torch.tensor(0.0, device=device)
-            if through_scorer and clean_hf_energy is not None:
-                adv_hf_energy = _hf_energy_torch(x_adv)
-                loss_dct = (adv_hf_energy - clean_hf_energy).abs()
-
-            loss_total = loss_ce + lam * loss_act + 0.5 * loss_dct
-            loss_total.backward()
-
             for h in handles2:
                 h.remove()
+
+            loss_scorer = torch.tensor(0.0, device=device)
+            if (
+                ensemble_complete
+                and clean_side_features is not None
+                and clean_side_features.numel() > 0
+            ):
+                adv_side_features = _side_feature_vector_torch(
+                    model=model,
+                    x_pixel=x_adv,
+                    x_norm=x_adv_norm,
+                    logits=logits,
+                    mean_t=mean_t,
+                    std_t=std_t,
+                    flags=feature_flags,
+                    create_graph=True,
+                )
+                loss_side_match = _relative_feature_mse(adv_side_features, clean_side_features)
+                loss_side_score = torch.tensor(0.0, device=device)
+                adv_side_logit = _side_logistic_surrogate(adv_side_features, scorer)
+                if adv_side_logit is not None and clean_side_logit is not None:
+                    loss_side_score = F.softplus(adv_side_logit - clean_side_logit).mean()
+                loss_scorer = ec_match_coeff * loss_side_match + ec_score_coeff * loss_side_score
+            elif through_scorer and clean_hf_energy is not None:
+                # DCT high-frequency energy matching (legacy through-scorer mode)
+                adv_hf_energy = _hf_energy_torch(x_adv)
+                loss_scorer = 0.5 * (adv_hf_energy - clean_hf_energy).abs()
+
+            loss_total = loss_ce + lam * loss_act + loss_scorer
+            model.zero_grad(set_to_none=True)
+            loss_total.backward()
 
             grad_accum = grad_accum + delta.grad.detach()
             delta.grad = None
@@ -279,39 +568,51 @@ def adaptive_pgd_attack_with_restarts(
     through_scorer: bool = False,
     eot_samples: int = 1,
     num_restarts: int = 1,
+    ensemble_complete: bool = False,
+    ec_match_coeff: float = 0.5,
+    ec_score_coeff: float = 0.25,
+    ec_include_gradnorm: bool = True,
 ):
     """
     Run adaptive PGD with `num_restarts` random initialisations and keep the
-    most-evasive adversarial — i.e. the one that (a) evades PRISM if any does,
-    or (b) has the lowest PRISM score if all are detected.
+    strongest valid candidate. Selection prefers classifier-successful
+    adversarials first, then PRISM evasion, then the lowest PRISM score.
 
     This matches Athalye/Carlini's best-practice for detector evaluation: an
     adversary gets multiple attempts per image, and the defender must survive
     the worst of them.
     """
     best_x_adv = None
-    best_evaded = False
-    best_score = float('inf')  # lower PRISM score = more evasive
+    best_rank = None
+
+    with torch.no_grad():
+        clean_pred = int(model(((x_pixel.to(device) - mean_t) / std_t)).argmax(dim=1).item())
 
     for _restart in range(max(num_restarts, 1)):
         x_adv_pixel = adaptive_pgd_attack(
             model, x_pixel, eps, steps, step_size, lam, layer_names, device,
             through_scorer=through_scorer,
             eot_samples=eot_samples,
+            ensemble_complete=ensemble_complete,
+            ec_match_coeff=ec_match_coeff,
+            ec_score_coeff=ec_score_coeff,
+            ec_include_gradnorm=ec_include_gradnorm,
+            scorer=getattr(prism, 'scorer', None),
         )
         x_adv_norm = ((x_adv_pixel - mean_t) / std_t)
+        with torch.no_grad():
+            adv_pred = int(model(x_adv_norm).argmax(dim=1).item())
         _, lv, info = prism.defend(x_adv_norm, pixel_image=x_adv_pixel)
         evaded = (lv == 'PASS')
+        successful = (adv_pred != clean_pred)
         score = float(
             info.get('anomaly_score', info.get('score', info.get('prism_score', 0.0)))
         ) if isinstance(info, dict) else 0.0
 
-        if evaded and not best_evaded:
-            best_x_adv, best_evaded, best_score = x_adv_pixel, True, score
-        elif evaded and best_evaded and score < best_score:
-            best_x_adv, best_score = x_adv_pixel, score
-        elif not evaded and not best_evaded and score < best_score:
-            best_x_adv, best_score = x_adv_pixel, score
+        # Prefer valid adversarials first, then PRISM evasion, then lower score.
+        rank = (1 if successful else 0, 1 if evaded else 0, -score)
+        if best_rank is None or rank > best_rank:
+            best_x_adv, best_rank = x_adv_pixel, rank
 
     return best_x_adv if best_x_adv is not None else x_adv_pixel
 
@@ -326,6 +627,10 @@ def run_adaptive_pgd(
     eot_verify_samples=20,
     checkpoint_jsonl=None,
     resume=False,
+    ensemble_complete=False,
+    ec_match_coeff=0.5,
+    ec_score_coeff=0.25,
+    ec_include_gradnorm=True,
 ):
     eps = EPS_LINF_STANDARD
     step_size = eps / 4  # 2/255
@@ -339,7 +644,15 @@ def run_adaptive_pgd(
     print(f"Device: {device}")
     print(f"Adaptive PGD: n={n_test}, steps={pgd_steps}, restarts={pgd_restarts}, "
           f"eot_samples={eot_samples}, eps={eps:.4f}, "
-          f"lambdas={lambdas}, through_scorer={through_scorer}")
+          f"lambdas={lambdas}, through_scorer={through_scorer}, "
+          f"ensemble_complete={ensemble_complete}")
+    if ensemble_complete:
+        print(
+            "Ensemble-complete surrogate: DCT/entropy/logit-profile/"
+            "stability-v2/grad-norm feature matching plus fitted side-quadratic "
+            f"logistic score, match_coeff={ec_match_coeff}, score_coeff={ec_score_coeff}, "
+            f"gradnorm={ec_include_gradnorm}"
+        )
     print(f"Eval split: {DATASET.upper()} test[{EVAL_IDX[0]}-{EVAL_IDX[1]-1}]\n")
     if checkpoint_jsonl is None:
         root, ext = os.path.splitext(output_path)
@@ -402,6 +715,9 @@ def run_adaptive_pgd(
 
         tp, fp, fn, tn = 0, 0, 0, 0
         level_clean, level_adv = {}, {}
+        attack_success = 0
+        detected_success = 0
+        evaded_success = 0
 
         mean_t = torch.tensor(_MEAN, device=device).view(1, 3, 1, 1)
         std_t  = torch.tensor(_STD,  device=device).view(1, 3, 1, 1)
@@ -409,6 +725,8 @@ def run_adaptive_pgd(
         for j, img_pixel in enumerate(tqdm(imgs_pixel, desc=f"  λ={lam}")):
             x_pixel = img_pixel.unsqueeze(0).to(device)
             x_norm  = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
+            with torch.no_grad():
+                clean_pred = int(model(x_norm).argmax(dim=1).item())
 
             # Clean evaluation
             _, lv_c, _ = prism.defend(x_norm, pixel_image=img_pixel)
@@ -426,6 +744,10 @@ def run_adaptive_pgd(
                     through_scorer=through_scorer,
                     eot_samples=eot_samples,
                     num_restarts=pgd_restarts,
+                    ensemble_complete=ensemble_complete,
+                    ec_match_coeff=ec_match_coeff,
+                    ec_score_coeff=ec_score_coeff,
+                    ec_include_gradnorm=ec_include_gradnorm,
                 )
             else:
                 x_adv_pixel = adaptive_pgd_attack(
@@ -433,17 +755,32 @@ def run_adaptive_pgd(
                     LAYER_NAMES, device,
                     through_scorer=through_scorer,
                     eot_samples=eot_samples,
+                    ensemble_complete=ensemble_complete,
+                    ec_match_coeff=ec_match_coeff,
+                    ec_score_coeff=ec_score_coeff,
+                    ec_include_gradnorm=ec_include_gradnorm,
+                    scorer=getattr(prism, 'scorer', None),
                 )
             x_adv_norm = _NORMALIZE(x_adv_pixel.squeeze(0).cpu()).unsqueeze(0).to(device)
+            with torch.no_grad():
+                adv_pred = int(model(x_adv_norm).argmax(dim=1).item())
+            is_success = (adv_pred != clean_pred)
+            if is_success:
+                attack_success += 1
             _, lv_a, _ = prism.defend(x_adv_norm, pixel_image=x_adv_pixel)
             level_adv[lv_a] = level_adv.get(lv_a, 0) + 1
             if lv_a != 'PASS':
                 tp += 1
+                if is_success:
+                    detected_success += 1
             else:
                 fn += 1
+                if is_success:
+                    evaded_success += 1
 
             if (j + 1) % 100 == 0:
                 _tpr = tp / max(tp + fn, 1)
+                _asr = attack_success / max(j + 1, 1)
                 print(f"  [{j+1}/{len(imgs_pixel)}] TPR={_tpr:.4f}")
                 _append_jsonl(checkpoint_jsonl, {
                     'event': 'progress',
@@ -453,6 +790,8 @@ def run_adaptive_pgd(
                     'n_total': int(len(imgs_pixel)),
                     'TP': int(tp), 'FP': int(fp), 'FN': int(fn), 'TN': int(tn),
                     'TPR': round(float(_tpr), 6),
+                    'model_ASR': round(float(_asr), 6),
+                    'n_successful_adv': int(attack_success),
                     'timestamp': time.time(),
                 })
 
@@ -460,6 +799,9 @@ def run_adaptive_pgd(
         n_clean = fp + tn
         tpr = tp / max(n_adv, 1)
         fpr = fp / max(n_clean, 1)
+        asr = attack_success / max(n_adv, 1)
+        tpr_success = detected_success / max(attack_success, 1)
+        evasion_success = evaded_success / max(attack_success, 1)
         prec = tp / max(tp + fp, 1)
         f1 = 2 * prec * tpr / max(prec + tpr, 1e-8)
         tpr_ci = wilson_ci(tp, n_adv)
@@ -475,6 +817,12 @@ def run_adaptive_pgd(
             'F1': round(f1, 4),
             'TP': tp, 'FP': fp, 'FN': fn, 'TN': tn,
             'n_adv': n_adv, 'n_clean': n_clean,
+            'n_successful_adv': int(attack_success),
+            'model_ASR': round(asr, 4),
+            'TPR_on_successful_attacks': round(tpr_success, 4),
+            'evasion_rate_on_successful_attacks': round(evasion_success, 4),
+            'detected_successful_adv': int(detected_success),
+            'evaded_successful_adv': int(evaded_success),
             'per_tier_fpr': tier_fpr,
             'clean_level_distribution': level_clean,
             'adversarial_level_distribution': level_adv,
@@ -482,11 +830,16 @@ def run_adaptive_pgd(
             'pgd_steps': pgd_steps,
             'pgd_restarts': pgd_restarts,
             'eot_samples': eot_samples,
+            'ensemble_complete': bool(ensemble_complete),
+            'ec_match_coeff': float(ec_match_coeff),
+            'ec_score_coeff': float(ec_score_coeff),
+            'ec_include_gradnorm': bool(ec_include_gradnorm),
             'eps': round(eps, 6),
         }
 
         status = '✅' if tpr >= 0.85 else ('⚠' if tpr >= 0.70 else '❌')
         print(f"\n  TPR={tpr:.4f} CI[{tpr_ci[0]:.4f}, {tpr_ci[1]:.4f}] {status}")
+        print(f"  Model ASR={asr:.4f}; TPR on successful attacks={tpr_success:.4f}")
         print(f"  FPR={fpr:.4f} CI[{fpr_ci[0]:.4f}, {fpr_ci[1]:.4f}]")
         _append_jsonl(checkpoint_jsonl, {
             'event': 'lambda_done',
@@ -500,13 +853,14 @@ def run_adaptive_pgd(
 
     # ── Summary ──
     print(f"\n{'='*70}")
-    print(f"{'λ':>6} {'TPR':>8} {'FPR':>8} {'F1':>8} {'Status':>9}")
+    print(f"{'λ':>6} {'TPR':>8} {'ASR':>8} {'FPR':>8} {'F1':>8} {'Status':>9}")
     print(f"{'-'*70}")
     for lam in lambdas:
         key = f'AdaptivePGD_lambda_{lam}'
         r = results[key]
         s = '✅' if r['TPR'] >= 0.85 else ('⚠' if r['TPR'] >= 0.70 else '❌')
-        print(f"{lam:>6.1f} {r['TPR']:>8.4f} {r['FPR']:>8.4f} {r['F1']:>8.4f} {s:>9}")
+        print(f"{lam:>6.1f} {r['TPR']:>8.4f} {r['model_ASR']:>8.4f} "
+              f"{r['FPR']:>8.4f} {r['F1']:>8.4f} {s:>9}")
 
     results['_meta'] = {
         'n_test': n_test,
@@ -529,6 +883,23 @@ def run_adaptive_pgd(
         'step_size': round(step_size, 6),
         'lambdas': lambdas,
         'through_scorer': through_scorer,
+        'ensemble_complete': bool(ensemble_complete),
+        'ec_match_coeff': float(ec_match_coeff),
+        'ec_score_coeff': float(ec_score_coeff),
+        'ec_include_gradnorm': bool(ec_include_gradnorm),
+        'ensemble_complete_terms': [
+            'activation_matching_for_TDA',
+            'dct_high_frequency_energy',
+            'softmax_entropy',
+            'logit_profile_8',
+            'stability_v2_8',
+            'input_grad_norm',
+            'side_quadratic_logistic_surrogate',
+        ] if ensemble_complete else [],
+        'lambda_zero_note': (
+            'CE plus ensemble side-channel evasion when ensemble_complete=True; '
+            'standard PGD otherwise.'
+        ),
         'device': str(device),
         'elapsed_s': round(elapsed, 1),
         'checkpoint_jsonl': checkpoint_jsonl,
@@ -578,6 +949,16 @@ if __name__ == '__main__':
                         help='Add a DCT high-frequency energy matching term to the '
                              'loss (coefficient 0.5), targeting the ensemble scorer\'s '
                              '37th feature. Produces a stronger adaptive attack.')
+    parser.add_argument('--ensemble-complete', action='store_true',
+                        help='Target the deployed ensemble side channels too: DCT, '
+                             'softmax entropy, logit profile, stability-v2, grad-norm, '
+                             'and side-quadratic logistic score when present.')
+    parser.add_argument('--ec-match-coeff', type=float, default=0.5,
+                        help='Coefficient for ensemble-complete side-feature matching.')
+    parser.add_argument('--ec-score-coeff', type=float, default=0.25,
+                        help='Coefficient for the fitted side-quadratic logistic score surrogate.')
+    parser.add_argument('--skip-gradnorm-surrogate', action='store_true',
+                        help='Disable the second-order grad-norm surrogate if VRAM/time is too high.')
     parser.add_argument('--checkpoint-jsonl', default=None,
                         help='Append progress and completed lambda results to this JSONL file.')
     parser.add_argument('--resume', action='store_true',
@@ -597,4 +978,8 @@ if __name__ == '__main__':
         eot_verify_samples=args.eot_verify_samples,
         checkpoint_jsonl=args.checkpoint_jsonl,
         resume=args.resume,
+        ensemble_complete=args.ensemble_complete,
+        ec_match_coeff=args.ec_match_coeff,
+        ec_score_coeff=args.ec_score_coeff,
+        ec_include_gradnorm=not args.skip_gradnorm_surrogate,
     )
