@@ -41,7 +41,7 @@ reported from the resulting JSON files rather than manually transcribed.
 We evaluate four attack classes:
 \begin{itemize}[leftmargin=*,noitemsep]
   \item \textbf{FGSM} \cite{goodfellow2015explaining}: single-step gradient attack, $\varepsilon=8/255$ ($\ell_\infty$).
-  \item \textbf{PGD-40} \cite{madry2017towards}: 40-step projected gradient descent, $\varepsilon=8/255$, step size $\alpha=\varepsilon/4$, 1 random restart ($\ell_\infty$). (The orchestration script \texttt{run\_vastai\_full.sh} declares a stronger PGD-50$\times$10 default; the deployed detection numbers in Table~\ref{tab:main} are the PGD-40$\times$1 run of \texttt{run\_ablation\_paper.py}, the source of \texttt{results\_ablation\_multiseed.json}.)
+  \item \textbf{PGD} \cite{madry2017towards}: projected gradient descent, $\varepsilon=8/255$, step size $\alpha=\varepsilon/4$ ($\ell_\infty$). The CIFAR-10/ResNet-18 main table uses PGD-40 (40 steps, 1 restart, the ablation-pipeline config); WRN-28-10 and CIFAR-100 use the RobustBench-standard PGD-50 (50 steps, 10 restarts). Appendix~\ref{app:audit} verifies CIFAR-10 detection is invariant to PGD-50$\times$10 ($0.991$ vs.\ $0.987$).
   \item \textbf{CW-L2} \cite{carlini2017adversarial}: optimization-based attack, canonical configuration \texttt{max\_iter}=100, \texttt{binary\_search\_steps}=9 (matches Table~\ref{tab:main} \texttt{results\_cw\_n1000\_ms5\_seed*}). A weakened-CW run (\texttt{max\_iter}=5, \texttt{binary\_search\_steps}=5) is reported in Appendix~\ref{app:weak_cw} for detector-fidelity analysis only.
   \item \textbf{Square Attack} \cite{andriushchenko2020square}: black-box score-based attack, 5000 queries, $\varepsilon=8/255$ ($\ell_\infty$).
   \item \textbf{AutoAttack} \cite{croce2020reliable}: standard ensemble evaluation.
@@ -106,17 +106,17 @@ ResNet-18 backbone, using the same calibration scheme
   WRN-28-10 lifts CIFAR-10 TPR by $+5$--$10$~pp over ResNet-18 across
   FGSM/Square; CIFAR-100 is harder for score-based and
   optimisation-based attacks (Square $0.672$, CW $0.687$) while
-  white-box PGD-40 and AutoAttack remain at $\ge 0.98$.
-  The $n_{\text{adv}}$ column reports the pooled adversarial count
-  across all 5 seeds and (where applicable) attack-config repeats.
-  CIFAR-10/ResNet-18 and CIFAR-100/ResNet-18 use one config per seed
-  ($5\times 1000 = 5000$). For WRN-28-10, FGSM/PGD pool the
-  \texttt{fgsm\_pgd\_l3fix\_wrn} and \texttt{paper\_wrn} runs
-  ($5+2$ seed-repeats $= 7000$), Square pools
-  \texttt{prism\_square\_wrn} and \texttt{paper\_wrn}
-  ($4+2 = 6000$), and AutoAttack pools the \texttt{fast\_wrn} run
-  plus the \texttt{paper\_wrn} 5-seed sweep ($5+5 = 10000$); CW
-  uses the canonical 5-seed run ($5000$).
+  white-box PGD and AutoAttack remain at $\ge 0.98$.
+  Every cell pools 5 fixed seeds $\times n{=}1000 = 5000$ adversarials
+  (one canonical run per seed; earlier WRN counts that summed seed-42
+  re-runs are de-duplicated here).
+  PGD configuration is artifact-accurate per setting:
+  CIFAR-10/ResNet-18 uses PGD-40 (1 restart, the ablation-pipeline
+  config of \texttt{results\_ablation\_multiseed.json}), whereas
+  WRN-28-10 and CIFAR-100 use the RobustBench-standard PGD-50
+  (10 restarts). Re-running CIFAR-10/ResNet-18 at PGD-50$\times$10 yields
+  $0.991$ (Appendix~\ref{app:audit}), statistically tied with the
+  PGD-40 $0.987$, so the detection result is invariant to the stronger PGD.
 }
 \label{tab:main_multi}
 \end{table}
@@ -189,7 +189,7 @@ ResNet-18 backbone, using the same calibration scheme
     \label{fig:tiers_c100}
   \end{subfigure}
   \caption{\prism three-tier operating points (L1, L2, L3) per attack.
-  AutoAttack and PGD-40 saturate near $\mathrm{TPR}{=}1$ even at the
+  AutoAttack and PGD saturate near $\mathrm{TPR}{=}1$ even at the
   tight L3 FPR (${\le}0.005$); Square trades TPR for tighter FPR most
   steeply, consistent with its score-based attack signature being the
   weakest of the four in the ensemble feature space.}
@@ -202,7 +202,7 @@ re-tuning: the WRN run lifts every CIFAR-10 attack TPR while holding
 FPR at $0.073$, indicating that the discriminative signal is in the
 ensemble channels, not in a ResNet-18-specific calibration.
 (ii)~Cross-dataset to CIFAR-100 (10$\times$ more classes), white-box
-gradient attacks remain trivially detectable (PGD-40 $0.984$,
+gradient attacks remain trivially detectable (PGD-50 $0.984$,
 AutoAttack $0.999$), but score-based Square ($0.672$) and the
 optimisation-based CW-L2 ($0.687$) drop below the $0.85$ design target.
 Per-channel ablation (Appendix~\ref{app:cifar100}, Table~\ref{tab:c100_abl})

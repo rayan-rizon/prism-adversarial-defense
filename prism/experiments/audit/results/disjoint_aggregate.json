@@ -1,0 +1,52 @@
+{
+  "FGSM": {
+    "pooled_TPR": 0.8865,
+    "pooled_CI95_independent": [
+      0.8719,
+      0.8997
+    ],
+    "per_window_TPR": [
+      0.9,
+      0.875,
+      0.8925,
+      0.88,
+      0.885
+    ],
+    "window_std": 0.0099,
+    "n_unique": 2000
+  },
+  "PGD40": {
+    "pooled_TPR": 0.989,
+    "pooled_CI95_independent": [
+      0.9834,
+      0.9927
+    ],
+    "per_window_TPR": [
+      1.0,
+      0.9825,
+      0.985,
+      0.9925,
+      0.985
+    ],
+    "window_std": 0.0072,
+    "n_unique": 2000
+  },
+  "Square": {
+    "pooled_TPR": 0.8895,
+    "pooled_CI95_independent": [
+      0.875,
+      0.9025
+    ],
+    "per_window_TPR": [
+      0.9,
+      0.89,
+      0.92,
+      0.85,
+      0.8875
+    ],
+    "window_std": 0.0255,
+    "n_unique": 2000
+  },
+  "_clean_FPR_pooled": 0.0735,
+  "_note": "Disjoint windows -> independent pooled draws; CI is honest (cf. overlapping main table)."
+}

@@ -757,14 +757,14 @@ analysis above governs both settings.
 \paragraph{Channel-mask ablation (with FPR disclosure).}
 The CIFAR-100 ablation in Table~\ref{tab:c100_abl} mirrors the
 CIFAR-10 methodology: each row removes one feature family while reusing
-the Full-PRISM threshold. Unlike CIFAR-10 (where No-LogitProfile
-inflates FPR to $0.938$), on CIFAR-100 only \emph{one} configuration
-inflates FPR rather than improving discrimination: No-GradNorm
-(FPR~$0.658$, i.e.\ flags two-thirds of clean inputs) appears to
-``improve'' TPR only because its calibrated threshold has collapsed.
-The other masked rows hold FPR at or below the $0.10$ design target
-(No-LogitProfile $0.077$, No-DCT $0.058$, No-StabilityV2 $0.019$) and
-mostly \emph{lose} TPR on removal. We surface FPR directly via the
+the Full-PRISM threshold. As on CIFAR-10, removing a channel can ``improve'' TPR only by
+collapsing the calibrated threshold and inflating FPR. On CIFAR-100
+\emph{two} configurations do this: No-GradNorm (FPR~$0.658$, i.e.\ flags
+two-thirds of clean inputs) and No-LogitProfile (FPR~$0.258$); their
+apparent FGSM/PGD gains are threshold-collapse artifacts, not genuine
+detection. The remaining masked rows hold FPR at or below the $0.10$
+design target (No-DCT $0.068$, No-StabilityV2 $0.019$) and mostly
+\emph{lose} TPR on removal. We surface FPR directly via the
 explicit column so the table cannot be misread as an argument for
 dropping any single channel. The legitimate signal is that StabilityV2
 (PGD/Square/CW TPR collapses on its removal), TDA (FGSM TPR collapses
@@ -1079,7 +1079,12 @@ detector per attack: its FGSM/PGD/Square columns are in-distribution, but
 $0.938$ --- $3.8\times$ the CW-\emph{trained} SpectralDefense ($0.244$). PRISM
 is the only detector that holds $\ge 0.88$ on every family with one model that
 generalizes to an untrained family. (Bold marks the per-column best; the
-FGSM/PGD wins are per-attack-supervised and in-distribution.)}
+FGSM/PGD wins are per-attack-supervised and in-distribution.)
+\emph{Achieved EVAL FPR (mean over the four attacks):} SID $0.082$ and PRISM
+$0.074$ sit below the $0.10$ design target; the supervised MFS detectors run
+slightly above it (InputMFS $0.10$--$0.11$, LayerMFS $0.11$--$0.12$, from the
+threshold-fit$\to$EVAL generalisation gap), which if anything inflates their
+reported TPR --- so PRISM's margin over them is conservative.}
 \label{tab:recent_baselines}
 \end{table}
 
@@ -1124,3 +1129,38 @@ regardless. We report both the \emph{InputMFS} and the feature-space
 \emph{LayerMFS} variants (LayerMFS features are the per-layer channel-averaged
 $2$D-FFT log-magnitude of \texttt{layer2/3/4} activations); LayerMFS data are
 in \texttt{experiments/evaluation/recent\_baselines\_layermfs/}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Audit Robustness Checks: PGD Strength and Disjoint-Window CIs}
+\label{app:audit}
+
+Two checks on the CIFAR-10/ResNet-18 main detection numbers, using the
+deployed detector (\texttt{build\_prism} $+$ \texttt{prism.defend}, the same
+pipeline that produced Table~\ref{tab:main}); source
+\texttt{experiments/audit/run\_audit\_tests.py}.
+
+\paragraph{(A) PGD-50$\times$10 invariance.}
+The CIFAR-10/ResNet-18 main table uses PGD-40 (1 restart); WRN-28-10 and
+CIFAR-100 use the RobustBench-standard PGD-50 (10 restarts). To confirm the
+detection result does not depend on the weaker PGD, we re-ran PGD-50$\times$10
+on the \emph{same} per-seed image samples (deterministic sampling, so the
+comparison is paired), 5 seeds $\times n{=}1000$. Pooled detection TPR is
+$0.991$ [$0.988, 0.993$] at clean FPR $0.074$, versus $0.988$ for PGD-40 on the
+identical images --- statistically tied. The detector is invariant to the
+stronger attack; the PGD-40 label on the CIFAR-10/ResNet-18 row is therefore
+not a strength concern.
+
+\paragraph{(B) Disjoint-window confidence intervals.}
+The main numbers subsample $n{=}1000$ from the shared $[8000,10000]$ EVAL
+window per seed, so the five pools overlap ($\approx 1929$ unique images) and
+the pooled Wilson interval is mildly anti-conservative
+(\S\ref{sec:setup}). As a stronger check we partition the window into five
+\emph{disjoint} $400$-image blocks (one per seed), giving $n{=}2000$ genuinely
+independent draws. Pooled TPR and \emph{honest} 95\% Wilson CI: FGSM
+$0.887$ [$0.872, 0.900$], PGD-40 $0.989$ [$0.983, 0.993$], Square $0.890$
+[$0.875, 0.903$], clean FPR $0.074$. The point estimates reproduce the main
+table (FGSM $0.882$, PGD $0.987$, Square $0.886$) within $\le 0.5$~pp and the
+honest intervals are only $\approx 0.3$--$0.5$~pp wider than the overlapping-pool
+intervals, confirming that eval-pool overlap does not materially affect the
+reported conclusions.

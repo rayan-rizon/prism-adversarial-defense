@@ -1,0 +1,36 @@
+{
+  "PGD40": {
+    "TPR_mean": 0.9882,
+    "TPR_std": 0.0026,
+    "pooled_TPR": 0.9882,
+    "pooled_CI95": [
+      0.9848,
+      0.9908
+    ],
+    "per_seed": [
+      0.991,
+      0.986,
+      0.986,
+      0.987,
+      0.991
+    ]
+  },
+  "PGD50": {
+    "TPR_mean": 0.991,
+    "TPR_std": 0.0035,
+    "pooled_TPR": 0.991,
+    "pooled_CI95": [
+      0.988,
+      0.9933
+    ],
+    "per_seed": [
+      0.99,
+      0.993,
+      0.987,
+      0.989,
+      0.996
+    ]
+  },
+  "_clean_FPR_pooled": 0.074,
+  "_note": "PGD40 should reproduce deployed 0.987; PGD50 = RobustBench standard"
+}
