@@ -22,10 +22,15 @@ run_phase() {
 
   local pids=""
   for seed in $SEEDS; do
-    TAG="$tag" OUTDIR="experiments/evaluation/${tag}" LOGDIR="logs/${tag}" \
-    N_TEST="$n_test" STEPS="$STEPS" RESTARTS="$RESTARTS" LAMBDAS="$lambdas" \
-    /bin/bash /workspace/run_prism_ec_seed_generic.sh "$seed" \
-      > "logs/${tag}/seed${seed}.outer.log" 2>&1 &
+    (
+      echo "SEED_RUN_START seed=${seed} tag=${tag} $(date -Is)"
+      echo "git=$(git -C /workspace/prism-repo/prism rev-parse --short HEAD)"
+      echo "gpu=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | head -1)"
+      echo "n_test=${n_test} steps=${STEPS} restarts=${RESTARTS} lambdas=${lambdas}"
+      TAG="$tag" OUTDIR="experiments/evaluation/${tag}" LOGDIR="logs/${tag}" \
+      SEEDS="$seed" N_TEST="$n_test" STEPS="$STEPS" RESTARTS="$RESTARTS" LAMBDAS="$lambdas" \
+      bash run_vastai_ensemble_complete_adaptive.sh
+    ) > "logs/${tag}/seed${seed}.outer.log" 2>&1 &
     pids="$pids $!"
     echo "  launched seed=${seed} pid=$!" | tee -a "logs/${tag}/phase.log"
     sleep 2
