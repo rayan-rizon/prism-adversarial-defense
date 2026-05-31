@@ -17,8 +17,9 @@ while true; do
   nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,power.draw,power.limit --format=csv,noheader,nounits 2>/dev/null || true
   echo
 
-  echo "tmux"
-  tmux list-windows -t prism_ec_adaptive 2>/dev/null || echo "tmux session prism_ec_adaptive not found"
+  echo "controller"
+  pgrep -af 'run_vastai_ensemble_complete_two_stage.sh' 2>/dev/null || echo "two-stage controller not found"
+  tmux list-windows -t prism_ec_adaptive 2>/dev/null || true
   echo
 
   echo "processes"
@@ -153,6 +154,6 @@ PY
   echo "Usage: /workspace/monitor_prism_ec.sh [tag] [seconds]"
   echo "Scan tag:    ensemble_complete_lambda_scan_n50"
   echo "Confirm tag: ensemble_complete_worst_lambda_n200"
-  echo "Attach full tmux: tmux attach -t prism_ec_adaptive"
+  echo "Controller log: tail -f /workspace/prism_ec_two_stage.master.log"
   sleep "$interval"
 done
