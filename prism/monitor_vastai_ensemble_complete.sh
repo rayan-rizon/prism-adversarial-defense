@@ -25,7 +25,7 @@ while true; do
   pgrep -af 'run_adaptive_pgd.py' 2>/dev/null || echo "no adaptive python processes"
   echo
 
-  python - "$tag" <<'PY'
+  "${PYTHON:-/workspace/prism-venv/bin/python}" - "$tag" <<'PY'
 import math
 import re
 import sys
