@@ -907,12 +907,22 @@ def run_adaptive_pgd(
         'checkpoint_jsonl': checkpoint_jsonl,
         'resume': bool(resume),
         'attack_design': (
-            'BPDA adaptive PGD: combined loss = -CE + λ * '
-            'Σ_layer ||a_layer(x_adv) - a_layer(x_clean)||₂ / D_layer'
-            + (' + 0.5 * |HF_energy(x_adv) - HF_energy(x_clean)| [through_scorer]'
-               if through_scorer else '')
-            + '. λ=0 is standard PGD. '
-            'Reference: Athalye et al. 2018 (Obfuscated Gradients Give a '
+            'BPDA adaptive PGD: combined loss = -CE + lambda * '
+            'sum_layer ||a_layer(x_adv) - a_layer(x_clean)||_2 / D_layer'
+            + (
+                ' + ensemble-complete side-channel surrogate '
+                '(DCT, entropy, logit profile, stability-v2, grad-norm, '
+                'side-quadratic logistic score)'
+                if ensemble_complete else
+                (' + 0.5 * |HF_energy(x_adv) - HF_energy(x_clean)| [through_scorer]'
+                 if through_scorer else '')
+            )
+            + (
+                '. lambda=0 keeps the ensemble side-channel surrogate active. '
+                if ensemble_complete else
+                '. lambda=0 is standard PGD. '
+            )
+            + 'Reference: Athalye et al. 2018 (Obfuscated Gradients Give a '
             'False Sense of Security, ICML).'
         ),
         'layer_names': LAYER_NAMES,
