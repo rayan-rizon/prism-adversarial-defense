@@ -802,6 +802,7 @@ def run_adaptive_pgd(
         asr = attack_success / max(n_adv, 1)
         tpr_success = detected_success / max(attack_success, 1)
         evasion_success = evaded_success / max(attack_success, 1)
+        undetected_success = evaded_success / max(n_adv, 1)
         prec = tp / max(tp + fp, 1)
         f1 = 2 * prec * tpr / max(prec + tpr, 1e-8)
         tpr_ci = wilson_ci(tp, n_adv)
@@ -821,6 +822,7 @@ def run_adaptive_pgd(
             'model_ASR': round(asr, 4),
             'TPR_on_successful_attacks': round(tpr_success, 4),
             'evasion_rate_on_successful_attacks': round(evasion_success, 4),
+            'undetected_success_rate': round(undetected_success, 4),
             'detected_successful_adv': int(detected_success),
             'evaded_successful_adv': int(evaded_success),
             'per_tier_fpr': tier_fpr,
