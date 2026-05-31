@@ -41,6 +41,10 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:512}"
 
+TAG_WAS_SET="${TAG+x}"
+OUTDIR_WAS_SET="${OUTDIR+x}"
+LOGDIR_WAS_SET="${LOGDIR+x}"
+
 CONFIG="${CONFIG:-${PRISM_CONFIG:-configs/vastai_cw_full.yaml}}"
 TAG="${TAG:-ensemble_complete}"
 export PRISM_CONFIG="$CONFIG"
@@ -55,10 +59,11 @@ EOT_VERIFY_SAMPLES="${EOT_VERIFY_SAMPLES:-20}"
 EC_MATCH_COEFF="${EC_MATCH_COEFF:-0.5}"
 EC_SCORE_COEFF="${EC_SCORE_COEFF:-0.25}"
 SKIP_GRADNORM="${SKIP_GRADNORM:-0}"
-OUTDIR="${OUTDIR:-experiments/evaluation/${TAG}}"
-LOGDIR="${LOGDIR:-logs/${TAG}}"
 
 if [ "${SMOKE:-0}" = "1" ]; then
+  if [ -z "$TAG_WAS_SET" ]; then
+    TAG="ensemble_complete_smoke"
+  fi
   first_seed=""
   for s in $SEEDS; do first_seed="$s"; break; done
   SEEDS="$first_seed"
@@ -66,6 +71,13 @@ if [ "${SMOKE:-0}" = "1" ]; then
   STEPS="${SMOKE_STEPS:-2}"
   RESTARTS="${SMOKE_RESTARTS:-1}"
   LAMBDAS="${SMOKE_LAMBDAS:-0.0 10.0}"
+fi
+
+if [ -z "$OUTDIR_WAS_SET" ]; then
+  OUTDIR="experiments/evaluation/${TAG}"
+fi
+if [ -z "$LOGDIR_WAS_SET" ]; then
+  LOGDIR="logs/${TAG}"
 fi
 
 mkdir -p "$OUTDIR" "$LOGDIR"
