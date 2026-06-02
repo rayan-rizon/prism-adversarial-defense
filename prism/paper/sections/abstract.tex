@@ -1,5 +1,5 @@
 We present \prism (Predictive Runtime Immune System with Manifold Monitoring), 
-an architecture-agnostic adversarial defense system that detects adversarial 
+a multi-backbone adversarial-input detection system that detects adversarial 
 examples at inference time using topological data analysis (TDA) of internal 
 neural network activations. \prism integrates four complementary components: 
 (1)~\tamm (Topological Activation Manifold Monitor), which extracts persistence 
@@ -11,10 +11,14 @@ split conformal prediction;
 (3)~\sacd (Sequential Adversarial Campaign Detector), a CUSUM-on-score-stream
 monitor that flags sustained attack campaigns at a mean latency of
 \textbf{2.6 queries} on $\rho{=}1.0$ streams while maintaining $0.0$
-false-alarm activation on clean-only streams; and
+false-alarm activation on clean-only streams up to $1{,}000$ queries
+(longer streams need a more conservative threshold $C^*{\geq}8$ or
+periodic reset; App.~\ref{app:l0_stress}); and
 (4)~\tamsh (Topology-Aware MoE Self-Healing), which recovers correct
 predictions on L3-rejected adversarials through attack-specialist expert
-sub-networks. The lightweight topology gate (combined $H_0{+}H_1$
+sub-networks.
+
+The lightweight topology gate (combined $H_0{+}H_1$
 Wasserstein) delivers \textbf{+10.6pp} recovery gap over passthrough under
 PGD, short of a pre-registered $+15$~pp target; a \emph{learned} router
 trained on the L3 pool (logistic regression on final-layer activations)
@@ -24,25 +28,41 @@ signal from expert capacity) and matching a prior-augmented upper bound
 ($29.3\%$, which hardcodes the PGD specialist) \emph{without} that
 hardcoding (App.~\ref{app:tamsh_diag}).
 
-We evaluate \prism on three settings (5 seeds, $n{=}1000$/seed; for
-WRN-28-10, additional attack-config repeats are pooled per
-Table~\ref{tab:main_multi}): (i) CIFAR-10 with a CIFAR-native ResNet-18 backbone,
-(ii) CIFAR-10 with a WRN-28-10 backbone, and (iii) CIFAR-100 with a
-ResNet-18 backbone, under FGSM, PGD, CW-L2, Square, AutoAttack, and
-adaptive PGD, with per-channel ablation, design-FPR ($10\%$) baseline
-comparison against LID, Mahalanobis, ODIN, and Energy (matched on
-CIFAR-10/ResNet-18; three baselines exceed the $10\%$ target on
-WRN-28-10/CIFAR-100, reported unfiltered), campaign detection, and L3
-recovery. On the main CIFAR-10/ResNet-18 setting, \prism Full achieves
+We evaluate \prism on three full CNN settings (5 seeds,
+$n{=}1000$/seed, de-duplicated per Table~\ref{tab:main_multi}):
+(i) CIFAR-10 with a
+CIFAR-native ResNet-18 backbone, (ii) CIFAR-10 with a WRN-28-10
+backbone, and (iii) CIFAR-100 with a ResNet-18 backbone, under
+standard attacks (FGSM, PGD, CW-L2, Square, and AutoAttack where run),
+with per-channel
+ablation, design-FPR ($10\%$) baseline comparison against LID,
+Mahalanobis, ODIN, and Energy (matched on CIFAR-10/ResNet-18; three
+baselines exceed the $10\%$ target on WRN-28-10/CIFAR-100, reported
+unfiltered), campaign detection, and L3 recovery. We additionally run a
+standard-attack transformer transfer check on CIFAR-10/ViT-B/16
+(FGSM, PGD-50, and Square only). On the main CIFAR-10/ResNet-18 setting,
+\prism Full achieves
 $0.918$ mean TPR on FGSM/PGD/Square (matched empirical FPR $0.074$),
-$0.938$ on CW-L2 ($0.075$), and $1.000$ on AutoAttack ($0.075$), beating
+$0.938$ on CW-L2 ($0.075$), and $1.000$ on the AutoAttack ensemble's
+final adversarials ($0.075$; individual sub-attacks detected at
+$0.71$--$0.97$ @ L1, weakest standalone Square $0.706$,
+App.~\ref{app:autoattack}), beating
 the strongest reproduced baseline (Mahalanobis $0.582$ mean TPR at FPR
-$0.077$) by $+33.6$~pp on the FGSM/PGD/Square pool. The WRN-28-10
+$0.077$) by $+33.6$~pp on the FGSM/PGD/Square pool. On the
+CIFAR-10/ResNet-18 setting, an ensemble-complete adaptive PGD surrogate
+drops all-input TPR to
+$0.479$, but \prism still detects $0.866$ of successful adversarials
+and leaves a $0.074$ undetected-success rate. The WRN-28-10
 backbone lifts the same pool to $0.975$ at FPR $0.073$; CIFAR-100 holds
-$0.830$ at FPR $0.077$. Per-setting tables and the full CIFAR-100
-appendix are reported in \S\ref{sec:multi_backbone} and
-Appendix~\ref{app:cifar100}.
-Unlike detector-coupled defenses, \prism operates on any pre-trained
-classifier without retraining or architecture modification, and is, to
+$0.830$ at FPR $0.077$; ViT-B/16 reaches
+$1.000/1.000/0.9998$ TPR on FGSM/PGD-50/Square at FPR $0.0828$
+(no ViT latency or adaptive-attack claim). Per-setting tables and the
+full CIFAR-100 appendix are reported in \S\ref{sec:multi_backbone} and
+Appendix~\ref{app:cifar100}; WRN/CIFAR-100 adaptive-PGD probes remain
+appendix-only stress evidence, not ensemble-complete headline claims.
+Unlike detector-coupled defenses, \prism operates on any wrappable
+pre-trained classifier with accessible intermediate activations---
+requiring per-model clean profiling and conformal calibration but no
+backbone retraining or architecture modification---and is, to
 our knowledge, the first activation-based adversarial detector to provide
 a split-conformal, distribution-free false-positive-rate certificate.

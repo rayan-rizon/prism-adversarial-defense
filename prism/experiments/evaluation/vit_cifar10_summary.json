@@ -1,0 +1,289 @@
+{
+  "aggregate": {
+    "FGSM": {
+      "F1_mean": 0.9603,
+      "F1_std": 0.0017,
+      "FPR_CI_95_pooled": [
+        0.0755,
+        0.0908
+      ],
+      "FPR_mean": 0.0828,
+      "FPR_std": 0.0036,
+      "TPR_CI_95_pooled": [
+        0.9992,
+        1.0
+      ],
+      "TPR_mean": 1.0,
+      "TPR_std": 0.0,
+      "base_attack_success_rate": 0.6062,
+      "detector_TPR_on_base_success": 1.0,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9987,
+        1.0
+      ],
+      "n_seeds": 5,
+      "pool_FN": 0,
+      "pool_FP": 414,
+      "pool_TN": 4586,
+      "pool_TP": 5000,
+      "pool_base_attack_success": 3031,
+      "pool_detected_base_success": 3031,
+      "pool_missed_base_success": 0
+    },
+    "PGD": {
+      "F1_mean": 0.9603,
+      "F1_std": 0.0017,
+      "FPR_CI_95_pooled": [
+        0.0755,
+        0.0908
+      ],
+      "FPR_mean": 0.0828,
+      "FPR_std": 0.0036,
+      "TPR_CI_95_pooled": [
+        0.9992,
+        1.0
+      ],
+      "TPR_mean": 1.0,
+      "TPR_std": 0.0,
+      "base_attack_success_rate": 1.0,
+      "detector_TPR_on_base_success": 1.0,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9992,
+        1.0
+      ],
+      "n_seeds": 5,
+      "pool_FN": 0,
+      "pool_FP": 414,
+      "pool_TN": 4586,
+      "pool_TP": 5000,
+      "pool_base_attack_success": 5000,
+      "pool_detected_base_success": 5000,
+      "pool_missed_base_success": 0
+    },
+    "Square": {
+      "F1_mean": 0.9602,
+      "F1_std": 0.0017,
+      "FPR_CI_95_pooled": [
+        0.0755,
+        0.0908
+      ],
+      "FPR_mean": 0.0828,
+      "FPR_std": 0.0036,
+      "TPR_CI_95_pooled": [
+        0.9989,
+        1.0
+      ],
+      "TPR_mean": 0.9998,
+      "TPR_std": 0.0004,
+      "base_attack_success_rate": 0.995,
+      "detector_TPR_on_base_success": 0.9998,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9989,
+        1.0
+      ],
+      "n_seeds": 5,
+      "pool_FN": 1,
+      "pool_FP": 414,
+      "pool_TN": 4586,
+      "pool_TP": 4999,
+      "pool_base_attack_success": 4975,
+      "pool_detected_base_success": 4974,
+      "pool_missed_base_success": 1
+    }
+  },
+  "description": "PRISM ViT-B/16 CIFAR-10 standard-attack transfer run; compact paper summary of the complete Vast.ai artifact bundle.",
+  "model": {
+    "arch": "vit_b_16",
+    "batch_size": 64,
+    "best_test_acc": 0.9835,
+    "epochs": 20,
+    "image_size": 224,
+    "lr": 3e-05,
+    "measured_verify_acc_n1000": 0.986,
+    "min_test_acc_gate": 0.9,
+    "monitored_layers": [
+      {
+        "name": "encoder.layers.encoder_layer_3",
+        "weight": 0.3
+      },
+      {
+        "name": "encoder.layers.encoder_layer_7",
+        "weight": 0.3
+      },
+      {
+        "name": "encoder.layers.encoder_layer_11",
+        "weight": 0.4
+      }
+    ],
+    "sha256_first16": "8f130e56c7af923f",
+    "test_acc": 0.9832,
+    "weight_decay": 0.05,
+    "weights": "imagenet"
+  },
+  "protocol": {
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square"
+    ],
+    "dataset": "cifar10",
+    "eps_255": 8.0,
+    "eps_linf": 0.031373,
+    "eval_split": [
+      8000,
+      10000
+    ],
+    "latency_skipped": true,
+    "n_adv_per_seed_per_attack": 1000,
+    "pgd": {
+      "restarts": 10,
+      "step_size": "eps/4",
+      "steps": 50
+    },
+    "seeds": [
+      42,
+      123,
+      456,
+      789,
+      999
+    ],
+    "square": {
+      "queries": 5000,
+      "restarts": 1
+    }
+  },
+  "raw_fpr_report_json": "experiments/vit_cifar10/calibration/vit_cifar10_ensemble_fpr_report.json",
+  "raw_result_json": "experiments/vit_cifar10/evaluation/results_vit_cifar10_multiseed.json",
+  "research_standard_scope": {
+    "full_vit_claim": false,
+    "notes": [
+      "FGSM, PGD-50x10, and Square-5000 only for ViT-B/16.",
+      "All requested target gates passed for this attack set.",
+      "Latency was intentionally skipped; do not cite ViT latency.",
+      "CW, AutoAttack, and adaptive PGD were not run on ViT in this bundle.",
+      "Earlier L3 calibration attempts are superseded by tier_cal_alpha_factors.L3=0.39, which passes validation FPR."
+    ],
+    "standard_attack_transfer": true,
+    "vit_adaptive_pgd_claim": false,
+    "vit_autoattack_claim": false,
+    "vit_cw_claim": false,
+    "vit_latency_claim": false
+  },
+  "source_archive": null,
+  "source_download": "ViT/project",
+  "target_metric_gate": {
+    "attacks": {
+      "FGSM": {
+        "TPR_CI_95_pooled": [
+          0.9992,
+          1.0
+        ],
+        "TPR_mean": 1.0,
+        "passed": true,
+        "target": 0.85
+      },
+      "PGD": {
+        "TPR_CI_95_pooled": [
+          0.9992,
+          1.0
+        ],
+        "TPR_mean": 1.0,
+        "passed": true,
+        "target": 0.9
+      },
+      "Square": {
+        "TPR_CI_95_pooled": [
+          0.9989,
+          1.0
+        ],
+        "TPR_mean": 0.9998,
+        "passed": true,
+        "target": 0.85
+      }
+    },
+    "failures": [],
+    "fpr": {
+      "L1": {
+        "FPR": 0.0828,
+        "FPR_CI_95_pooled": [
+          0.0755,
+          0.0908
+        ],
+        "passed": true,
+        "target": 0.1
+      },
+      "L2": {
+        "FPR": 0.0248,
+        "FPR_CI_95_pooled": [
+          0.0208,
+          0.0295
+        ],
+        "passed": true,
+        "target": 0.03
+      },
+      "L3": {
+        "FPR": 0.001,
+        "FPR_CI_95_pooled": [
+          0.0004,
+          0.0023
+        ],
+        "passed": true,
+        "target": 0.005
+      }
+    },
+    "latency_passed": null,
+    "latency_target_ms": 100.0,
+    "latency_worst_mean_ms": null,
+    "passed": true,
+    "pooled_tpr": 0.9999,
+    "pooled_wilson_lower": 0.9996,
+    "pooled_wilson_lower_target": 0.8,
+    "pooled_wilson_passed": true
+  },
+  "validation_fpr_gate": {
+    "dataset": "cifar10",
+    "level_distribution": {
+      "L1": 62,
+      "L2": 23,
+      "L3_REJECT": 4,
+      "PASS": 911
+    },
+    "n_val": 1000,
+    "tiers": {
+      "L1": {
+        "CI_95": [
+          0.072888,
+          0.108258
+        ],
+        "FP": 89,
+        "FPR": 0.089,
+        "n": 1000,
+        "passed": true,
+        "target": 0.1
+      },
+      "L2": {
+        "CI_95": [
+          0.018621,
+          0.038999
+        ],
+        "FP": 27,
+        "FPR": 0.027,
+        "n": 1000,
+        "passed": true,
+        "target": 0.03
+      },
+      "L3": {
+        "CI_95": [
+          0.001557,
+          0.01024
+        ],
+        "FP": 4,
+        "FPR": 0.004,
+        "n": 1000,
+        "passed": true,
+        "target": 0.005
+      }
+    },
+    "val_split": "CIFAR10 test idx 7000-7999"
+  }
+}

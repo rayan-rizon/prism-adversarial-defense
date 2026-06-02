@@ -1,0 +1,266 @@
+{
+  "aggregate": {
+    "clean_only": {
+      "none": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      }
+    },
+    "sustained_rho100": {
+      "none": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 60.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 3.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.793
+        ],
+        "mean_adv_served": 8.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 1
+      }
+    }
+  },
+  "parametric": {
+    "measured_pgd_evade_fool_prob": 0.0,
+    "pgd_note": "Measured per-query PGD evade+fool prob is ~0 because the per-query detector already rejects ~99% of PGD; PGD campaigns fail regardless of closed-loop policy. The closed-loop payoff applies to a LEAKY attacker that evades per-query detection at rate p>0 (e.g. adaptive PGD at high lambda).",
+    "served_budget_none": 60,
+    "served_budget_quarantine": 3,
+    "served_budget_rate_limit": 8,
+    "formula": "P(campaign success) = 1 - (1-p)^B, B = served adversarial queries.",
+    "leaky_attack_evade_fool_prob": 0.57,
+    "leak_rate_sweep": {
+      "0.01": {
+        "no_defense_B60": 0.4528,
+        "quarantine_B3": 0.0297,
+        "rate_limit_B8": 0.0773,
+        "risk_reduction_quar_pp": 42.31
+      },
+      "0.02": {
+        "no_defense_B60": 0.7024,
+        "quarantine_B3": 0.0588,
+        "rate_limit_B8": 0.1492,
+        "risk_reduction_quar_pp": 64.36
+      },
+      "0.05": {
+        "no_defense_B60": 0.9539,
+        "quarantine_B3": 0.1426,
+        "rate_limit_B8": 0.3366,
+        "risk_reduction_quar_pp": 81.13
+      },
+      "0.1": {
+        "no_defense_B60": 0.9982,
+        "quarantine_B3": 0.271,
+        "rate_limit_B8": 0.5695,
+        "risk_reduction_quar_pp": 72.72
+      },
+      "0.2": {
+        "no_defense_B60": 1.0,
+        "quarantine_B3": 0.488,
+        "rate_limit_B8": 0.8322,
+        "risk_reduction_quar_pp": 51.2
+      },
+      "0.3": {
+        "no_defense_B60": 1.0,
+        "quarantine_B3": 0.657,
+        "rate_limit_B8": 0.9424,
+        "risk_reduction_quar_pp": 34.3
+      },
+      "0.57": {
+        "no_defense_B60": 1.0,
+        "quarantine_B3": 0.9205,
+        "rate_limit_B8": 0.9988,
+        "risk_reduction_quar_pp": 7.95
+      }
+    },
+    "pgd_curve_vs_budget": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "5": 0.0,
+      "10": 0.0,
+      "25": 0.0,
+      "50": 0.0,
+      "100": 0.0,
+      "200": 0.0
+    },
+    "leaky_curve_vs_budget": {
+      "1": 0.57,
+      "2": 0.8151,
+      "3": 0.9205,
+      "5": 0.9853,
+      "10": 0.9998,
+      "25": 1.0,
+      "50": 1.0,
+      "100": 1.0,
+      "200": 1.0
+    },
+    "leaky_success_at_B_none": 1.0,
+    "leaky_success_at_B_quarantine": 0.9205
+  },
+  "per_seed": {
+    "clean_only": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 60,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 60,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 60,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ]
+    },
+    "sustained_rho100": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 60,
+          "adv_total": 60,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 3,
+          "adv_total": 60,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 8,
+          "adv_total": 60,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ]
+    }
+  },
+  "_meta": {
+    "dataset": "cifar10",
+    "seeds": [
+      42
+    ],
+    "scenarios": [
+      "clean_only",
+      "sustained_rho100"
+    ],
+    "n_clean_pool": 30,
+    "n_adv_pool": 30,
+    "admit_prob_rate_limit": 0.1,
+    "eps": 0.031373,
+    "pgd_steps": 40,
+    "l0_thresholds_path": "models\\l0_thresholds.pkl",
+    "device": "cuda",
+    "elapsed_s": 11.1,
+    "policies": [
+      "none",
+      "quarantine",
+      "rate_limit"
+    ],
+    "threat_model": "attacker query succeeds iff it fools the model (argmax != y) AND evades the detector (level==PASS); campaign succeeds iff >=1 served query succeeds.",
+    "smoke": true
+  }
+}

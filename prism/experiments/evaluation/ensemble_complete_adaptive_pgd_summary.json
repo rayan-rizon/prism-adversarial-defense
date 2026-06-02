@@ -1,0 +1,405 @@
+{
+  "description": "Ensemble-complete adaptive PGD, CIFAR-10/ResNet-18, BPDA-style PGD with activation matching plus differentiable side-channel surrogates.",
+  "source_dirs": {
+    "lambda_scan_n50": "Cifar 10/project/experiments/evaluation/ensemble_complete_adaptive_pgd/ensemble_complete_lambda_scan_n50",
+    "worst_lambda_n200": "Cifar 10/project/experiments/evaluation/ensemble_complete_adaptive_pgd/ensemble_complete_worst_lambda_n200",
+    "logs_lambda_scan_n50": "Cifar 10/project/experiments/evaluation/ensemble_complete_adaptive_pgd/logs_ensemble_complete_lambda_scan_n50",
+    "logs_worst_lambda_n200": "Cifar 10/project/experiments/evaluation/ensemble_complete_adaptive_pgd/logs_ensemble_complete_worst_lambda_n200"
+  },
+  "attack_config": {
+    "eps": 0.031373,
+    "eps_note": "8/255",
+    "pgd_steps": 100,
+    "pgd_restarts": 10,
+    "eot_samples": 1,
+    "eot_verify_samples": 20,
+    "lambdas_scanned": [
+      0.0,
+      0.5,
+      1.0,
+      2.0,
+      5.0,
+      10.0
+    ],
+    "confirmed_lambda": 10.0,
+    "ensemble_complete_terms": [
+      "activation_matching_for_TDA",
+      "dct_high_frequency_energy",
+      "softmax_entropy",
+      "logit_profile_8",
+      "stability_v2_8",
+      "input_grad_norm",
+      "side_quadratic_logistic_surrogate"
+    ]
+  },
+  "lambda_scan_n50_pooled": {
+    "0.0": {
+      "TP": 142,
+      "FP": 25,
+      "FN": 108,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.568,
+      "TPR_CI_95": [
+        0.506,
+        0.6279
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8503,
+      "F1": 0.6811,
+      "n_successful_adv": 156,
+      "detected_successful_adv": 142,
+      "evaded_successful_adv": 14,
+      "model_ASR": 0.624,
+      "TPR_on_successful_attacks": 0.9103,
+      "evasion_rate_on_successful_attacks": 0.0897,
+      "undetected_success_rate": 0.056
+    },
+    "0.5": {
+      "TP": 140,
+      "FP": 25,
+      "FN": 110,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.56,
+      "TPR_CI_95": [
+        0.498,
+        0.6202
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8485,
+      "F1": 0.6747,
+      "n_successful_adv": 155,
+      "detected_successful_adv": 140,
+      "evaded_successful_adv": 15,
+      "model_ASR": 0.62,
+      "TPR_on_successful_attacks": 0.9032,
+      "evasion_rate_on_successful_attacks": 0.0968,
+      "undetected_success_rate": 0.06
+    },
+    "1.0": {
+      "TP": 127,
+      "FP": 25,
+      "FN": 123,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.508,
+      "TPR_CI_95": [
+        0.4464,
+        0.5694
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8355,
+      "F1": 0.6318,
+      "n_successful_adv": 150,
+      "detected_successful_adv": 127,
+      "evaded_successful_adv": 23,
+      "model_ASR": 0.6,
+      "TPR_on_successful_attacks": 0.8467,
+      "evasion_rate_on_successful_attacks": 0.1533,
+      "undetected_success_rate": 0.092
+    },
+    "2.0": {
+      "TP": 130,
+      "FP": 25,
+      "FN": 120,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.52,
+      "TPR_CI_95": [
+        0.4582,
+        0.5812
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8387,
+      "F1": 0.642,
+      "n_successful_adv": 149,
+      "detected_successful_adv": 130,
+      "evaded_successful_adv": 19,
+      "model_ASR": 0.596,
+      "TPR_on_successful_attacks": 0.8725,
+      "evasion_rate_on_successful_attacks": 0.1275,
+      "undetected_success_rate": 0.076
+    },
+    "5.0": {
+      "TP": 123,
+      "FP": 25,
+      "FN": 127,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.492,
+      "TPR_CI_95": [
+        0.4306,
+        0.5536
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8311,
+      "F1": 0.6181,
+      "n_successful_adv": 145,
+      "detected_successful_adv": 123,
+      "evaded_successful_adv": 22,
+      "model_ASR": 0.58,
+      "TPR_on_successful_attacks": 0.8483,
+      "evasion_rate_on_successful_attacks": 0.1517,
+      "undetected_success_rate": 0.088
+    },
+    "10.0": {
+      "TP": 110,
+      "FP": 25,
+      "FN": 140,
+      "TN": 225,
+      "n_adv": 250,
+      "n_clean": 250,
+      "TPR": 0.44,
+      "TPR_CI_95": [
+        0.3798,
+        0.502
+      ],
+      "FPR": 0.1,
+      "FPR_CI_95": [
+        0.0687,
+        0.1435
+      ],
+      "Precision": 0.8148,
+      "F1": 0.5714,
+      "n_successful_adv": 134,
+      "detected_successful_adv": 110,
+      "evaded_successful_adv": 24,
+      "model_ASR": 0.536,
+      "TPR_on_successful_attacks": 0.8209,
+      "evasion_rate_on_successful_attacks": 0.1791,
+      "undetected_success_rate": 0.096
+    }
+  },
+  "worst_lambda_n200_pooled": {
+    "TP": 479,
+    "FP": 82,
+    "FN": 521,
+    "TN": 918,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "TPR": 0.479,
+    "TPR_CI_95": [
+      0.4482,
+      0.51
+    ],
+    "FPR": 0.082,
+    "FPR_CI_95": [
+      0.0666,
+      0.1006
+    ],
+    "Precision": 0.8538,
+    "F1": 0.6137,
+    "n_successful_adv": 552,
+    "detected_successful_adv": 478,
+    "evaded_successful_adv": 74,
+    "model_ASR": 0.552,
+    "TPR_on_successful_attacks": 0.8659,
+    "evasion_rate_on_successful_attacks": 0.1341,
+    "undetected_success_rate": 0.074
+  },
+  "worst_lambda_n200_per_seed": [
+    {
+      "seed": 42,
+      "lambda": 10.0,
+      "TPR": 0.56,
+      "FPR": 0.1,
+      "TPR_on_successful_attacks": 0.9256,
+      "undetected_success_rate": 0.045,
+      "evasion_rate_on_successful_attacks": 0.0744,
+      "model_ASR": 0.605,
+      "TP": 112,
+      "FP": 20,
+      "FN": 88,
+      "TN": 180,
+      "per_tier_fpr": {
+        "FPR_L1_plus": 0.1,
+        "FPR_L2_plus": 0.025,
+        "FPR_L3_plus": 0.005,
+        "target_L1": 0.1,
+        "target_L2": 0.03,
+        "target_L3": 0.005,
+        "pass_L1": true,
+        "pass_L2": true,
+        "pass_L3": true
+      }
+    },
+    {
+      "seed": 123,
+      "lambda": 10.0,
+      "TPR": 0.46,
+      "FPR": 0.06,
+      "TPR_on_successful_attacks": 0.8364,
+      "undetected_success_rate": 0.09,
+      "evasion_rate_on_successful_attacks": 0.1636,
+      "model_ASR": 0.55,
+      "TP": 92,
+      "FP": 12,
+      "FN": 108,
+      "TN": 188,
+      "per_tier_fpr": {
+        "FPR_L1_plus": 0.06,
+        "FPR_L2_plus": 0.015,
+        "FPR_L3_plus": 0.005,
+        "target_L1": 0.1,
+        "target_L2": 0.03,
+        "target_L3": 0.005,
+        "pass_L1": true,
+        "pass_L2": true,
+        "pass_L3": true
+      }
+    },
+    {
+      "seed": 456,
+      "lambda": 10.0,
+      "TPR": 0.47,
+      "FPR": 0.07,
+      "TPR_on_successful_attacks": 0.8468,
+      "undetected_success_rate": 0.085,
+      "evasion_rate_on_successful_attacks": 0.1532,
+      "model_ASR": 0.555,
+      "TP": 94,
+      "FP": 14,
+      "FN": 106,
+      "TN": 186,
+      "per_tier_fpr": {
+        "FPR_L1_plus": 0.07,
+        "FPR_L2_plus": 0.03,
+        "FPR_L3_plus": 0.01,
+        "target_L1": 0.1,
+        "target_L2": 0.03,
+        "target_L3": 0.005,
+        "pass_L1": true,
+        "pass_L2": true,
+        "pass_L3": false
+      }
+    },
+    {
+      "seed": 789,
+      "lambda": 10.0,
+      "TPR": 0.4,
+      "FPR": 0.08,
+      "TPR_on_successful_attacks": 0.8511,
+      "undetected_success_rate": 0.07,
+      "evasion_rate_on_successful_attacks": 0.1489,
+      "model_ASR": 0.47,
+      "TP": 80,
+      "FP": 16,
+      "FN": 120,
+      "TN": 184,
+      "per_tier_fpr": {
+        "FPR_L1_plus": 0.08,
+        "FPR_L2_plus": 0.01,
+        "FPR_L3_plus": 0.005,
+        "target_L1": 0.1,
+        "target_L2": 0.03,
+        "target_L3": 0.005,
+        "pass_L1": true,
+        "pass_L2": true,
+        "pass_L3": true
+      }
+    },
+    {
+      "seed": 999,
+      "lambda": 10.0,
+      "TPR": 0.505,
+      "FPR": 0.1,
+      "TPR_on_successful_attacks": 0.8621,
+      "undetected_success_rate": 0.08,
+      "evasion_rate_on_successful_attacks": 0.1379,
+      "model_ASR": 0.58,
+      "TP": 101,
+      "FP": 20,
+      "FN": 99,
+      "TN": 180,
+      "per_tier_fpr": {
+        "FPR_L1_plus": 0.1,
+        "FPR_L2_plus": 0.02,
+        "FPR_L3_plus": 0.0,
+        "target_L1": 0.1,
+        "target_L2": 0.03,
+        "target_L3": 0.005,
+        "pass_L1": true,
+        "pass_L2": true,
+        "pass_L3": true
+      }
+    }
+  ],
+  "calibration_gate": {
+    "n_val": 1000,
+    "dataset": "cifar10",
+    "val_split": "CIFAR10 test idx 7000-7999",
+    "level_distribution": {
+      "PASS": 921,
+      "L1": 53,
+      "L2": 23,
+      "L3_REJECT": 3
+    },
+    "tiers": {
+      "L1": {
+        "FP": 79,
+        "n": 1000,
+        "FPR": 0.079,
+        "CI_95": [
+          0.063847,
+          0.097375
+        ],
+        "target": 0.1,
+        "passed": true
+      },
+      "L2": {
+        "FP": 26,
+        "n": 1000,
+        "FPR": 0.026,
+        "CI_95": [
+          0.017804,
+          0.037824
+        ],
+        "target": 0.03,
+        "passed": true
+      },
+      "L3": {
+        "FP": 3,
+        "n": 1000,
+        "FPR": 0.003,
+        "CI_95": [
+          0.001021,
+          0.008783
+        ],
+        "target": 0.005,
+        "passed": true
+      }
+    }
+  },
+  "notes": [
+    "The n=50 lambda scan is exploratory and has small-sample per-tier FPR noise.",
+    "The paper-relevant confirmation is lambda=10.0 over five seeds at n=200 per seed.",
+    "One n=200 seed has L3 FPR=0.010 (2/200); pooled L3 FPR is 0.005 and the independent calibration gate is 0.003.",
+    "Sampling is random per seed from EVAL_IDX, so pooled confirmation should be framed as multi-seed Monte Carlo rather than a guaranteed disjoint 1000-sample benchmark."
+  ]
+}

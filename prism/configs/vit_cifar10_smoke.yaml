@@ -1,0 +1,81 @@
+# PRISM smoke config - ViT-B/16 CIFAR-10.
+#
+# This is intentionally small and isolated. Use it only to verify the Vast.ai
+# ViT path boots end-to-end; do not report these numbers in the paper.
+
+model:
+  arch: vit_b_16
+  name: torchvision_vit_b_16
+  backbone_checkpoint: models/vit_cifar10_smoke/vit_b16_cifar10.pt
+  num_classes: 10
+  layer_names:
+    - encoder.layers.encoder_layer_3
+    - encoder.layers.encoder_layer_7
+    - encoder.layers.encoder_layer_11
+  layer_weights:
+    encoder.layers.encoder_layer_3: 0.30
+    encoder.layers.encoder_layer_7: 0.30
+    encoder.layers.encoder_layer_11: 0.40
+
+tda:
+  n_subsample: 32
+  max_dim: 1
+  n_reference: 20
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas:
+    L1: 0.10
+    L2: 0.03
+    L3: 0.005
+  cal_alpha_factor: 0.7
+  tier_cal_alpha_factors:
+    L1: 0.75
+    L2: 0.55
+    L3: 0.52
+
+splits:
+  profile_idx: [0, 12]
+  cal_idx:     [12, 112]
+  val_idx:     [112, 212]
+  eval_idx:    [212, 228]
+
+campaign:
+  window_size: 25
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 5
+  alert_run_prob: 0.60
+  warmup_steps: 10
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 128
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar10
+  image_size: 224
+  mean: [0.485, 0.456, 0.406]
+  std:  [0.229, 0.224, 0.225]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 212
+
+evaluation:
+  n_test_images: 8
+  attacks:
+    - FGSM
+
+paths:
+  reference_profiles: models/vit_cifar10_smoke/reference_profiles.pkl
+  calibrator:         models/vit_cifar10_smoke/calibrator.pkl
+  ensemble_scorer:    models/vit_cifar10_smoke/ensemble_scorer.pkl
+  experts:            models/vit_cifar10_smoke/experts.pkl
+  clean_scores:       experiments/vit_cifar10_smoke/calibration/vit_cifar10_smoke_clean_scores.npy

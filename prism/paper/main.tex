@@ -23,6 +23,13 @@
 % ── Required NeurIPS encoding / typography packages ────────────────────────
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+% Latin Modern (Type 1 outlines). The NeurIPS style defaults to Times (ptm),
+% but every Times math package available here injects a Type 3 font; lmodern
+% keeps the build Type-3-free.
+\usepackage{lmodern}
+\usepackage{cmap}           % searchable/copyable PDF text
+\input{glyphtounicode}
+\pdfgentounicode=1
 \usepackage{hyperref}       % hyperlinks
 \usepackage{url}            % simple URL typesetting
 \usepackage{booktabs}       % professional-quality tables

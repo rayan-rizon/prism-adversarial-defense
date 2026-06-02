@@ -39,8 +39,10 @@ topological channel.
 \item \textbf{Conformal detection guarantee (\cadg).}
 We apply split conformal prediction to the anomaly score stream, obtaining 
 \emph{distribution-free} FPR certificates at three severity tiers 
-(L1: $\alpha{=}0.10$; L2: $\alpha{=}0.03$; L3: $\alpha{=}0.005$) 
-using only a held-out clean calibration set.
+(L1: $\alpha{=}0.10$; L2: $\alpha{=}0.03$; L3: $\alpha{=}0.005$)
+using only a held-out clean calibration set. To our knowledge this is the
+first activation-based adversarial-input detector to attach such a
+distribution-free false-positive-rate certificate to its decision threshold.
 
 \item \textbf{Temporal campaign detector (\sacd).}
 We monitor the score stream with a CUSUM-with-drift-floor change detector
@@ -48,7 +50,9 @@ and report \emph{time-to-detect} (mean queries between the first adversarial
 step and the first L0 trigger) as the headline metric. On sustained
 $\rho{=}1.0$ streams \sacd raises the campaign alert in $2.6 \pm 0.5$
 queries while maintaining $0.0$ false-alarm activation on clean-only
-streams---a threat model absent from prior work.
+streams up to $1{,}000$ queries (longer streams need $C^*{\geq}8$ or
+periodic reset; App.~\ref{app:l0_stress})---a threat model absent from
+prior work.
 
 \item \textbf{Routed MoE recovery (\tamsh).}
 For inputs reaching the L3 severity tier, \prism routes the input through
@@ -67,16 +71,21 @@ expert capacity
 \end{enumerate}
 
 Empirically, we report locked multi-seed ($5{\times}n{=}1000$) artifact
-results across three settings --- CIFAR-10/ResNet-18, CIFAR-10/WRN-28-10,
-and CIFAR-100/ResNet-18 --- covering detection (FGSM, PGD, Square, CW,
-AutoAttack, adaptive PGD), four reproduced baselines (LID, Mahalanobis,
-ODIN, Energy), campaign streams, recovery, and a per-channel ablation
-that exposes each feature family's attack-specific failure mode. On the
+results across three full CNN settings --- CIFAR-10/ResNet-18,
+CIFAR-10/WRN-28-10, and CIFAR-100/ResNet-18 --- covering detection
+(FGSM, PGD, Square, CW, and AutoAttack where run), four reproduced
+baselines (LID, Mahalanobis, ODIN, Energy), campaign streams, recovery,
+and a per-channel ablation that exposes each feature family's
+attack-specific failure mode. We additionally report a standard-attack
+CIFAR-10/ViT-B/16 transfer check for FGSM, PGD-50, and Square only. On the
 main CIFAR-10/ResNet-18 setting, \prism Full outperforms the strongest
 baseline (Mahalanobis) by $+33.6$~pp mean TPR at matched FPR;
 WRN-28-10 holds a $+16.5$~pp gap over Mahalanobis and CIFAR-100 retains
 $+42.6$~pp over ODIN (Table~\ref{tab:baselines_multi}). The full
 CIFAR-100 per-component breakdown is in Appendix~\ref{app:cifar100}.
+The ensemble-complete adaptive PGD claim is scoped to CIFAR-10/ResNet-18;
+WRN and CIFAR-100 adaptive probes are appendix stress tests with narrower
+coverage.
 
 \textbf{Scope and limitations.}
 \prism is a \emph{runtime monitor}, not an adversarial trainer; 

@@ -35,3 +35,4 @@ tqdm>=4.65.0
 
 # Config management
 pyyaml>=6.0
+certifi>=2024.2.2

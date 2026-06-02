@@ -1,0 +1,15 @@
+{
+  "profile_cal_overlap": 0,
+  "profile_val_overlap": 0,
+  "cal_val_overlap": 0,
+  "train_dev_vs_test_eval_overlap_by_split": 0,
+  "profile_n": 5000,
+  "cal_n": 2000,
+  "val_n": 1000,
+  "test_eval_n": 2000,
+  "config": "configs\\top_tier_train_split_cifar10.yaml",
+  "dataset_contract": "profile/cal/val interpreted as CIFAR-10 train indices; eval_idx interpreted as official CIFAR-10 test indices",
+  "backbone_checkpoint": "models\\cifar_resnet18.pt",
+  "backbone_sha256": "02f0986c704558b7fe969c62ed7fc36fd6fbf7c60e18e648ad32df168513567a",
+  "pass": true
+}

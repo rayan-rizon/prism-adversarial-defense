@@ -94,9 +94,10 @@ combining six channels:
     softmax-confidence drop under $M{=}5$ jittered copies
     $x + \xi_i,\, \xi_i \sim \mathcal{N}(0,\sigma^2 I)$,
     summarised by mean / max / variance of the per-sample confidence
-    deltas. There is no closed-form differentiable surrogate; this is
-    the channel that the present BPDA adaptive attack
-    (\S\ref{sec:adaptive}) does not target.
+    deltas. There is no closed-form exact surrogate for the deployed
+    jittered statistic; the ensemble-complete BPDA attack
+    (\S\ref{sec:adaptive}) therefore targets a differentiable proxy for
+    this channel.
   \item \textbf{Logit-profile features} $\mathbf{f}_\mathrm{logit}(x)$:
     moments of $f(x)$ (max-margin, top-2 gap, entropy of $|f(x)|$),
     capturing classifier-confidence anomalies orthogonal to TDA.
@@ -130,12 +131,25 @@ a single model trained on three attack families and evaluated on two further
 \emph{unseen} families (CW, AutoAttack), in contrast to per-attack detectors
 that retrain on each target attack (\S\ref{sec:experiments},
 Appendix~\ref{app:recent_baselines}).
+The three index ranges $[0,4999]$/$[5000,7999]$/$[8000,9999]$ are mutually
+disjoint, so no image is shared across head-fitting, calibration, and
+evaluation; all three, however, are carved from the official CIFAR-10
+\emph{test} file (the standard detector-benchmark pool). Sourcing the
+head-fitting and calibration partitions from the CIFAR-10 \emph{train}
+split and reserving the official test set for final evaluation only is the
+stricter protocol, and we flag it as the clean fix for future runs.
 The final \prism score is the convex combination
 $S(x) = \alpha\, S_\mathrm{TDA}(x) + (1 - \alpha)\, \tilde\ell_\mathrm{ens}(x)$
 fed to the \cadg conformal calibrator, with $\alpha$ controlling the
 TDA-vs-ensemble trade-off. The deployed configuration uses
 $\alpha = 0.2$ for both CIFAR-10/100 ResNet-18 and $\alpha = 0.5$ for
-WRN-28-10 (re-tuned per backbone on the same calibration split). The
+WRN-28-10. Crucially, $\alpha$ is selected \emph{before} conformal
+calibration: it is grid-searched per backbone on a disjoint held-out
+scorer-validation slice (the $20\%$ tail of the scorer training split,
+\texttt{train\_ensemble\_scorer.py}) at a clean-FPR${\le}10\%$ objective,
+not on the conformal calibration set. The conformal threshold is then
+fitted on the separate calibration split with $\alpha$ already fixed, so
+the distribution-free FPR certificate is not post-selected. The
 \emph{ensemble-no-TDA} ablation sets $\alpha = 0$ (equivalently, zeros
 $\mathbf{f}_\mathrm{TDA}$ and skips the TDA term) to isolate the
 marginal value of persistence features. The \emph{channel-mask}
@@ -189,7 +203,13 @@ overlapping draws as independent and is mildly anti-conservative (too
 narrow); we report the per-seed standard deviation alongside every
 pooled interval as the seed-level dispersion check, and flag disjoint
 per-seed eval windows (or image-clustered CIs) as the clean statistical
-fix for future runs.
+fix for future runs. The disjoint-window cross-check that confirms the
+overlap is immaterial (Appendix~\ref{app:audit}) was run only for
+FGSM/PGD/Square on CIFAR-10/ResNet-18; the pooled Wilson intervals for
+CW-L2, AutoAttack, and the WRN-28-10, CIFAR-100, and ViT-B/16 settings
+share the same overlapping-pool construction and should therefore be
+read as similarly approximate (mildly anti-conservative) until an
+analogous disjoint or image-clustered recomputation is run.
 
 \begin{table}[h]
 \centering

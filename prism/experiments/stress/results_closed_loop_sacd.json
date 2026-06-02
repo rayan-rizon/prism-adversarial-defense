@@ -1,0 +1,1170 @@
+{
+  "aggregate": {
+    "clean_only": {
+      "none": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 0.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      }
+    },
+    "sustained_rho100": {
+      "none": {
+        "mean_realized_successes": 3.4,
+        "std_realized_successes": 0.8,
+        "campaign_success_rate": 1.0,
+        "campaign_success_ci95": [
+          0.566,
+          1.0
+        ],
+        "mean_adv_served": 200.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 3.6,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.4,
+        "std_realized_successes": 0.49,
+        "campaign_success_rate": 0.4,
+        "campaign_success_ci95": [
+          0.118,
+          0.769
+        ],
+        "mean_adv_served": 24.2,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      }
+    },
+    "sustained_rho050": {
+      "none": {
+        "mean_realized_successes": 1.8,
+        "std_realized_successes": 0.748,
+        "campaign_success_rate": 1.0,
+        "campaign_success_ci95": [
+          0.566,
+          1.0
+        ],
+        "mean_adv_served": 100.2,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 3.0,
+        "mean_benign_blocked": 98.4,
+        "n_seeds": 5
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 12.8,
+        "mean_benign_blocked": 87.6,
+        "n_seeds": 5
+      }
+    },
+    "burst": {
+      "none": {
+        "mean_realized_successes": 1.2,
+        "std_realized_successes": 1.47,
+        "campaign_success_rate": 0.6,
+        "campaign_success_ci95": [
+          0.231,
+          0.882
+        ],
+        "mean_adv_served": 80.0,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.2,
+        "std_realized_successes": 0.4,
+        "campaign_success_rate": 0.2,
+        "campaign_success_ci95": [
+          0.036,
+          0.624
+        ],
+        "mean_adv_served": 10.0,
+        "mean_benign_blocked": 67.0,
+        "n_seeds": 5
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.2,
+        "std_realized_successes": 0.4,
+        "campaign_success_rate": 0.2,
+        "campaign_success_ci95": [
+          0.036,
+          0.624
+        ],
+        "mean_adv_served": 16.2,
+        "mean_benign_blocked": 60.6,
+        "n_seeds": 5
+      }
+    },
+    "low_rate": {
+      "none": {
+        "mean_realized_successes": 0.6,
+        "std_realized_successes": 0.49,
+        "campaign_success_rate": 0.6,
+        "campaign_success_ci95": [
+          0.231,
+          0.882
+        ],
+        "mean_adv_served": 49.2,
+        "mean_benign_blocked": 0.0,
+        "n_seeds": 5
+      },
+      "quarantine": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 4.4,
+        "mean_benign_blocked": 403.2,
+        "n_seeds": 5
+      },
+      "rate_limit": {
+        "mean_realized_successes": 0.0,
+        "std_realized_successes": 0.0,
+        "campaign_success_rate": 0.0,
+        "campaign_success_ci95": [
+          0.0,
+          0.434
+        ],
+        "mean_adv_served": 10.4,
+        "mean_benign_blocked": 363.4,
+        "n_seeds": 5
+      }
+    }
+  },
+  "parametric": {
+    "measured_pgd_evade_fool_prob": 0.0154,
+    "pgd_note": "Measured per-query PGD evade+fool prob is ~0 because the per-query detector already rejects ~99% of PGD; PGD campaigns fail regardless of closed-loop policy. The closed-loop payoff applies to a LEAKY attacker that evades per-query detection at rate p>0 (e.g. adaptive PGD at high lambda).",
+    "served_budget_none": 200,
+    "served_budget_quarantine": 4,
+    "served_budget_rate_limit": 24,
+    "formula": "P(campaign success) = 1 - (1-p)^B, B = served adversarial queries.",
+    "leaky_attack_evade_fool_prob": 0.57,
+    "leak_rate_sweep": {
+      "0.01": {
+        "no_defense_B200": 0.866,
+        "quarantine_B4": 0.0394,
+        "rate_limit_B24": 0.2143,
+        "risk_reduction_quar_pp": 82.66
+      },
+      "0.02": {
+        "no_defense_B200": 0.9824,
+        "quarantine_B4": 0.0776,
+        "rate_limit_B24": 0.3842,
+        "risk_reduction_quar_pp": 90.48
+      },
+      "0.05": {
+        "no_defense_B200": 1.0,
+        "quarantine_B4": 0.1855,
+        "rate_limit_B24": 0.708,
+        "risk_reduction_quar_pp": 81.45
+      },
+      "0.1": {
+        "no_defense_B200": 1.0,
+        "quarantine_B4": 0.3439,
+        "rate_limit_B24": 0.9202,
+        "risk_reduction_quar_pp": 65.61
+      },
+      "0.2": {
+        "no_defense_B200": 1.0,
+        "quarantine_B4": 0.5904,
+        "rate_limit_B24": 0.9953,
+        "risk_reduction_quar_pp": 40.96
+      },
+      "0.3": {
+        "no_defense_B200": 1.0,
+        "quarantine_B4": 0.7599,
+        "rate_limit_B24": 0.9998,
+        "risk_reduction_quar_pp": 24.01
+      },
+      "0.57": {
+        "no_defense_B200": 1.0,
+        "quarantine_B4": 0.9658,
+        "rate_limit_B24": 1.0,
+        "risk_reduction_quar_pp": 3.42
+      }
+    },
+    "pgd_curve_vs_budget": {
+      "1": 0.0154,
+      "2": 0.0305,
+      "3": 0.0455,
+      "5": 0.0746,
+      "10": 0.1437,
+      "25": 0.3214,
+      "50": 0.5395,
+      "100": 0.788,
+      "200": 0.955
+    },
+    "leaky_curve_vs_budget": {
+      "1": 0.57,
+      "2": 0.8151,
+      "3": 0.9205,
+      "5": 0.9853,
+      "10": 0.9998,
+      "25": 1.0,
+      "50": 1.0,
+      "100": 1.0,
+      "200": 1.0
+    },
+    "leaky_success_at_B_none": 1.0,
+    "leaky_success_at_B_quarantine": 0.9658
+  },
+  "per_seed": {
+    "clean_only": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": null,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 0,
+          "adv_total": 0,
+          "clean_total": 500,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ]
+    },
+    "sustained_rho100": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": 23,
+          "realized_attacker_successes": 3,
+          "campaign_success": 1,
+          "adv_served": 200,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 121
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 3,
+          "campaign_success": 1,
+          "adv_served": 200,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 105
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 3,
+          "campaign_success": 1,
+          "adv_served": 200,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 53
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 5,
+          "campaign_success": 1,
+          "adv_served": 200,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 57
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 3,
+          "campaign_success": 1,
+          "adv_served": 200,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 72
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 23,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 4,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 3,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 5,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 3,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 3,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 23,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 23,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 121
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 24,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 25,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 18,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": 69
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 31,
+          "adv_total": 200,
+          "clean_total": 20,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        }
+      ]
+    },
+    "sustained_rho050": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": 25,
+          "realized_attacker_successes": 2,
+          "campaign_success": 1,
+          "adv_served": 100,
+          "adv_total": 100,
+          "clean_total": 120,
+          "benign_queries_blocked": 0,
+          "first_success_step": 148
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 2,
+          "campaign_success": 1,
+          "adv_served": 111,
+          "adv_total": 111,
+          "clean_total": 109,
+          "benign_queries_blocked": 0,
+          "first_success_step": 105
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 3,
+          "campaign_success": 1,
+          "adv_served": 104,
+          "adv_total": 104,
+          "clean_total": 116,
+          "benign_queries_blocked": 0,
+          "first_success_step": 53
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 95,
+          "adv_total": 95,
+          "clean_total": 125,
+          "benign_queries_blocked": 0,
+          "first_success_step": 116
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 91,
+          "adv_total": 91,
+          "clean_total": 129,
+          "benign_queries_blocked": 0,
+          "first_success_step": 134
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 25,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 4,
+          "adv_total": 100,
+          "clean_total": 120,
+          "benign_queries_blocked": 98,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 3,
+          "adv_total": 111,
+          "clean_total": 109,
+          "benign_queries_blocked": 89,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 4,
+          "adv_total": 104,
+          "clean_total": 116,
+          "benign_queries_blocked": 95,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 2,
+          "adv_total": 95,
+          "clean_total": 125,
+          "benign_queries_blocked": 102,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 2,
+          "adv_total": 91,
+          "clean_total": 129,
+          "benign_queries_blocked": 108,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 25,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 14,
+          "adv_total": 100,
+          "clean_total": 120,
+          "benign_queries_blocked": 89,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 111,
+          "clean_total": 109,
+          "benign_queries_blocked": 75,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 14,
+          "adv_total": 104,
+          "clean_total": 116,
+          "benign_queries_blocked": 85,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 24,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 8,
+          "adv_total": 95,
+          "clean_total": 125,
+          "benign_queries_blocked": 93,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 18,
+          "adv_total": 91,
+          "clean_total": 129,
+          "benign_queries_blocked": 96,
+          "first_success_step": null
+        }
+      ]
+    },
+    "burst": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 80,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 80,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 80,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 0,
+          "first_success_step": 93
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 4,
+          "campaign_success": 1,
+          "adv_served": 80,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 0,
+          "first_success_step": 13
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 80,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 0,
+          "first_success_step": 137
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 67,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 67,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 67,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 10,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 67,
+          "first_success_step": 13
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 67,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 17,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 62,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 15,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 62,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 17,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 61,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 13,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 60,
+          "first_success_step": 13
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 19,
+          "adv_total": 80,
+          "clean_total": 80,
+          "benign_queries_blocked": 58,
+          "first_success_step": null
+        }
+      ]
+    },
+    "low_rate": {
+      "none": [
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 61,
+          "adv_total": 61,
+          "clean_total": 439,
+          "benign_queries_blocked": 0,
+          "first_success_step": 156
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 119,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 42,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 42,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 0,
+          "first_success_step": 43
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 63,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 49,
+          "adv_total": 49,
+          "clean_total": 451,
+          "benign_queries_blocked": 0,
+          "first_success_step": null
+        },
+        {
+          "policy": "none",
+          "l0_trigger_step": 29,
+          "realized_attacker_successes": 1,
+          "campaign_success": 1,
+          "adv_served": 52,
+          "adv_total": 52,
+          "clean_total": 448,
+          "benign_queries_blocked": 0,
+          "first_success_step": 223
+        }
+      ],
+      "quarantine": [
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 5,
+          "adv_total": 61,
+          "clean_total": 439,
+          "benign_queries_blocked": 421,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 119,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 6,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 344,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 2,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 437,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 63,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 5,
+          "adv_total": 49,
+          "clean_total": 451,
+          "benign_queries_blocked": 392,
+          "first_success_step": null
+        },
+        {
+          "policy": "quarantine",
+          "l0_trigger_step": 29,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 4,
+          "adv_total": 52,
+          "clean_total": 448,
+          "benign_queries_blocked": 422,
+          "first_success_step": null
+        }
+      ],
+      "rate_limit": [
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 11,
+          "adv_total": 61,
+          "clean_total": 439,
+          "benign_queries_blocked": 376,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 119,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 10,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 305,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 22,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 9,
+          "adv_total": 42,
+          "clean_total": 458,
+          "benign_queries_blocked": 403,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 63,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 9,
+          "adv_total": 49,
+          "clean_total": 451,
+          "benign_queries_blocked": 361,
+          "first_success_step": null
+        },
+        {
+          "policy": "rate_limit",
+          "l0_trigger_step": 29,
+          "realized_attacker_successes": 0,
+          "campaign_success": 0,
+          "adv_served": 13,
+          "adv_total": 52,
+          "clean_total": 448,
+          "benign_queries_blocked": 372,
+          "first_success_step": null
+        }
+      ]
+    }
+  },
+  "_meta": {
+    "dataset": "cifar10",
+    "seeds": [
+      42,
+      123,
+      456,
+      789,
+      999
+    ],
+    "scenarios": [
+      "clean_only",
+      "sustained_rho100",
+      "sustained_rho050",
+      "burst",
+      "low_rate"
+    ],
+    "n_clean_pool": 80,
+    "n_adv_pool": 80,
+    "admit_prob_rate_limit": 0.1,
+    "eps": 0.031373,
+    "pgd_steps": 40,
+    "l0_thresholds_path": "models\\l0_thresholds.pkl",
+    "device": "cuda",
+    "elapsed_s": 698.9,
+    "policies": [
+      "none",
+      "quarantine",
+      "rate_limit"
+    ],
+    "threat_model": "attacker query succeeds iff it fools the model (argmax != y) AND evades the detector (level==PASS); campaign succeeds iff >=1 served query succeeds.",
+    "smoke": false
+  }
+}

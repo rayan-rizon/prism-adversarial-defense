@@ -36,9 +36,14 @@ SpectralDefense (InputMFS variant)
   - This is a SUPERVISED, ATTACK-SPECIFIC detector: the LR is trained on
     (clean, adversarial) feature pairs. We train on the REF split (disjoint
     from eval), calibrate the detection threshold on the clean THRESH split at
-    the same FPR tiers (10/3/0.5%), and report on the EVAL split. The detector
-    therefore sees more information than PRISM (which never trains on
-    adversarials), making it a conservative comparison.
+    the same FPR tiers (10/3/0.5%), and report on the EVAL split.
+    Both detectors are supervised, but the supervision differs: SpectralDefense
+    trains one detector PER target attack (in-distribution on the attack it is
+    evaluated on), whereas PRISM trains a SINGLE model on a fixed
+    FGSM/PGD/Square mix and is evaluated on those plus the unseen CW/AutoAttack
+    families. SpectralDefense therefore has the per-attack specialization
+    advantage on its own training attack, so beating it on its in-distribution
+    attack is the conservative comparison.
 
 USAGE
 -----
@@ -280,13 +285,16 @@ _SUPERVISED = ('spectral', 'layermfs')
 _DEFAULT_METHODS = ['sid', 'spectral']
 
 
-def _build_attacks(classifier, eps):
+def _build_attacks(classifier, eps, canonical_cw=False):
     # FGSM/PGD share an L_inf gradient signature (cross-transfer ~1.0); Square
     # (black-box L_inf patches) and CW (L2, distinct spectral signature) are the
     # structurally different attacks that reveal SpectralDefense's cross-attack
-    # collapse. CW uses a tractable detection-benchmark config (bss=5,
-    # max_iter=10, ASR~0.93 on the eval split); the paper-canonical heavy CW
-    # (bss=9, max_iter=100) is ~30x slower for no detection-relevant gain.
+    # collapse. CW default is a tractable detection-benchmark config (bss=5,
+    # max_iter=10, ASR~0.93 on the eval split). Pass canonical_cw=True to use the
+    # paper-canonical heavy CW (bss=9, max_iter=100) so the CW column is
+    # config-matched to PRISM's main-table CW (~30x slower to generate).
+    cw_kwargs = (dict(max_iter=100, binary_search_steps=9) if canonical_cw
+                 else dict(max_iter=10, binary_search_steps=5))
     return {
         'FGSM': lambda: FastGradientMethod(classifier, eps=eps),
         'PGD': lambda: ProjectedGradientDescent(
@@ -294,8 +302,7 @@ def _build_attacks(classifier, eps):
         'Square': lambda: SquareAttack(
             classifier, eps=eps, max_iter=5000, nb_restarts=1),
         'CW': lambda: CarliniL2Method(
-            classifier, max_iter=10, binary_search_steps=5, confidence=0.0,
-            batch_size=128),
+            classifier, confidence=0.0, batch_size=128, **cw_kwargs),
     }
 
 
@@ -310,6 +317,7 @@ def run_recent_baselines(
     sid_keep=0.70,
     n_ref_spectral=1000,
     spectral_cross=True,
+    canonical_cw=False,
 ):
     if not ART_AVAILABLE:
         print("ERROR: ART not installed."); sys.exit(1)
@@ -349,7 +357,9 @@ def run_recent_baselines(
         clip_values=(0.0, 1.0),
         device_type=device_type,
     )
-    all_attacks = _build_attacks(classifier, eps)
+    all_attacks = _build_attacks(classifier, eps, canonical_cw=canonical_cw)
+    if canonical_cw and 'CW' in attacks_to_run:
+        print("CW config: CANONICAL (max_iter=100, bss=9) — config-matched to PRISM main table")
 
     ds = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
@@ -566,6 +576,8 @@ def run_recent_baselines(
         'thresh_split': f'{DATASET.upper()} test idx {cal_mid}-{cal_end-1}',
         'seed': seed, 'device': str(device), 'attacks': attacks_to_run,
         'methods': methods, 'eps': round(eps, 6),
+        'cw_config': ('canonical(max_iter=100,bss=9)' if canonical_cw
+                      else 'light(max_iter=10,bss=5)'),
         'sid_keep_frac': sid_keep, 'n_ref_spectral': n_ref_spectral,
         'layermfs_layers': list(LAYER_NAMES) if 'layermfs' in methods else None,
         'fpr_tiers': [{'name': n, 'target_fpr': f / 100.0, 'percentile': p}
@@ -577,8 +589,11 @@ def run_recent_baselines(
             for m in sup_methods},
         'protocol_notes': {
             'SID': 'unsupervised, clean-only threshold calibration (like LID/Maha/ODIN/Energy)',
-            'SpectralDefense*': 'SUPERVISED, attack-specific LR trained on ref-split '
-                               '(clean,adv) pairs; sees more info than PRISM (conservative)',
+            'SpectralDefense*': 'SUPERVISED, attack-specific LR trained per-attack on '
+                               'ref-split (clean,adv) pairs (in-distribution on its own '
+                               'train attack); PRISM is also supervised but on a single '
+                               'fixed FGSM/PGD/Square mix, so beating SpectralDefense on '
+                               'its in-distribution attack is the conservative comparison',
         },
         'spectral_cross_attack_enabled': bool(spectral_cross and sup_methods),
         'spectral_cross_summary': {_METHOD_DISPLAY[m]: sup_cross_summary[m]
@@ -616,6 +631,9 @@ if __name__ == '__main__':
                         help='Ref images for SpectralDefense LR training.')
     parser.add_argument('--no-cross', action='store_true',
                         help='Disable SpectralDefense cross-attack matrix (diagonal only).')
+    parser.add_argument('--canonical-cw', action='store_true',
+                        help='Use canonical CW (max_iter=100, bss=9) instead of the '
+                             'light bench config, to config-match PRISM main-table CW.')
     parser.add_argument('--smoke', action='store_true',
                         help='Fast local sanity run: n_test=64, FGSM+PGD, ref=128.')
     parser.add_argument('--output', default='experiments/evaluation/results_baselines_recent.json')
@@ -639,4 +657,5 @@ if __name__ == '__main__':
         sid_keep=args.sid_keep,
         n_ref_spectral=args.n_ref_spectral,
         spectral_cross=not args.no_cross,
+        canonical_cw=args.canonical_cw,
     )

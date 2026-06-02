@@ -1,0 +1,9 @@
+{
+  "dataset": "CIFAR-10 official test split",
+  "n": 10000,
+  "correct": 9516,
+  "accuracy": 0.9516,
+  "model": "models/cifar_resnet18.pt via src.models.load_backbone",
+  "device": "cuda",
+  "seconds": 6.962
+}

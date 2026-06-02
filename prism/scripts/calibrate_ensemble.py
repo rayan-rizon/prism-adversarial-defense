@@ -48,7 +48,7 @@ from src.config import (
     N_SUBSAMPLE, MAX_DIM,
     DATASET, PATHS,
 )
-from src.data_loader import load_test_dataset
+from src.data_loader import load_test_dataset, load_train_dataset
 from src.models import load_backbone
 
 _norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
@@ -76,15 +76,20 @@ def calibrate_ensemble(
     ensemble_path: str = None,
     profile_path: str  = None,
     output_path: str   = None,
+    source_split: str = 'test',
 ):
     # Route artifact paths through PATHS so CIFAR-100 lands in models/cifar100/.
     ensemble_path = ensemble_path or PATHS['ensemble_scorer']
     profile_path  = profile_path  or PATHS['reference_profiles']
     output_path   = output_path   or PATHS['calibrator']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    source_split = source_split.lower()
+    if source_split not in ('test', 'train'):
+        raise ValueError(f"source_split={source_split!r}; expected 'test' or 'train'.")
     print(f"Device: {device}")
-    print(f"Cal split:  test idx {CAL_IDX[0]}-{CAL_IDX[1]-1}  (n={CAL_IDX[1]-CAL_IDX[0]})")
-    print(f"Val split:  test idx {VAL_IDX[0]}-{VAL_IDX[1]-1}  (n={VAL_IDX[1]-VAL_IDX[0]})")
+    print(f"Calibration source: {DATASET.upper()} {source_split.upper()} split")
+    print(f"Cal split:  {source_split} idx {CAL_IDX[0]}-{CAL_IDX[1]-1}  (n={CAL_IDX[1]-CAL_IDX[0]})")
+    print(f"Val split:  {source_split} idx {VAL_IDX[0]}-{VAL_IDX[1]-1}  (n={VAL_IDX[1]-VAL_IDX[0]})")
     print(f"Cal alpha factor (scalar fallback): {CAL_ALPHA_FACTOR:.2f} x published targets")
     print(
         "Per-tier cal alpha factors: "
@@ -117,8 +122,11 @@ def calibrate_ensemble(
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
 
-    # Dispatch dataset loader on DATASET (cifar10 / cifar100).
-    dataset = load_test_dataset(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
+    # Dispatch dataset loader on DATASET (cifar10 / cifar100). Default TEST
+    # source reproduces submitted artifacts; TRAIN source is the strict rerun
+    # path that keeps official test images out of fitting/calibration.
+    loader = load_train_dataset if source_split == 'train' else load_test_dataset
+    dataset = loader(root=data_root, download=True, transform=_PIXEL_TRANSFORM)
 
     def get_scores(idx_range, label):
         ensemble_scores = []
@@ -274,10 +282,15 @@ if __name__ == '__main__':
                         help='Override reference profile path.')
     parser.add_argument('--output', default=None,
                         help='Output calibrator path. Default: config PATHS["calibrator"].')
+    parser.add_argument('--source-split', choices=['test', 'train'], default='test',
+                        help='Clean source for conformal calibration/validation. '
+                             'Use train with train-split profiles for the strict '
+                             'top-tier rerun.')
     args = parser.parse_args()
     calibrate_ensemble(
         data_root=args.data_root,
         ensemble_path=args.ensemble_path,
         profile_path=args.profile_path,
         output_path=args.output,
+        source_split=args.source_split,
     )

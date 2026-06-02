@@ -1,0 +1,35 @@
+{
+  "comment": "Merged WRN-28-10/CIFAR-10 adaptive PGD lambda-sweep results (single seed=42, n=1000 each). Sources: vastai_wrn_adaptive_pgd.jsonl (original pid 4355 ran lambda=0/0.5/1.0 sequentially); vastai_wrn_adaptive_pgd_l{2,5,10}.json (3-way parallel processes pid 8213/8214/8215 ran lambda=2/5/10).",
+  "protocol": {
+    "n_test": 1000,
+    "seed": 42,
+    "pgd_steps": 100,
+    "pgd_restarts": 10,
+    "eps": 0.03137254901960784,
+    "through_scorer": true,
+    "backbone": "wrn_cifar10",
+    "data_split": "EVAL",
+    "lambdas": [0.0, 0.5, 1.0, 2.0, 5.0, 10.0]
+  },
+  "results": {
+    "lambda_0.0":  {"TPR": 0.8420, "FPR": 0.0810, "TPR_CI_95": [0.8180, 0.8629], "FPR_CI_95": [0.0656, 0.0996]},
+    "lambda_0.5":  {"TPR": 0.7990, "FPR": 0.0810, "TPR_CI_95": [0.7730, 0.8227], "FPR_CI_95": [0.0656, 0.0996]},
+    "lambda_1.0":  {"TPR": 0.7450, "FPR": 0.0810, "TPR_CI_95": [0.7170, 0.7710], "FPR_CI_95": [0.0656, 0.0996]},
+    "lambda_2.0":  {"TPR": 0.6640, "FPR": 0.0810, "TPR_CI_95": [0.6340, 0.6930], "FPR_CI_95": [0.0656, 0.0996]},
+    "lambda_5.0":  {"TPR": 0.4880, "FPR": 0.0810, "TPR_CI_95": [0.4570, 0.5190], "FPR_CI_95": [0.0656, 0.0996]},
+    "lambda_10.0": {"TPR": 0.4260, "FPR": 0.0810, "TPR_CI_95": [0.3960, 0.4570], "FPR_CI_95": [0.0656, 0.0996]}
+  },
+  "comparison_with_resnet18_cifar10": {
+    "source": "tables/adaptive_pgd.tex (5-seed pool, n=5000 each)",
+    "delta_table": [
+      {"lambda": 0.0,  "wrn": 0.8420, "resnet18": 0.832, "delta_pp": 1.0},
+      {"lambda": 0.5,  "wrn": 0.7990, "resnet18": 0.796, "delta_pp": 0.3},
+      {"lambda": 1.0,  "wrn": 0.7450, "resnet18": 0.753, "delta_pp": -0.8},
+      {"lambda": 2.0,  "wrn": 0.6640, "resnet18": 0.660, "delta_pp": 0.4},
+      {"lambda": 5.0,  "wrn": 0.4880, "resnet18": 0.490, "delta_pp": -0.2},
+      {"lambda": 10.0, "wrn": 0.4260, "resnet18": 0.429, "delta_pp": -0.3}
+    ],
+    "max_abs_delta_pp": 1.0,
+    "interpretation": "WRN-28-10 and ResNet-18 track within +/-1pp at every lambda on CIFAR-10 adaptive PGD; vulnerability is dataset-level not architecture-level"
+  }
+}

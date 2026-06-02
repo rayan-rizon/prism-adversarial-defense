@@ -22,12 +22,16 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 PAPER = Path(__file__).resolve().parent.parent
 FIG_DIR = PAPER / "figures"
 ROOT = PAPER.parent.parent
-VASTAI = ROOT / "vastai_full_download_2026-05-20_0830UTC"
+VASTAI = ROOT / "Cifar 10"
+if not VASTAI.exists():
+    VASTAI = ROOT / "vastai_full_download_2026-05-20_0830UTC"
 PROJECT = VASTAI / "project"
 POSTFIX = VASTAI / "post_fix_local_2026-05-21"
 
 # â”€â”€ Global style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 plt.rcParams.update({
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
     "font.family": "serif",
     "font.size": 9,
     "axes.titlesize": 10,
@@ -198,7 +202,7 @@ def make_fig1():
         ("TAMM",  C_TAMM,  "per-layer persistence (Wasserstein medoid)"),
         ("CADG",  C_CADG,  "distribution-free FPR cert. (split conformal)"),
         ("SACD",  C_SACD,  "campaign detector (time-to-detect headline)"),
-        ("TAMSH", C_TAMSH, "MoE recovery ($+26$ pp vs passthrough)"),
+        ("TAMSH", C_TAMSH, "MoE recovery (learned router 28.7%)"),
     ]
     row_y = [0.72, 0.30]
     col_x = [0.62, 7.48]
@@ -341,19 +345,24 @@ def make_fig2():
     ax_high.plot((-d, +d), (1 - d, 1 + d), **kw)
     ax_high.plot((1 - d, 1 + d), (1 - d, 1 + d), **kw)
 
-    # Threshold lines (only on lower panel where they're visible)
-    for name, val, col in [("L1", L1, C_L1), ("L2", L2, C_L2), ("L3", L3, C_L3)]:
+    # Threshold lines (lower panel) + compact stacked legend in the empty
+    # upper-left region. A stacked color-keyed block avoids the label overlap
+    # that occurs when L2/L3 thresholds are numerically close.
+    thr = [("L1", L1, C_L1), ("L2", L2, C_L2), ("L3", L3, C_L3)]
+    for name, val, col in thr:
         ax_high.axhline(val, color=col, linestyle="--", linewidth=1.1,
                         alpha=0.85, zorder=1)
-        ax_high.text(6.55, val, f"{name} ($\\approx${val:.2f})", fontsize=7.5,
-                     color=col, va="center", ha="left", fontweight="bold")
+    for i, (name, val, col) in enumerate(thr):
+        ax_high.text(0.62, 12.6 - i * 2.1, f"{name} $\\approx$ {val:.2f}",
+                     fontsize=8.0, color=col, va="center", ha="left",
+                     fontweight="bold", zorder=5)
 
     ax_high.set_xticks(range(1, len(labels) + 1))
     ax_high.set_xticklabels(labels, fontsize=9)
     ax_high.set_xlabel("Input Type", labelpad=4)
     ax_high.set_ylabel("PRISM Anomaly Score $S(x)$")
     ax_main.set_ylabel("$S(x)$ (high range)")
-    ax_main.set_title("Canonical Ensemble Score Distribution â€” Clean vs Adversarial\n"
+    ax_main.set_title("Canonical Ensemble Score Distribution \u2014 Clean vs Adversarial\n"
                       "(5-seed pooled quantiles: whiskers $=$ p05/p95, box $=$ IQR, line $=$ median)",
                       fontsize=10, pad=6)
 
@@ -374,7 +383,7 @@ def make_fig3():
     cal_path = PROJECT / "experiments" / "calibration" / "clean_scores.npy"
     val_path = PROJECT / "experiments" / "calibration" / "val_scores.npy"
     if not cal_path.exists():
-        print("[warn] clean_scores.npy not found â€” figure 3 falls back to simulation.")
+        print("[warn] clean_scores.npy not found \u2014 figure 3 falls back to simulation.")
         return
 
     cal = np.load(cal_path)
@@ -461,7 +470,7 @@ def make_fig3():
         axR.set_xticks(sizes); axR.set_xticklabels([str(s) for s in sizes])
         axR.set_yscale("log")
 
-    fig.suptitle("Conformal Calibration Sensitivity (n_cal $\\in$ {500, 1000, 2000, 3000}; 25 bootstrap subsamples each)",
+    fig.suptitle("Conformal Calibration Sensitivity ($n_{\\mathrm{cal}} \\in$ {500, 1000, 2000, 3000}; 25 bootstrap subsamples each)",
                  fontsize=10, y=1.04)
     fig.tight_layout()
     fig.savefig(FIG_DIR / "fig3_calibration.pdf")

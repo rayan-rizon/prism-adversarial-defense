@@ -1,0 +1,71 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{cmap}
+\input{glyphtounicode}
+\pdfgentounicode=1
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{xspace}
+\usepackage{enumitem}
+\usepackage[numbers,sort&compress]{natbib}
+\emergencystretch=2em
+
+\newcommand{\prism}{\textsc{PRISM}\xspace}
+\newcommand{\tamm}{\textsc{TAMM}\xspace}
+\newcommand{\cadg}{\textsc{CADG}\xspace}
+\newcommand{\sacd}{\textsc{SACD}\xspace}
+\newcommand{\tamsh}{\textsc{TAMSH}\xspace}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\title{\textsc{PRISM}: Predictive Runtime Immune System with Manifold Monitoring for
+       Multi-Backbone Adversarial-Input Detection}
+
+\author{%
+  Rayan Rizon\\
+  Independent Researcher\\
+  \texttt{rayan.rizon@gmail.com}\\
+}
+\date{June 2, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  \input{sections/abstract}
+\end{abstract}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+\bibliography{prism}
+\bibliographystyle{plainnat}
+
+\appendix
+\input{sections/appendix}
+
+\end{document}

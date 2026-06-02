@@ -1,0 +1,293 @@
+\documentclass{article}
+\usepackage{iclr2026_conference,times}
+
+\input{math_commands.tex}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{xspace}
+\usepackage{enumitem}
+
+\newcommand{\prism}{\textsc{PRISM}\xspace}
+\newcommand{\tamm}{\textsc{TAMM}\xspace}
+\newcommand{\cadg}{\textsc{CADG}\xspace}
+\newcommand{\sacd}{\textsc{SACD}\xspace}
+\newcommand{\tamsh}{\textsc{TAMSH}\xspace}
+
+\title{\textsc{PRISM}: Predictive Runtime Immune System with Manifold Monitoring for Multi-Backbone Adversarial-Input Detection}
+
+\author{Anonymous authors\\Paper under double-blind review}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\prism is a runtime adversarial-input detector that combines activation-geometry monitoring, split-conformal calibration, stream-level campaign detection, and post-rejection recovery. On CIFAR-10/ResNet-18, across five fixed seeds and $n=1000$ adversarials per seed, \prism reports $0.918$ mean TPR on FGSM/PGD/Square at empirical FPR $0.074$, $0.938$ TPR on canonical CW-L2 at FPR $0.075$, and $1.000$ TPR on the final adversarial examples emitted by the standard AutoAttack ensemble. The same detector family transfers to CIFAR-10/WRN-28-10 ($0.975$ mean TPR on FGSM/PGD/Square) and CIFAR-100/ResNet-18 ($0.830$ mean TPR). On CIFAR-10/ResNet-18, an ensemble-complete adaptive PGD stress test lowers all-input TPR to $0.479$, but among successful attacks \prism detects $0.866$ and leaves $0.074$ of all attempted inputs both successful and undetected. The paper makes no certified-robustness claim: all results are empirical detection results, and the current artifacts use disjoint slices of the official CIFAR test split for detector fitting, calibration, validation, and evaluation.
+\end{abstract}
+
+\section{Problem and Contributions}
+Adversarial robustness work often measures whether a classifier keeps the same label under perturbed inputs. A deployed system also needs to know whether an input should be trusted at all. \prism targets this runtime-monitoring problem: given a fixed classifier and a test-time input, it raises calibrated alerts when intermediate representations look inconsistent with clean data. The threat model covers FGSM \citep{goodfellow2015explaining}, PGD \citep{madry2017towards}, CW-L2 \citep{carlini2017adversarial}, Square \citep{andriushchenko2020square}, AutoAttack \citep{croce2020reliable}, and a BPDA-style adaptive PGD stress test \citep{athalye2018obfuscated,carlini2019evaluating}. The defense does not transform inputs before classification and does not claim certified robustness.
+
+The contribution is a four-part monitor. \textbf{\tamm} extracts layerwise topology and activation statistics from classifier features. \textbf{\cadg} turns those scores into split-conformal alerts with clean-split coverage guarantees \citep{vovk2005algorithmic,angelopoulos2023gentle}. \textbf{\sacd} detects repeated low-level anomalies over query streams. \textbf{\tamsh} attempts post-rejection recovery with a small mixture of experts. The main empirical question is not whether every adaptive adversary is stopped, but whether a calibrated, attack-agnostic runtime monitor remains informative across standard attacks, backbones, datasets, and explicit adaptive pressure.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig1_architecture.pdf}
+\caption{\prism runtime monitor. \tamm extracts activation-geometry and topology signals, \cadg calibrates clean false alarms, \sacd detects query-stream campaigns, and \tamsh routes rejected inputs to recovery experts.}
+\label{fig:architecture}
+\end{figure}
+
+\paragraph{Novelty.}
+To our knowledge, \prism is the first activation-based adversarial-input detector to attach a split-conformal, distribution-free false-alarm certificate to its decision threshold, turning an empirical detector into one with a finite-sample guarantee on clean false positives. Beyond that certificate, the new element is not a single detector feature, but the coupling of persistent-homology activation summaries with conformal runtime calibration, campaign-level temporal detection, and recovery routing in one attack-agnostic monitor. Baselines such as LID, Mahalanobis, ODIN, Energy, SID, and spectral detectors score inputs or layers independently; \prism evaluates whether multi-layer topology and activation geometry remain jointly consistent with calibrated clean behavior.
+
+\paragraph{Relation to prior detectors.}
+LID and Mahalanobis detectors use local density or class-conditional feature distance \citep{ma2018characterizing,lee2018simple}; ODIN and Energy use output-space confidence or energy shifts \citep{liang2018enhancing,liu2020energy}; SID and SpectralDefense use spectral signatures \citep{tian2021detecting,harder2021spectraldefense}. These are useful but usually single-view detectors. \prism is designed as a multi-view runtime monitor: topology contributes a non-Euclidean view of feature geometry, DCT/spectral summaries capture frequency and activation energy, and conformal calibration keeps the alert threshold tied to clean false-alarm control.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.25\linewidth}p{0.37\linewidth}p{0.30\linewidth}}
+\toprule
+Claim type & Supported claim & Explicit non-claim \\
+\midrule
+IID detection & Standard FGSM/PGD/Square, CW-L2, and final AutoAttack adversarial-input detection on the reported dataset/backbone settings. & No certified robustness, no claim that the classifier output is robust after every accepted input. \\
+Cross-setting behavior & Same detector family works on CIFAR-10/WRN-28-10 and CIFAR-100/ResNet-18; ViT-B/16 transfer is reported for FGSM/PGD/Square only. & No ViT CW-L2, ViT AutoAttack, ViT latency, or ViT adaptive-PGD claim. \\
+Adaptive pressure & CIFAR-10/ResNet-18 adaptive PGD stress still leaves useful signal on successful attacks. & No broad adaptive robustness claim and no ensemble-complete adaptive run for every dataset/backbone. \\
+Statistics & Clean FPR is tied to split-conformal calibration and verified by held-out clean validation. & Pooled Wilson intervals are approximate under overlapping seed image pools; disjoint/image-clustered intervals remain stronger. \\
+\bottomrule
+\end{tabular}
+\caption{Claim ledger. The paper is intentionally framed as empirical adversarial-input detection with calibrated false alarms, not as certified classification robustness.}
+\label{tab:claim_ledger}
+\end{table}
+
+\section{Method}
+\prism observes hidden activations from a pretrained classifier. For each monitored layer, \tamm computes compact descriptors: class-conditional distances, spectral summaries, DCT energy, and persistent-homology summaries over subsampled feature clouds \citep{edelsbrunner2010computational,gudhi2015}. The descriptors are concatenated into a detector feature vector and scored by an ensemble head trained on clean examples plus FGSM/PGD/Square adversarials. CW-L2 and AutoAttack are held out as unseen attack families for the primary CIFAR-10 detector.
+
+\paragraph{Detector contract.}
+The deployed detector is a single score, not a cascade of hand-tuned per-attack rules. It combines (i) layerwise Wasserstein distances to clean persistence-diagram medoids, (ii) image-frequency evidence from DCT energy, (iii) output-distribution evidence from entropy and logit-profile summaries, (iv) input-gradient magnitude, and (v) deterministic stability summaries under small input perturbations. The linear ensemble head is trained on the balanced FGSM/PGD/Square mix and then reused for CW-L2 and AutoAttack, so the strongest CIFAR-10 unseen-attack rows test transfer of the score rather than retraining on the target attack.
+
+\cadg calibrates the detector with clean calibration scores only. For a calibration split of size $m$ and target false-alarm level $\alpha$, it uses the conformal quantile threshold; under exchangeable clean calibration and test samples, the clean alert probability is bounded by approximately $\alpha$ up to finite-sample quantile slack. This is a false-alarm guarantee, not a robustness certificate.
+
+\paragraph{Calibration contract.}
+All severity levels are thresholded on clean scores: L1 targets $10\%$ clean FPR, L2 targets $3\%$, and L3 targets $0.5\%$. These thresholds are not tuned on adversarial examples after the fact. Once the score definition is fixed, the conformal threshold is fitted from clean calibration scores and checked on a disjoint clean validation slice. This matters because a detector can raise adversarial TPR by flagging more clean inputs; \prism reports FPR next to every main TPR so that high sensitivity is not confused with an unusable alert rate. Figure~\ref{fig:calib} shows that the fitted thresholds and the achieved clean FPR are stable as the calibration-set size varies from $500$ to $3000$, so the conformal contract does not depend on a single fortunate calibration draw.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/fig3_calibration.pdf}
+\caption{Conformal calibration sensitivity on CIFAR-10/ResNet-18 ($n_{\mathrm{cal}}\in\{500,1000,2000,3000\}$, 25 bootstrap subsamples each). Left: fitted L1/L2/L3 thresholds are stable across calibration size (L3 half-range $\approx 0.03$). Right: achieved validation FPR tracks the design targets ($0.10/0.03/0.005$) within bootstrap bands.}
+\label{fig:calib}
+\end{figure}
+
+\sacd maintains a CUSUM-style campaign statistic over the binary low-level alert stream and measures time-to-detect as the number of queries between the first adversarial query and the first stream trigger. \tamsh routes L3-rejected inputs to a small expert pool; the deployable topology gate uses $H_0+H_1$ Wasserstein features, while oracle and forced-specialist rows are reported only as upper-bound diagnostics.
+
+\section{Experimental Protocol}
+\label{sec:protocol}
+Datasets are CIFAR-10/CIFAR-100 \citep{krizhevsky2009learning}; backbones are CIFAR-native ResNet-18 \citep{he2016deep}, WRN-28-10 \citep{zagoruyko2016wide}, and a ViT-B/16 transfer run \citep{dosovitskiy2021image}. Main attacks use $\varepsilon=8/255$, five fixed seeds $\{42,123,456,789,999\}$, and $n=1000$ images per seed unless stated otherwise. CIFAR-10/ResNet-18 uses PGD-40; WRN/CIFAR-100/ViT use PGD-50 with 10 restarts. CW-L2 uses the canonical paper configuration, \texttt{max\_iter}=100 and \texttt{binary\_search\_steps}=9. AutoAttack is the standard ensemble; the headline row is the detector TPR on the final per-image ensemble adversarial examples, not on each subattack separately.
+
+\paragraph{Split disclosure.}
+The locked artifacts use non-overlapping official-test-set index windows: fitting/profile $[0,4999]$, calibration $[5000,6999]$, validation $[7000,7999]$, and evaluation $[8000,9999]$. Thus no image is shared between detector fitting, calibration, validation, and evaluation, but the protocol still fits detector components on public test-set images. For a stricter final protocol, the cleanest rerun is to fit/profile/calibrate from CIFAR training data, then run the official test-set evaluation. The present submission reports the artifact protocol explicitly rather than relabeling it.
+
+\paragraph{Artifact discipline.}
+Every headline number in Tables~\ref{tab:main}--\ref{tab:stress} is regenerated from locked JSON artifacts and checked by a verifier script before LaTeX build. The verifier checks the main attack rows, the $+13.1$ pp TDA ablation gap, the best-baseline gap, adaptive-PGD confirmation values, campaign detection, recovery, and ASR-gap summaries. This is why the paper uses narrower language for ViT and adaptive settings: if a run is absent from the artifact set, it is listed as absent rather than inferred from another backbone.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.22\linewidth}p{0.31\linewidth}p{0.35\linewidth}}
+\toprule
+Axis & Protocol used in this submission & Review-relevant consequence \\
+\midrule
+Attacker access & White-box gradients for FGSM/PGD/CW and adaptive PGD; score-based black-box Square; standard AutoAttack ensemble. & Covers common first-order, optimization-based, and query-based attack families, but not every possible adaptive objective. \\
+Perturbation budget & $8/255$ for $L_\infty$ attacks; canonical CW-L2 uses 100 iterations and 9 binary-search steps. & Avoids presenting weak-CW diagnostics as headline CW evidence. \\
+Training attacks & Ensemble head trains on FGSM/PGD/Square only. & CW-L2 and AutoAttack final rows test unseen-attack transfer for the primary CIFAR-10 detector. \\
+Calibration data & Clean-only split-conformal thresholds with held-out validation. & TPR cannot be interpreted without the paired FPR; false alarms are part of every claim. \\
+Evaluation unit & Five fixed seeds, $n=1000$ adversarials per seed, unless a stress-test row states otherwise. & Main IID rows are larger than the adaptive confirmation row; the adaptive row is stress evidence, not a full IID table replacement. \\
+\bottomrule
+\end{tabular}
+\caption{Threat-model and evidence matrix. The table states what a reviewer should treat as the measured protocol, rather than relying on title-level claims.}
+\label{tab:threat_matrix}
+\end{table}
+
+\paragraph{Statistical treatment.}
+For each attack row, the paper reports the pooled point estimate over the five fixed seeds and the corresponding Wilson interval. This is the conventional detector-table presentation, but it is not the strongest possible uncertainty model because the seed draws share the same 2000-image evaluation window. We therefore do two things in the main text: we avoid claiming formal robustness from these intervals, and we explicitly identify image-disjoint or clustered intervals as a stronger follow-up for CW-L2, AutoAttack, WRN, CIFAR-100, and ViT. The already-run disjoint-window audit on CIFAR-10 FGSM/PGD/Square is used as a sanity check, not as blanket proof for every table.
+
+\paragraph{Reproducibility checks.}
+The supplement separates fast consistency checks from expensive scientific reruns. Fast checks rebuild each source ZIP from a fresh extraction, verify that the arXiv package has no venue-review/checklist markers, run the paper-number verifier against locked JSONs, run the strict train-split rerun in smoke mode, and inspect font embedding in all PDFs. These checks catch submission defects and data mismatches, but they do not replace the full train-split rerun or ensemble-complete adaptive reruns on additional datasets.
+
+\section{Results}
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllcccc}
+\toprule
+Dataset & Backbone & Attack & TPR & 95\% CI & FPR & $n_{\mathrm{adv}}$ \\
+\midrule
+CIFAR-10 & ResNet-18 & FGSM & 0.882 & [0.872, 0.890] & 0.074 & 5000 \\
+CIFAR-10 & ResNet-18 & PGD-40 & 0.987 & [0.984, 0.990] & 0.074 & 5000 \\
+CIFAR-10 & ResNet-18 & Square & 0.886 & [0.877, 0.894] & 0.074 & 5000 \\
+CIFAR-10 & ResNet-18 & CW-L2 & 0.938 & [0.931, 0.945] & 0.075 & 5000 \\
+CIFAR-10 & ResNet-18 & AutoAttack final & 1.000 & [0.999, 1.000] & 0.075 & 5000 \\
+\midrule
+CIFAR-10 & WRN-28-10 & FGSM & 0.985 & [0.982, 0.988] & 0.071 & 5000 \\
+CIFAR-10 & WRN-28-10 & PGD-50 & 0.995 & [0.992, 0.996] & 0.071 & 5000 \\
+CIFAR-10 & WRN-28-10 & Square & 0.943 & [0.936, 0.949] & 0.076 & 5000 \\
+CIFAR-10 & WRN-28-10 & CW-L2 & 0.933 & [0.926, 0.939] & 0.079 & 5000 \\
+CIFAR-10 & WRN-28-10 & AutoAttack final & 1.000 & [0.999, 1.000] & 0.075 & 5000 \\
+\midrule
+CIFAR-10 & ViT-B/16 & FGSM & 1.000 & [0.999, 1.000] & 0.083 & 5000 \\
+CIFAR-10 & ViT-B/16 & PGD-50 & 1.000 & [0.999, 1.000] & 0.083 & 5000 \\
+CIFAR-10 & ViT-B/16 & Square & 0.9998 & [0.999, 1.000] & 0.083 & 5000 \\
+\midrule
+CIFAR-100 & ResNet-18 & FGSM & 0.835 & [0.825, 0.845] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18 & PGD-50 & 0.984 & [0.980, 0.987] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18 & Square & 0.672 & [0.659, 0.685] & 0.077 & 5000 \\
+CIFAR-100 & ResNet-18 & CW-L2 & 0.687 & [0.674, 0.700] & 0.073 & 5000 \\
+CIFAR-100 & ResNet-18 & AutoAttack final & 0.999 & [0.998, 1.000] & 0.077 & 5000 \\
+\bottomrule
+\end{tabular}}
+\caption{Main empirical detection results. AutoAttack rows are final ensemble adversarials; appendix notes subattack-level sensitivity. ViT rows cover standard FGSM/PGD/Square only and make no ViT CW, AutoAttack, latency, or adaptive-PGD claim.}
+\label{tab:main}
+\end{table}
+
+Table~\ref{tab:main} shows that \prism remains strong on high-gradient attacks and transfers across the CNN settings. The harder cases are score-based or optimization-based attacks on CIFAR-100: Square and CW-L2 drop to $0.672$ and $0.687$, respectively, below the $0.85$ design target. AutoAttack rows should be read narrowly: the final ensemble adversarials are all detected on CIFAR-10, while the separate $L_\infty$ subattack audit is lower for some components, especially Square.
+
+\paragraph{Result interpretation.}
+The strongest evidence is not a single headline row, but the pattern across attack families. PGD and AutoAttack final adversarials are consistently high-TPR because they induce large representation and confidence shifts. Square is more variable because it is score-based and often changes the input in ways that preserve some clean-manifold structure. CIFAR-100 is harder than CIFAR-10 because the 100-class backbone produces a broader clean logit and activation distribution, leaving less separation for score-based and optimization-based attacks. These weaker rows are kept in the main table because they define the boundary of the method, not because they are favorable. Figure~\ref{fig:scoredist} visualizes the same effect at the score level: clean inputs sit below the conformal tiers while every attack family shifts the pooled score distribution upward, with PGD and AutoAttack separating most strongly.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.74\textwidth]{figures/fig2_score_dist.pdf}
+\caption{Ensemble anomaly score $S(x)$ for clean versus adversarial inputs on CIFAR-10/ResNet-18 (5-seed pooled quantiles; whiskers p05/p95, box IQR, line median). Dashed lines mark the L1/L2/L3 conformal tiers calibrated on clean scores. The clean distribution sits below the tiers; all attack families shift upward, and the broken axis shows the large PGD/AutoAttack tail.}
+\label{fig:scoredist}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llcccc}
+\toprule
+Setting & Detector & FGSM & PGD & Square & Mean / FPR \\
+\midrule
+CIFAR-10 ResNet-18 & strongest baseline (Mahalanobis) & 0.393 & 0.877 & 0.476 & 0.582 / 0.077 \\
+CIFAR-10 ResNet-18 & \textbf{\prism} & \textbf{0.882} & \textbf{0.987} & \textbf{0.886} & \textbf{0.918 / 0.074} \\
+\midrule
+CIFAR-10 WRN-28-10 & strongest baseline (Mahalanobis) & 0.930 & 0.995 & 0.506 & 0.810 / 0.122 \\
+CIFAR-10 WRN-28-10 & \textbf{\prism} & \textbf{0.985} & \textbf{0.995} & \textbf{0.943} & \textbf{0.975 / 0.073} \\
+\midrule
+CIFAR-100 ResNet-18 & strongest baseline (ODIN) & 0.767 & 0.000 & 0.445 & 0.404 / 0.116 \\
+CIFAR-100 ResNet-18 & \textbf{\prism} & \textbf{0.835} & \textbf{0.984} & \textbf{0.672} & \textbf{0.830 / 0.077} \\
+\bottomrule
+\end{tabular}
+\caption{Condensed baseline comparison against the strongest reproduced mean-TPR baseline among LID, Mahalanobis, ODIN, Energy, and SID \citep{ma2018characterizing,lee2018simple,liang2018enhancing,liu2020energy,tian2021detecting}. Baseline FPR is exactly matched only for CIFAR-10/ResNet-18; WRN and CIFAR-100 rows are at the 10\% design target but not exact matched FPR.}
+\label{tab:baselines}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & FGSM & PGD & Square & Mean TPR & FPR \\
+\midrule
+Full \prism & 0.882 & 0.987 & 0.886 & \textbf{0.918} & 0.074 \\
+No-StabilityV2 & 0.936 & 0.396 & 0.854 & 0.729 & 0.107 \\
+No-DCT & 0.751 & 0.995 & 0.960 & 0.902 & 0.098 \\
+Ensemble-no-TDA & 0.506 & 0.969 & 0.886 & 0.787 & 0.077 \\
+TDA only & 0.009 & 0.066 & 0.019 & 0.031 & 0.082 \\
+\bottomrule
+\end{tabular}
+\caption{CIFAR-10/ResNet-18 ablation summary. Pure topology is not sufficient alone, but removing TDA from the ensemble drops mean TPR by $13.1$ pp, with the largest loss on FGSM.}
+\label{tab:ablation}
+\end{table}
+
+\paragraph{Ablation interpretation.}
+Table~\ref{tab:ablation} supports the design choice: no individual channel explains the result. Removing StabilityV2 destroys PGD detection, removing DCT weakens FGSM, and removing TDA preserves Square but loses broad sensitivity. The high FPR of some masked configurations is also important: more detector features can increase raw sensitivity while hurting conformal false-alarm behavior, so the deployed model is selected by detection and FPR jointly.
+
+\paragraph{Baseline interpretation.}
+The baseline table is intentionally conservative. On CIFAR-10/ResNet-18, the strongest reproduced baseline is Mahalanobis, and \prism improves mean TPR by $33.6$ pp at nearly matched FPR. On WRN and CIFAR-100, some baselines exceed the $10\%$ design FPR; the table reports those values rather than filtering them away. Thus the comparison does not hide baseline false alarms, and it does not use a lighter CW setting for \prism than for the baselines.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcc}
+\toprule
+Stress test & Metric & Result & Scope \\
+\midrule
+Adaptive PGD, $\lambda=10$ confirm & all-input TPR / FPR & 0.479 / 0.082 & 5 seeds, $n_{\rm adv}=1000$ \\
+Adaptive PGD, $\lambda=10$ confirm & TPR on successful attacks & 0.866 & same run \\
+Adaptive PGD, $\lambda=10$ confirm & undetected successful rate & 0.074 & same run \\
+\sacd stream, $\rho=1.0$ & time to detect & $2.6\pm0.5$ queries & 5 seeds, 1000-query streams \\
+\sacd clean only & L0 active fraction & $0.000\pm0.000$ & 5 seeds, up to 1000 queries \\
+\tamsh topology gate & PGD L3 recovery & 0.139, $+10.6$ pp & deployable gate \\
+\tamsh learned router & PGD L3 recovery & 0.287 & disjoint router eval split \\
+Best-of-$K$ oracle & PGD L3 recovery ceiling & $0.324\pm0.007$ & same-protocol 5-seed pool \\
+\bottomrule
+\end{tabular}}
+\caption{Stress and recovery results. Adaptive PGD is a stress test rather than a proof of robustness. \sacd false-alarm claims are limited to the evaluated 1000-query horizon. Oracle rows are diagnostics, not deployable policies.}
+\label{tab:stress}
+\end{table}
+
+\section{Discussion}
+\paragraph{Why the empirical pattern is plausible.}
+The results are consistent with the intended division of labor among the feature channels. PGD and AutoAttack final adversarials tend to produce large activation and confidence shifts, so the ensemble score separates them from clean inputs even when the conformal threshold is held near the clean FPR target. FGSM is weaker and noisier because a single gradient step can remain close to the clean activation manifold, which is why DCT and topology both matter in the ablation. Square is the most informative failure mode: it is black-box and score-based, so it can often alter classifier decisions without producing the same large gradient-aligned representation shifts. The CIFAR-100 Square and CW-L2 drops therefore expose a meaningful boundary, not an implementation anomaly.
+
+\paragraph{Why topology is not used alone.}
+The TDA-only row is deliberately left in the table even though it performs poorly. Persistent homology is valuable here as a complementary signal, not as a standalone detector. The full detector uses topology to capture non-Euclidean structure in monitored activations, but it relies on DCT, stability, entropy, logit-profile, and gradient-norm features to cover attacks whose topology alone remains close to the clean medoid. The ensemble-no-TDA row isolates this contribution: removing topology while keeping the side channels drops mean CIFAR-10 TPR by $13.1$ pp. This is the correct interpretation of the topological contribution; claiming that topology alone solves adversarial detection would be inconsistent with the ablation.
+
+\paragraph{How to read the adaptive result.}
+The adaptive PGD row is the most important stress result because it explicitly attacks the detector score. Its all-input TPR is only $0.479$, so the paper cannot honestly claim adaptive robustness. However, the same run also shows that high-$\lambda$ detector suppression reduces attack success: among inputs that still fool the classifier, \prism detects $0.866$, and only $0.074$ of all attempted inputs are both successful and undetected. This means the detector remains informative under adaptive pressure, but a complete adaptive defense would require more than the current runtime monitor.
+
+\paragraph{How to read the recovery result.}
+\tamsh should be read as a post-rejection availability mechanism, not as the primary safety mechanism. The safe default for L3 inputs is rejection. Recovery is useful only when a deployment wants a best-effort prediction after rejection, and the paper separates deployable and non-deployable rows accordingly. The lightweight topology gate gives a positive but incomplete recovery gain; the learned router and forced-specialist rows show headroom, while the oracle row marks an upper-bound diagnostic. This prevents a common mistake in recovery papers: reporting oracle routing as if it were a deployable policy.
+
+\paragraph{What would make the evidence stronger without changing the method.}
+The highest-value quick improvements are not new model components. They are protocol and reporting upgrades: (i) train-split detector development followed by official-test-only evaluation, (ii) image-disjoint or clustered intervals for all headline tables, (iii) config-matched CW baselines at the same 100-iteration/9-binary-search setting, and (iv) longer clean-stream L0 stress only if the claim extends beyond the current 1000-query horizon. These are compatible with the current method and supplement, but they are intentionally not folded into the submitted numbers unless the corresponding JSON artifacts and verifiers exist.
+
+\section{Limitations and Required Reruns}
+\label{sec:limitations}
+The main limitation is the split protocol: fitting and calibration use disjoint parts of the official CIFAR test set rather than drawing all detector-development data from the CIFAR training split. This does not create overlap with the reported evaluation images, but it is weaker than the cleanest NeurIPS/ICLR protocol. The highest-value rerun is therefore fixed and concrete: rebuild profiles, detector heads, calibration thresholds, and validation thresholds from CIFAR training data, then run the official test-set evaluation.
+
+Second, adaptive PGD materially lowers all-input TPR to $0.479$ at $\lambda=10$; \prism should be presented as an empirical detector with useful residual signal, not as a complete adaptive defense. Third, Wilson intervals treat pooled seed samples as independent even though each seed draws from the same 2000-image evaluation window; a disjoint-window audit confirms FGSM/PGD/Square trends, but analogous image-clustered intervals remain needed for CW-L2, AutoAttack, WRN, CIFAR-100, and ViT. Fourth, the recent SpectralDefense CW comparison is not used as a headline because its CW configuration is lighter than \prism's canonical CW configuration.
+
+\section{Conclusion}
+\prism shows that topology-augmented runtime monitoring can detect a broad set of adversarial inputs across datasets and backbones while keeping false alarms near a conformal design target. The evidence supports a limitation-aware empirical detection contribution: the strongest claims are for standard attacks, the adaptive-PGD result is reported as stress evidence rather than certified robustness, and the public-test-split fitting protocol is disclosed. A train-split rerun and broader adaptive audits would strengthen the submission, but the submitted claims are scoped to the locked artifacts.
+
+\section{Reproducibility and Ethics}
+\paragraph{Reproducibility.}
+All headline rows are tied to locked JSON artifacts and five fixed seeds. Reproduction requires CIFAR-10/CIFAR-100, PyTorch/ART-style attacks, a CUDA GPU, and the launch scripts in the anonymized supplement.
+
+\paragraph{Ethics and impact.}
+The work uses public image-classification benchmarks only, contains no human-subject data, and releases defensive monitors rather than attack-generation capability. The main positive use is runtime screening for deployed classifiers; the main negative risk is over-trusting an empirical detector outside its calibrated clean distribution.
+
+\bibliography{prism}
+\bibliographystyle{iclr2026_conference}
+
+\appendix
+\section{Protocol Notes}
+\paragraph{AutoAttack.}
+The $1.000$ CIFAR-10 rows in Table~\ref{tab:main} are detector rates on AutoAttack's final ensemble adversarials. The per-subattack audit is not identical: CIFAR-10 L1 detector TPRs are APGD-CE $0.9708$, APGD-DLR $0.9112$, FAB-T $0.9314$, and Square $0.7062$ (1000-query subattack run). The paper therefore does not claim every AutoAttack component is detected at $1.000$.
+
+\paragraph{EOT.}
+The adaptive attack records EOT verification metadata, but the detector path is deterministic under the locked configuration. The submitted claim is therefore deterministic/no-op EOT, not an executed 20-resampling EOT rerun.
+
+\paragraph{CW baselines.}
+\prism's headline CW-L2 uses \texttt{max\_iter}=100 and \texttt{binary\_search\_steps}=9. Some recent-baseline diagnostics used lighter CW settings for tractability; those numbers are excluded from headline comparisons until config-matched reruns exist.
+
+\paragraph{L0 horizon.}
+The clean-only \sacd claim is bounded to evaluated streams: the active fraction is $0.000$ for the 500-step table and through 1000-query long-stream stress. With deployed $C^*=5$, a longer clean-only stress first triggers around step 1814 and has nonzero active fraction by 2000 queries; $C^*\in\{8,10,12\}$ remains at $0.000$ through 10000 queries.
+
+\end{document}

@@ -17,6 +17,10 @@ import torchvision.transforms as T
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+})
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PRISM_ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))

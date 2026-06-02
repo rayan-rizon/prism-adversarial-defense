@@ -1,0 +1,257 @@
+"""
+Vast.ai paper-grade PGD-40 recovery: matches the protocol in
+Table~tab:recovery (5 seeds x n=1000 EVAL adversarials), but reports
+the SAME 5 recovery policies as vastai_recovery_multi.py
+(reject, passthrough, uniform, topology, force_pgd, oracle) so the
+'uniform vs topology vs paper claim' question can be answered for PGD.
+
+If uniform_acc ≈ passthrough on PGD here, the paper's 'uniform =
+degenerate to passthrough' claim is verified for PGD specifically;
+combined with the multi-attack result showing uniform DOMINATES on
+FGSM/Square/CW, the finding becomes 'paper's PGD-only uniform claim
+does not transfer cross-attack'.
+"""
+import os, sys, time, json, pickle, math
+import numpy as np
+import torch
+import torchvision.transforms as T
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PRISM_ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
+sys.path.insert(0, PRISM_ROOT)
+
+from src import bootstrap  # noqa
+from src.tamm.extractor import ActivationExtractor
+from src.tamm.tda import TopologicalProfiler
+from src.tamm.scorer import TopologicalScorer
+from src.tamm.logit_stability import compute_input_stability_features
+from src.tamm.persistence_stats import compute_logit_profile_features
+from src.cadg.ensemble_scorer import PersistenceEnsembleScorer
+from src.tamsh.experts import TopologyAwareMoE, ExpertSubNetwork
+from src.config import (
+    LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS,
+    BACKBONE_MEAN, BACKBONE_STD, BACKBONE_NUM_CLASSES, EPS_LINF_STANDARD,
+    PATHS, N_SUBSAMPLE, MAX_DIM, EVAL_IDX, BACKBONE_INPUT_SIZE,
+)
+from src.data_loader import load_test_dataset
+from src.models import load_backbone
+
+from art.attacks.evasion import ProjectedGradientDescent
+from art.estimators.classification import PyTorchClassifier
+
+_PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+_NORMALIZE = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
+
+N_PER_SEED = 1000
+SEEDS = [42, 123, 456, 789, 999]
+
+
+def wilson(k, n, z=1.96):
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    halfw = (z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / denom
+    return (max(0.0, centre - halfw), min(1.0, centre + halfw))
+
+
+def load_moe(device):
+    data = pickle.load(open(PATHS['experts'], 'rb'))
+    experts = []
+    for sd in data['experts']:
+        e = ExpertSubNetwork(data['input_dim'], data['output_dim'], data['hidden_dim'])
+        e.load_state_dict(sd); e.eval().to(device)
+        experts.append(e)
+    moe = TopologyAwareMoE(
+        experts=experts, expert_ref_diagrams=data['medoid_diagrams'],
+        comparison_dim=1, comparison_mode='combined',
+        h0_weight=1.0, h1_weight=1.0,
+    )
+    return moe, data['expert_names']
+
+
+def compute_score_and_acts(backbone, profiler, extractor, ens, img_pixel, device):
+    x_norm = _NORMALIZE(img_pixel).unsqueeze(0).to(device)
+    acts = extractor.extract(x_norm)
+    dgms = {L: profiler.compute_diagram(acts[L].squeeze(0).cpu().numpy())
+            for L in LAYER_NAMES}
+    use_grad = getattr(ens, 'use_grad_norm', False)
+    use_sm = getattr(ens, 'use_softmax_entropy', False)
+    use_lp = getattr(ens, 'use_logit_profile_features', False)
+    use_st = getattr(ens, 'use_stability_features', False)
+    use_dct = getattr(ens, 'use_dct', False)
+    stab_count = int(getattr(ens, 'stability_feature_count', 8) or 8)
+    img_np = img_pixel.detach().cpu().numpy() if use_dct else None
+    gn = None
+    if use_grad:
+        x_g = x_norm.detach().clone().requires_grad_(True)
+        with torch.enable_grad():
+            lg = backbone(x_g)
+            pred = int(lg.argmax(1).item())
+            (gx,) = torch.autograd.grad(lg[0, pred], x_g)
+        gn = float(gx.norm().item())
+    logits_np = None
+    if use_sm or use_lp or use_st:
+        with torch.no_grad():
+            logits_np = backbone(x_norm).squeeze(0).cpu().numpy()
+    lp = compute_logit_profile_features(logits_np) if use_lp else None
+    stab = compute_input_stability_features(
+        model=backbone, x_norm=x_norm, img_pixel=img_pixel,
+        mean=BACKBONE_MEAN, std=BACKBONE_STD,
+        logits_np=logits_np, feature_count=stab_count,
+    ) if use_st else None
+    score = float(ens.score(dgms, image=img_np, grad_norm=gn, logits=logits_np,
+                            logit_profile_features=lp, stability_features=stab))
+    a4 = acts[LAYER_NAMES[-1]]
+    pooled = torch.nn.functional.adaptive_avg_pool2d(a4, 1).flatten(1)
+    return score, dgms, pooled
+
+
+def main():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f'device: {device}, seeds={SEEDS}, n_per_seed={N_PER_SEED}')
+
+    backbone = load_backbone(device=device)
+    norm_backbone = load_backbone(device=device, wrap=True)
+    extractor = ActivationExtractor(backbone, LAYER_NAMES)
+    profiler = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
+    with open(PATHS['reference_profiles'], 'rb') as f:
+        ref = pickle.load(f)
+    base = TopologicalScorer(ref_profiles=ref, layer_names=LAYER_NAMES,
+                             layer_weights=LAYER_WEIGHTS, dim_weights=DIM_WEIGHTS)
+    ens = PersistenceEnsembleScorer.load(PATHS['ensemble_scorer'], base, LAYER_NAMES)
+    with open(PATHS['calibrator'], 'rb') as f:
+        calib = pickle.load(f)
+    L3 = calib.thresholds['L3']
+    print(f'L3 threshold: {L3:.4f}')
+    moe, expert_names = load_moe(device)
+    print(f'experts: {expert_names}')
+
+    ds = load_test_dataset(root='./data', transform=_PIXEL_TRANSFORM)
+    eval_pool = list(range(*EVAL_IDX))
+
+    classifier = PyTorchClassifier(
+        model=norm_backbone, loss=torch.nn.CrossEntropyLoss(),
+        input_shape=(3, BACKBONE_INPUT_SIZE, BACKBONE_INPUT_SIZE),
+        nb_classes=BACKBONE_NUM_CLASSES, clip_values=(0.0, 1.0),
+        device_type='gpu' if device == 'cuda' else 'cpu',
+    )
+    # PGD-40 matches paper canonical: eps=8/255, alpha=eps/4, max_iter=40, 10 restarts
+    pgd = ProjectedGradientDescent(
+        estimator=classifier, eps=EPS_LINF_STANDARD,
+        eps_step=EPS_LINF_STANDARD / 4, max_iter=40, num_random_init=10,
+    )
+
+    results = {
+        'n_per_seed': N_PER_SEED, 'seeds': SEEDS,
+        'split': 'EVAL', 'eval_idx_range': list(EVAL_IDX),
+        'L3_threshold': float(L3),
+        'pgd_config': {'eps': EPS_LINF_STANDARD, 'eps_step': EPS_LINF_STANDARD/4,
+                       'max_iter': 40, 'num_random_init': 10},
+        'per_seed': {}, 'aggregate': {},
+    }
+
+    for seed in SEEDS:
+        rng = np.random.RandomState(seed)
+        pick = sorted(rng.choice(eval_pool, N_PER_SEED, replace=False).tolist())
+        print(f'\n=== [seed {seed}] ===')
+        clean_stack = torch.stack([ds[int(i)][0] for i in pick]).to(device)
+        labels = torch.tensor([ds[int(i)][1] for i in pick]).to(device)
+
+        print(f'  PGD-40 generate...'); t0 = time.time()
+        adv_stack = torch.tensor(pgd.generate(clean_stack.cpu().numpy())).to(device)
+        print(f'    done in {time.time()-t0:.1f}s')
+
+        print(f'  scoring + L3 routing...'); t0 = time.time()
+        n_l3 = 0
+        pass_corr = 0; uni_corr = 0; topo_corr = 0
+        force_corr = 0; oracle_corr = 0
+        for i in range(N_PER_SEED):
+            img = adv_stack[i].cpu()
+            score, dgms, pooled = compute_score_and_acts(
+                backbone, profiler, extractor, ens, img, device,
+            )
+            if score <= L3:
+                continue
+            n_l3 += 1
+            true_lab = int(labels[i].item())
+            with torch.no_grad():
+                base_pred = int(norm_backbone(adv_stack[i:i+1]).argmax(1).item())
+            pass_corr += int(base_pred == true_lab)
+            with torch.no_grad():
+                out_uni, _ = moe.forward_uniform(pooled)
+            uni_corr += int(int(out_uni.argmax(1).item()) == true_lab)
+            with torch.no_grad():
+                out_topo, _ = moe.forward_through_expert(
+                    dgms[LAYER_NAMES[-1]], pooled,
+                )
+            topo_corr += int(int(out_topo.argmax(1).item()) == true_lab)
+            with torch.no_grad():
+                out_force = moe.experts[2](pooled)
+            force_corr += int(int(out_force.argmax(1).item()) == true_lab)
+            any_ok = 0
+            for k in range(len(moe.experts)):
+                with torch.no_grad():
+                    pk = int(moe.experts[k](pooled).argmax(1).item())
+                if pk == true_lab:
+                    any_ok = 1; break
+            oracle_corr += any_ok
+        dt = time.time() - t0
+        trigger_rate = n_l3 / N_PER_SEED
+        results['per_seed'][str(seed)] = {
+            'L3_trigger_rate': trigger_rate, 'n_L3': n_l3,
+            'pass_correct': pass_corr, 'uniform_correct': uni_corr,
+            'topology_correct': topo_corr,
+            'force_pgd_correct': force_corr,
+            'oracle_correct': oracle_corr,
+            'score_route_time_s': round(dt, 1),
+        }
+        if n_l3 > 0:
+            print(f'    trigger={trigger_rate:.3f} n_L3={n_l3} '
+                  f'pass={pass_corr/n_l3:.3f} uni={uni_corr/n_l3:.3f} '
+                  f'topo={topo_corr/n_l3:.3f} force={force_corr/n_l3:.3f} '
+                  f'oracle={oracle_corr/n_l3:.3f}  ({dt:.1f}s)')
+        else:
+            print(f'    trigger=0  ({dt:.1f}s)')
+
+    # Aggregate
+    print('\n=== POOLED AGGREGATE (5 seeds) ===')
+    total_l3 = sum(results['per_seed'][str(s)]['n_L3'] for s in SEEDS)
+    if total_l3 == 0:
+        results['aggregate']['PGD'] = {'n_L3_total': 0}
+        print('PGD: 0 L3 (impossible — PGD should saturate L3)')
+    else:
+        pass_t = sum(results['per_seed'][str(s)]['pass_correct'] for s in SEEDS)
+        uni_t = sum(results['per_seed'][str(s)]['uniform_correct'] for s in SEEDS)
+        topo_t = sum(results['per_seed'][str(s)]['topology_correct'] for s in SEEDS)
+        force_t = sum(results['per_seed'][str(s)]['force_pgd_correct'] for s in SEEDS)
+        oracle_t = sum(results['per_seed'][str(s)]['oracle_correct'] for s in SEEDS)
+        trigger_mean = np.mean([results['per_seed'][str(s)]['L3_trigger_rate'] for s in SEEDS])
+        agg = {
+            'n_L3_total': total_l3, 'L3_trigger_rate_mean': float(trigger_mean),
+            'pass_acc': pass_t / total_l3, 'pass_CI95': list(wilson(pass_t, total_l3)),
+            'uniform_acc': uni_t / total_l3, 'uniform_CI95': list(wilson(uni_t, total_l3)),
+            'topology_acc': topo_t / total_l3, 'topology_CI95': list(wilson(topo_t, total_l3)),
+            'force_pgd_acc': force_t / total_l3, 'force_pgd_CI95': list(wilson(force_t, total_l3)),
+            'oracle_acc': oracle_t / total_l3, 'oracle_CI95': list(wilson(oracle_t, total_l3)),
+            'gap_topo_vs_pass_pp': (topo_t / total_l3 - pass_t / total_l3) * 100,
+            'gap_uniform_vs_pass_pp': (uni_t / total_l3 - pass_t / total_l3) * 100,
+            'gap_force_vs_pass_pp': (force_t / total_l3 - pass_t / total_l3) * 100,
+            'gap_oracle_vs_pass_pp': (oracle_t / total_l3 - pass_t / total_l3) * 100,
+        }
+        results['aggregate']['PGD'] = agg
+        print(f'PGD: n_L3={total_l3}/{N_PER_SEED*len(SEEDS)}  trig={trigger_mean:.3f}  '
+              f'pass={agg["pass_acc"]:.3f}  uni={agg["uniform_acc"]:.3f} '
+              f'({agg["gap_uniform_vs_pass_pp"]:+.1f}pp)  '
+              f'topo={agg["topology_acc"]:.3f} ({agg["gap_topo_vs_pass_pp"]:+.1f}pp)  '
+              f'force={agg["force_pgd_acc"]:.3f}  oracle={agg["oracle_acc"]:.3f}')
+
+    out_path = os.path.join(HERE, 'vastai_recovery_pgd.json')
+    with open(out_path, 'w') as f:
+        json.dump(results, f, indent=2)
+    print(f'\nwrote {out_path}')
+
+
+if __name__ == '__main__':
+    main()

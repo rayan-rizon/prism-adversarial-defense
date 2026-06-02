@@ -1,0 +1,79 @@
+{
+  "AdaptivePGD_lambda_5.0": {
+    "TPR": 0.488,
+    "TPR_CI_95": [
+      0.4571,
+      0.519
+    ],
+    "FPR": 0.081,
+    "FPR_CI_95": [
+      0.0656,
+      0.0996
+    ],
+    "Precision": 0.8576,
+    "F1": 0.6221,
+    "TP": 488,
+    "FP": 81,
+    "FN": 512,
+    "TN": 919,
+    "n_adv": 1000,
+    "n_clean": 1000,
+    "per_tier_fpr": {
+      "FPR_L1_plus": 0.081,
+      "FPR_L2_plus": 0.018,
+      "FPR_L3_plus": 0.003,
+      "target_L1": 0.1,
+      "target_L2": 0.03,
+      "target_L3": 0.005,
+      "pass_L1": true,
+      "pass_L2": true,
+      "pass_L3": true
+    },
+    "clean_level_distribution": {
+      "PASS": 919,
+      "L1": 63,
+      "L2": 15,
+      "L3_REJECT": 3
+    },
+    "adversarial_level_distribution": {
+      "L3_REJECT": 403,
+      "PASS": 512,
+      "L2": 66,
+      "L1": 19
+    },
+    "lambda": 5.0,
+    "pgd_steps": 100,
+    "pgd_restarts": 10,
+    "eot_samples": 1,
+    "eps": 0.031373
+  },
+  "_meta": {
+    "n_test": 1000,
+    "n_actual": 1000,
+    "dataset": "cifar10",
+    "eval_split": "CIFAR10 test idx 8000-9999",
+    "seed": 42,
+    "eps": 0.031373,
+    "eps_note": "8/255 standard",
+    "pgd_steps": 100,
+    "pgd_restarts": 10,
+    "eot_samples": 1,
+    "eot_verify_samples": 20,
+    "eot_verification": "PRISM uses deterministic forward scoring and deterministic hash-based TDA subsampling; eot_verify_samples records the Appendix-B n=20 verification setting. Set --eot-samples 20 to force repeated identical gradient averaging.",
+    "step_size": 0.007843,
+    "lambdas": [
+      5.0
+    ],
+    "through_scorer": true,
+    "device": "cuda",
+    "elapsed_s": 13560.5,
+    "checkpoint_jsonl": "experiments/stress/vastai_wrn_adaptive_pgd_l5.jsonl",
+    "resume": false,
+    "attack_design": "BPDA adaptive PGD: combined loss = -CE + \u03bb * \u03a3_layer ||a_layer(x_adv) - a_layer(x_clean)||\u2082 / D_layer + 0.5 * |HF_energy(x_adv) - HF_energy(x_clean)| [through_scorer]. \u03bb=0 is standard PGD. Reference: Athalye et al. 2018 (Obfuscated Gradients Give a False Sense of Security, ICML).",
+    "layer_names": [
+      "layer2",
+      "layer3",
+      "layer4"
+    ]
+  }
+}

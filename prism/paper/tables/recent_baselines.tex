@@ -8,12 +8,12 @@
 % PRISM row from tables/main_attacks.tex (same EVAL split, eps=8/255).
 \begin{tabular}{llcccc}
 \toprule
-Detector & Type & FGSM & PGD & Square & CW \\
+Detector & Type & FGSM & PGD & Square & CW$^\dagger$ \\
 \midrule
 SID \cite{tian2021detecting}            & unsup.\ (no train)    & $0.296$ & $0.519$ & $0.286$ & $0.601$ \\
 SpectralDefense \cite{harder2021spectraldefense} (InputMFS) & superv.\ (per attack) & $\mathbf{1.000}$ & $\mathbf{0.999}$ & $0.208$ & $0.244$ \\
 \quad\,$\hookrightarrow$ LayerMFS variant & superv.\ (per attack) & $0.861$ & $0.899$ & $0.711$ & $0.458$ \\
 \midrule
-\textbf{PRISM (Full)} & superv.\ (FGSM/PGD/Sq mix) & $0.882$ & $0.987$ & $\mathbf{0.886}$ & $\mathbf{0.938}$ \\
+\textbf{PRISM (Full)} & superv.\ (FGSM/PGD/Sq mix) & $0.882$ & $0.987$ & $\mathbf{0.886}$ & $0.938^\dagger$ \\
 \bottomrule
 \end{tabular}

@@ -1,0 +1,109 @@
+{
+  "n_per_seed": 1000,
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "split": "EVAL",
+  "eval_idx_range": [
+    8000,
+    10000
+  ],
+  "L3_threshold": 7.108301639556885,
+  "pgd_config": {
+    "eps": 0.03137254901960784,
+    "eps_step": 0.00784313725490196,
+    "max_iter": 40,
+    "num_random_init": 10
+  },
+  "per_seed": {
+    "42": {
+      "L3_trigger_rate": 0.807,
+      "n_L3": 807,
+      "pass_correct": 25,
+      "uniform_correct": 25,
+      "topology_correct": 100,
+      "force_pgd_correct": 232,
+      "oracle_correct": 257,
+      "score_route_time_s": 49.8
+    },
+    "123": {
+      "L3_trigger_rate": 0.793,
+      "n_L3": 793,
+      "pass_correct": 28,
+      "uniform_correct": 28,
+      "topology_correct": 125,
+      "force_pgd_correct": 253,
+      "oracle_correct": 281,
+      "score_route_time_s": 49.1
+    },
+    "456": {
+      "L3_trigger_rate": 0.785,
+      "n_L3": 785,
+      "pass_correct": 25,
+      "uniform_correct": 25,
+      "topology_correct": 100,
+      "force_pgd_correct": 230,
+      "oracle_correct": 255,
+      "score_route_time_s": 49.4
+    },
+    "789": {
+      "L3_trigger_rate": 0.783,
+      "n_L3": 783,
+      "pass_correct": 24,
+      "uniform_correct": 24,
+      "topology_correct": 111,
+      "force_pgd_correct": 231,
+      "oracle_correct": 255,
+      "score_route_time_s": 49.5
+    },
+    "999": {
+      "L3_trigger_rate": 0.79,
+      "n_L3": 790,
+      "pass_correct": 23,
+      "uniform_correct": 23,
+      "topology_correct": 114,
+      "force_pgd_correct": 241,
+      "oracle_correct": 264,
+      "score_route_time_s": 48.1
+    }
+  },
+  "aggregate": {
+    "PGD": {
+      "n_L3_total": 3958,
+      "L3_trigger_rate_mean": 0.7916000000000001,
+      "pass_acc": 0.03158160687215766,
+      "pass_CI95": [
+        0.02657116975700227,
+        0.03750044784628605
+      ],
+      "uniform_acc": 0.03158160687215766,
+      "uniform_CI95": [
+        0.02657116975700227,
+        0.03750044784628605
+      ],
+      "topology_acc": 0.13895907023749368,
+      "topology_CI95": [
+        0.12853229629003243,
+        0.1500860109133651
+      ],
+      "force_pgd_acc": 0.2998989388580091,
+      "force_pgd_CI95": [
+        0.2858232452543496,
+        0.31436268847909393
+      ],
+      "oracle_acc": 0.3314805457301668,
+      "oracle_CI95": [
+        0.3169844037477688,
+        0.3463034975151186
+      ],
+      "gap_topo_vs_pass_pp": 10.737746336533602,
+      "gap_uniform_vs_pass_pp": 0.0,
+      "gap_force_vs_pass_pp": 26.831733198585145,
+      "gap_oracle_vs_pass_pp": 29.98989388580091
+    }
+  }
+}

@@ -1,0 +1,19 @@
+\section*{NeurIPS Paper Checklist}
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Claims.} Answer: \answerYes{}. The abstract, results, and limitations state that all claims are empirical detection claims; AutoAttack, adaptive PGD, test-split fitting, and recovery-oracle caveats are explicit.
+\item \textbf{Limitations.} Answer: \answerYes{}. Section~\ref{sec:limitations} states the public-test-split fitting issue, adaptive-PGD weakness, pooled-CI caveat, and CW-baseline mismatch.
+\item \textbf{Theory assumptions and proofs.} Answer: \answerYes{}. The conformal statement is limited to exchangeable clean calibration/test scores; it is a false-alarm guarantee, not a robustness proof.
+\item \textbf{Experimental reproducibility.} Answer: \answerYes{}. Section~\ref{sec:protocol} gives datasets, backbones, attacks, seeds, sample counts, split windows, and core hyperparameters; the anonymized artifact supplement includes scripts and JSON artifacts.
+\item \textbf{Open access to data and code.} Answer: \answerYes{}. CIFAR-10/CIFAR-100 are public. The submission includes an anonymized source/artifact bundle; no author-identifying paths or accounts remain in that bundle.
+\item \textbf{Experimental setting/details.} Answer: \answerYes{}. The paper discloses split windows, $\varepsilon=8/255$, seed list, attack families, CW configuration, AutoAttack definition, and adaptive-PGD confirmation scope.
+\item \textbf{Experiment statistical significance.} Answer: \answerYes{}. Tables report Wilson 95\% intervals and/or seed standard deviations; Section~\ref{sec:limitations} explains where overlapping seed pools make pooled intervals mildly anti-conservative.
+\item \textbf{Compute resources.} Answer: \answerYes{}. The supplement preserves the CUDA/Vast.ai launch scripts and GPU requirements; the main paper states the reproduction path at a high level.
+\item \textbf{Code of ethics.} Answer: \answerYes{}. Defensive adversarial-ML work on public benchmark images; no human subjects, PII, scraping, or generative model release.
+\item \textbf{Broader impacts.} Answer: \answerYes{}. The impact paragraph states positive runtime-screening use and the risk of over-trusting empirical detectors outside calibration.
+\item \textbf{Safeguards.} Answer: \answerNA{}. No high-risk generative model, scraped dataset, or human-subject asset is released.
+\item \textbf{Licenses for existing assets.} Answer: \answerYes{}. CIFAR, ImageNet-pretrained ViT, attacks, detectors, and GUDHI are cited; the anonymized supplement includes license metadata.
+\item \textbf{New assets.} Answer: \answerYes{}. The anonymized supplement documents source modules, scripts, configs, result JSONs, and released detector/profile artifacts.
+\item \textbf{Crowdsourcing/human subjects.} Answer: \answerNA{}. No crowdsourcing or human-subject experiments.
+\item \textbf{IRB approvals.} Answer: \answerNA{}. Public benchmark-only work; no IRB-applicable study.
+\item \textbf{Declaration of LLM usage.} Answer: \answerNA{}. LLMs are not part of the scientific method, model, detector, experiments, or reported results.
+\end{enumerate}

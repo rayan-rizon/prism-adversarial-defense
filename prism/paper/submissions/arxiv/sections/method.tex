@@ -1,0 +1,340 @@
+\section{Method}
+\label{sec:method}
+
+Figure~\ref{fig:architecture} shows the \prism pipeline.
+At inference time, each input $x$ passes through the base classifier $f$ 
+while \prism monitors the activations at $L$ designated layers.
+The defense proceeds in five stages.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig1_architecture.pdf}
+  \caption{%
+    \prism defense pipeline.
+    Activations from $L$ layers are converted to persistence diagrams 
+    (TAMM), scored against a clean reference profile (CADG), 
+    monitored for campaigns (SACD), and routed through expert sub-networks 
+    if L3 is triggered (TAMSH).
+  }
+  \label{fig:architecture}
+\end{figure}
+
+% ── Notation ────────────────────────────────────────────────────────────────
+\paragraph{Notation.}
+Let $f: \mathcal{X} \to \mathbb{R}^C$ be a pre-trained classifier.
+Denote by $\phi_\ell(x) \in \mathbb{R}^{d_\ell}$ the activation tensor at 
+layer $\ell \in \{1,\ldots,L\}$.
+A \emph{persistence diagram} $\mathrm{Dgm}(\cdot)$ is a multiset of 
+$(b_i, d_i)$ pairs encoding topological features (birth/death of connected 
+components in $H_0$ and loops in $H_1$).
+The $p$-Wasserstein distance between diagrams is
+\[
+  W_p(\mathcal{D}_1, \mathcal{D}_2) = 
+  \left( \inf_{\gamma} \sum_{i} \| \gamma(i) - i \|^p \right)^{1/p},
+\]
+where $\gamma$ ranges over bijections between the points 
+(including diagonal projections for unmatched points) \cite{edelsbrunner2010computational}.
+
+% ── TAMM ────────────────────────────────────────────────────────────────────
+\subsection{TAMM: Topological Activation Manifold Monitor}
+\label{sec:tamm}
+
+\paragraph{Reference profile construction.}
+Given a held-out profile split $\mathcal{D}_\text{profile} = \{x_i\}_{i=1}^N$ of clean
+inputs, we extract activations $\phi_\ell(x_i)$ for each layer $\ell$ and 
+subsample deterministically to at most $n_\text{sub}=150$ points to make persistent homology
+computation tractable.
+For each layer, we compute $N$ persistence diagrams and select the 
+\emph{Wasserstein medoid}---the diagram minimizing total Wasserstein distance 
+to all other diagrams---as the layer reference $\mathcal{R}_\ell$.
+
+\paragraph{Anomaly scoring.}
+At inference time, for input $x$, we compute a base topological score
+\begin{align}
+  s_\ell(x) &= W_2\bigl(\mathrm{Dgm}(\phi_\ell(x)),\, \mathcal{R}_\ell\bigr), \\
+  S_\mathrm{TDA}(x) &= \sum_{\ell=1}^L w_\ell s_\ell(x),
+  \label{eq:score}
+\end{align}
+with live weights $w_{\texttt{layer2}}=0.30$,
+$w_{\texttt{layer3}}=0.30$, and $w_{\texttt{layer4}}=0.40$.
+The publishable detector is not the Wasserstein score alone: \prism feeds
+six feature families into a logistic ensemble, then fuses the centered
+ensemble logit with $S_\mathrm{TDA}(x)$. Concretely, each input $x$
+produces a feature vector
+\[
+  \mathbf{f}(x) =
+  \bigl[\,
+    \mathbf{f}_\mathrm{TDA}(x),\;
+    f_\mathrm{DCT}(x),\;
+    f_\mathrm{ent}(x),\;
+    f_\mathrm{grad}(x),\;
+    \mathbf{f}_\mathrm{stab}(x),\;
+    \mathbf{f}_\mathrm{logit}(x)
+  \,\bigr] \in \mathbb{R}^{d_\text{ens}},
+\]
+combining six channels:
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{TDA features} $\mathbf{f}_\mathrm{TDA}$: per-layer
+    persistence statistics derived from $\mathrm{Dgm}(\phi_\ell(x))$
+    (number of $H_0/H_1$ features, total persistence, max persistence,
+    persistence entropy).
+  \item \textbf{DCT high-frequency energy} $f_\mathrm{DCT}(x) =
+    \sum_{(u,v) \in \mathcal{H}} |X_{u,v}|^2$, where $X$ is the 2-D DCT
+    of $x$ and $\mathcal{H}$ indexes the upper $\nicefrac{3}{4}$
+    band-limited region.
+  \item \textbf{Softmax entropy}
+    $f_\mathrm{ent}(x) = -\sum_c p_c(x) \log p_c(x)$ with
+    $p(x)=\mathrm{softmax}(f(x))$.
+  \item \textbf{Gradient norm}
+    $f_\mathrm{grad}(x) = \|\nabla_x \mathcal{L}_\text{CE}(f(x), \hat{y})\|_2$,
+    computed via \texttt{torch.autograd.grad} on the input (not on
+    model parameters), where $\hat{y}=\arg\max f(x)$.
+  \item \textbf{StabilityV2 features} $\mathbf{f}_\mathrm{stab}(x)$:
+    softmax-confidence drop under $M{=}5$ jittered copies
+    $x + \xi_i,\, \xi_i \sim \mathcal{N}(0,\sigma^2 I)$,
+    summarised by mean / max / variance of the per-sample confidence
+    deltas. There is no closed-form exact surrogate for the deployed
+    jittered statistic; the ensemble-complete BPDA attack
+    (\S\ref{sec:adaptive}) therefore targets a differentiable proxy for
+    this channel.
+  \item \textbf{Logit-profile features} $\mathbf{f}_\mathrm{logit}(x)$:
+    moments of $f(x)$ (max-margin, top-2 gap, entropy of $|f(x)|$),
+    capturing classifier-confidence anomalies orthogonal to TDA.
+\end{itemize}
+Concretely, the raw feature vector has $d_\text{ens}=55$ dimensions:
+$36$ TDA persistence statistics ($6$ statistics $\times\,2$ homology
+dimensions $\times\,3$ monitored layers), plus $f_\mathrm{DCT}$,
+$f_\mathrm{ent}$, $8$ logit-profile features, $8$ StabilityV2 features,
+and $1$ gradient-norm feature. The deployed contract is recorded as
+\texttt{feature\_space\_version =
+pixel-stability-v2+logitprofile+sidequad+gradnorm}. The linear heads
+additionally consume a \emph{side-quadratic} interaction basis: the
+$190$ pairwise products (upper triangle including the diagonal) of the
+$19$ non-TDA side channels (raw indices $36$--$54$), expanding the
+logistic-regression input to $55+190=245$ dimensions. Persistence
+extraction, the external $55$-feature contract, and the split-conformal
+calibration all operate on the raw $55$ features; the $245$-dimensional
+expansion affects only the linear head.
+The ensemble logit is the logistic regression
+$\ell_\mathrm{ens}(x) = \mathbf{w}^\top \psi(\mathbf{f}(x)) + b$, where
+$\psi$ appends the side-quadratic terms; it is centred on
+the calibration distribution to yield
+$\tilde\ell_\mathrm{ens}(x) = \ell_\mathrm{ens}(x) - \ell_\mathrm{shift}$.
+The weights $(\mathbf{w}, b)$ are fit by supervised logistic regression on a
+dedicated training split (CIFAR test indices $[0,4999]$, disjoint from
+calibration $[5000,7999]$ and evaluation $[8000,9999]$) labelled clean vs.\
+adversarial, with adversarials drawn from a \emph{balanced FGSM/PGD/Square mix}
+($n{=}1500$); CW-L2 and AutoAttack are deliberately \emph{excluded} from the
+training mix. \prism is therefore a supervised \emph{multi-attack} detector ---
+a single model trained on three attack families and evaluated on two further
+\emph{unseen} families (CW, AutoAttack), in contrast to per-attack detectors
+that retrain on each target attack (\S\ref{sec:experiments},
+Appendix~\ref{app:recent_baselines}).
+The three index ranges $[0,4999]$/$[5000,7999]$/$[8000,9999]$ are mutually
+disjoint, so no image is shared across head-fitting, calibration, and
+evaluation; all three, however, are carved from the official CIFAR-10
+\emph{test} file (the standard detector-benchmark pool). Sourcing the
+head-fitting and calibration partitions from the CIFAR-10 \emph{train}
+split and reserving the official test set for final evaluation only is the
+stricter protocol, and we flag it as the clean fix for future runs.
+The final \prism score is the convex combination
+$S(x) = \alpha\, S_\mathrm{TDA}(x) + (1 - \alpha)\, \tilde\ell_\mathrm{ens}(x)$
+fed to the \cadg conformal calibrator, with $\alpha$ controlling the
+TDA-vs-ensemble trade-off. The deployed configuration uses
+$\alpha = 0.2$ for both CIFAR-10/100 ResNet-18 and $\alpha = 0.5$ for
+WRN-28-10 (re-tuned per backbone on the same calibration split). The
+\emph{ensemble-no-TDA} ablation sets $\alpha = 0$ (equivalently, zeros
+$\mathbf{f}_\mathrm{TDA}$ and skips the TDA term) to isolate the
+marginal value of persistence features. The \emph{channel-mask}
+ablations (\S\ref{sec:ablation}) zero one of
+$\{f_\mathrm{DCT}, f_\mathrm{grad}, \mathbf{f}_\mathrm{stab},
+\mathbf{f}_\mathrm{logit}\}$ at scoring time while reusing the
+Full-PRISM threshold, exposing each family's per-attack contribution.
+
+% ── CADG ────────────────────────────────────────────────────────────────────
+\subsection{CADG: Conformal Adversarial Detection Guarantee}
+\label{sec:cadg}
+
+\prism applies split conformal prediction \cite{vovk2005algorithmic,angelopoulos2023gentle} 
+to calibrate detection thresholds with distribution-free FPR guarantees.
+
+\paragraph{Calibration.}
+Given held-out clean scores $s_1, \ldots, s_n$ (iid from the clean distribution), 
+the conformal threshold at level $\alpha \in (0,1)$ is:
+\begin{equation}
+  \hat{q}_\alpha = s_{(\lceil (n+1)(1-\alpha) \rceil)},
+  \label{eq:quantile}
+\end{equation}
+where $s_{(k)}$ denotes the $k$-th order statistic.
+
+\begin{proposition}[Coverage guarantee]
+\label{prop:coverage}
+For any clean test input $x_{\text{test}}$ drawn iid from the same 
+distribution as the calibration set,
+\[
+  \Pr\bigl[S(x_{\text{test}}) > \hat{q}_\alpha\bigr] \leq \alpha + \frac{1}{n+1}.
+\]
+\end{proposition}
+
+\noindent
+This follows directly from the standard conformal coverage theorem 
+\cite{vovk2005algorithmic}.
+\prism uses three published FPR tiers with $\alpha \in \{0.10, 0.03, 0.005\}$.
+Thresholds are generated by the artifact pipeline ($n_\text{cal}=2{,}000$
+clean calibration scores; reproducible via the seed list and conformal
+quantile in Eq.~(\ref{eq:quantile})) and imported into the paper tables;
+fixed numeric thresholds are not hand-transcribed. All reported TPR/FPR
+confidence intervals are Wilson 95\% binomial intervals computed from
+pooled per-seed $(TP,FP,FN,TN)$ counts; per-seed standard deviations are
+the sample standard deviation across the five fixed seeds.
+\paragraph{Eval-pool overlap (CI caveat).} Each seed subsamples
+$n{=}1000$ adversarials from the shared $2{,}000$-image evaluation
+window (\texttt{eval\_idx}$=[8000,10000]$), so the five per-seed pools
+overlap heavily: a pooled $n{=}5000$ count covers only $\approx 1929$
+\emph{unique} source images. The pooled Wilson interval therefore treats
+overlapping draws as independent and is mildly anti-conservative (too
+narrow); we report the per-seed standard deviation alongside every
+pooled interval as the seed-level dispersion check, and flag disjoint
+per-seed eval windows (or image-clustered CIs) as the clean statistical
+fix for future runs. The disjoint-window cross-check that confirms the
+overlap is immaterial (Appendix~\ref{app:audit}) was run only for
+FGSM/PGD/Square on CIFAR-10/ResNet-18; the pooled Wilson intervals for
+CW-L2, AutoAttack, and the WRN-28-10, CIFAR-100, and ViT-B/16 settings
+share the same overlapping-pool construction and should therefore be
+read as similarly approximate (mildly anti-conservative) until an
+analogous disjoint or image-clustered recomputation is run.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccl}
+\toprule
+Tier & $\alpha$ & Threshold source & Action \\
+\midrule
+L1 & 0.10 & split conformal artifact & Log + normal inference \\
+L2 & 0.03 & split conformal artifact & Input purification + inference \\
+L3 & 0.005 & split conformal artifact & Expert routing (MoE) or reject \\
+\bottomrule
+\end{tabular}
+\caption{Conformal detection tiers. Thresholds are calibrated on the active
+dataset's clean calibration split and verified on a disjoint validation split.}
+\label{tab:tiers}
+\end{table}
+
+\paragraph{Campaign-adaptive thresholds.}
+When the L0 campaign detector (\S\ref{sec:sacd}) is active, thresholds are 
+multiplied by a factor $\lambda \in (0,1)$ (default $\lambda=0.8$) to increase 
+sensitivity during sustained attacks, accepting a controlled FPR increase.
+
+% ── SACD ────────────────────────────────────────────────────────────────────
+\subsection{SACD: Sequential Adversarial Campaign Detection}
+\label{sec:sacd}
+
+Real-world adversaries often execute \emph{campaigns}: sequences of probing
+queries before a targeted attack.
+\sacd monitors the score stream $S(x_1), S(x_2), \ldots$ online via a
+\emph{centred-score CUSUM} detector whose statistics are computed on top
+of a Bayesian Online Changepoint Detection (BOCPD)
+\cite{adams2007bayesian} substrate (Normal-Inverse-Gamma conjugate prior,
+hazard rate $1/30$). BOCPD maintains the posterior run-length
+distribution $p(r_t \mid S_{1:t})$ and yields, at each step $t$, the
+short-run probability
+$\Pr[r_t \leq k_\text{alert}]$ that is available as an alternative
+trigger:
+\begin{equation}
+  \Pr[r_t \leq k_\text{alert}] > p_\text{alert}, \quad t > t_\text{warmup},
+  \label{eq:l0_trigger}
+\end{equation}
+with $k_\text{alert}=10$, $p_\text{alert}=0.60$.
+A grid search over BOCPD-only, CUSUM-only, and hybrid modes
+(\path{scripts/calibrate_l0_thresholds.py}) selected CUSUM-only as
+the deployed mode under the constraint
+\textit{clean-only L0 activation fraction} $\leq 0.01$; the calibrated
+artifact (\path{models/l0_thresholds.pkl}) is the threshold source for
+every campaign run reported in this paper.
+
+\paragraph{Deployed CUSUM trigger.}
+The deployed detector tracks
+$C_t = \max(0,\, C_{t-1} + (z_t - \delta))$ over centred scores
+$z_t = (S(x_t) - \mu_\text{cal}) / \sigma_\text{cal}$ standardised by the
+calibration-set clean-score mean $\mu_\text{cal}=0.281$ and standard
+deviation $\sigma_\text{cal}=1.639$. We require a strictly positive drift
+floor: with $\delta = 0$, $C_t$ accumulates without the negative reset
+term and crosses any finite trigger on long enough clean streams,
+producing up to $59.4\%$ active-fraction on clean-only inputs at seed-42
+in our pre-fix runs. The F1 calibration raises $\delta$ from $0$ to
+$\mathbf{1.0}$ (one calibration-clean standard deviation) and requires
+$k_\text{consec}$ consecutive trigger steps before raising the alert,
+with cusum threshold $C^* = 5.0$ (CIFAR-10) and warmup
+$t_\text{warmup}=20$. With $\delta=1.0,\, k_\text{consec}=3$ on CIFAR-10
+(respectively $k_\text{consec}=5$ on CIFAR-100, calibrated per-dataset),
+the active fraction on a 500-step clean-only stream is $0.000$ on all 5
+seeds. Sensitivity to each hyperparameter is reported in
+Appendix~\ref{app:hyperparams}.
+
+\paragraph{Headline metric.}
+We report \emph{time-to-detect} (mean number of queries between the first
+adversarial step and the first L0 trigger) as the primary campaign-detection
+metric. A naive ``ASR gap (L0 off vs.\ L0 on)'' metric at $\rho{=}1.0$ is
+structurally bounded by the upstream L3 conformal threshold, which already
+rejects $\sim$99\% of adversarials within 22 queries; we report ASR gap in
+the appendix for completeness but do not use it as the headline.
+
+% ── TAMSH ────────────────────────────────────────────────────────────────────
+\subsection{TAMSH: Topology-Aware MoE Self-Healing}
+\label{sec:tamsh}
+
+Inputs that breach the L3 threshold are highly likely adversarial.
+Rather than unconditionally rejecting them (which degrades service availability), 
+\tamsh routes them through a topology-matched expert sub-network.
+
+\paragraph{Expert training.}
+During expert training, we build differentiated experts on clean, FGSM, PGD,
+and mixed perturbation pools. Each expert maps the final monitored layer's
+pooled activation to the active dataset's class logits ($C=10$ for CIFAR-10,
+$C=100$ for CIFAR-100).
+
+\paragraph{Expert routing.}
+At runtime, for an L3-tier input $x$, we select an expert by comparing the
+input's persistence diagram to each expert's reference medoid using a
+\emph{combined} $H_0$+$H_1$ Wasserstein metric:
+\begin{equation}
+  k^*(x) = \arg\min_{k=1}^{K}\, \Bigl[\,
+    w_0 W_2\!\bigl(\mathrm{Dgm}_{H_0}(\phi_L(x)),\, \mathcal{R}_k^{L,H_0}\bigr)
+  + w_1 W_2\!\bigl(\mathrm{Dgm}_{H_1}(\phi_L(x)),\, \mathcal{R}_k^{L,H_1}\bigr) \Bigr],
+  \label{eq:routing}
+\end{equation}
+with $w_0 = w_1 = 1$ in the deployed configuration.
+The combined metric is required because on \texttt{layer4} of a CIFAR-native
+ResNet-18 the $H_1$ medoid diagrams are sparse (1--3 points per expert);
+restricting routing to $H_1$ alone causes 22.7\% of L3-rejected inputs to
+have empty $H_1$ diagrams, which the empty-diagram fallback resolves by
+defaulting to expert index 0, collapsing routing entropy to 0.336/2.000~bits.
+Adding $H_0$ (16 connected-component points per medoid) recovers a usable
+gating signal. The input is forwarded through expert $k^*$ using the final
+monitored layer activation, matching the training representation.
+
+\paragraph{Routing variants and the uniform-router control.}
+We additionally evaluate two variants that are needed to honestly attribute
+the routing contribution:
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Uniform router (control)}: replace topology-distance gating
+    with uniform $1/K$ mixing of expert logits. This isolates the
+    contribution of the routing \emph{signal} from any standalone capacity
+    of the expert sub-networks.
+  \item \textbf{Prior-augmented router}: always route to the attack
+    specialist expert (we use the PGD-trained expert because L3-rejected
+    inputs are by definition high-confidence adversarials and PGD is the
+    dominant adversarial signal in the training mix).
+\end{itemize}
+\S\ref{sec:recovery} reports recovery accuracy under all three router
+configurations. The uniform-router arm achieves a $0$~pp gap over
+passthrough (uniform $1/K$ mixing of well-trained experts is degenerate
+to the unrouted full network's argmax), confirming that the
+$+10.6$~pp gap of the combined-metric topology gate is attributable to the
+gating signal, and the further $+15.4$~pp lift of the prior-augmented
+router reflects correct expert specialization under a strong prior. A
+\emph{learned} router trained on the L3 pool (logistic regression on
+final-layer activations) clears the pre-registered target, matching the
+prior-augmented router without its hardcoded prior
+(\S\ref{sec:recovery}, Appendix~\ref{app:tamsh_diag}).

@@ -1,0 +1,27 @@
+{
+  "_description": "5-seed per-input best-of-K oracle ceiling on the PGD L3-rejected pool, recomputed at n_test=1000/seed via scripts/diagnose_tamsh.py. Replaces the prior single-seed (seed42, n=200, n_l3=163) oracle of 0.3987, which was a small-sample overestimate.",
+  "source_script": "scripts/diagnose_tamsh.py --n-test 1000 --seed {42,123,456,789,999}",
+  "per_seed": {
+    "42":  {"n_l3": 790, "oracle_acc": 0.330379746835443,  "expert2_pgd_acc": 0.2949367088607595},
+    "123": {"n_l3": 804, "oracle_acc": 0.3333,              "expert2_pgd_acc": 0.2960},
+    "456": {"n_l3": 780, "oracle_acc": 0.3205,              "expert2_pgd_acc": 0.2859},
+    "789": {"n_l3": 813, "oracle_acc": 0.3173,              "expert2_pgd_acc": 0.2952},
+    "999": {"n_l3": 793, "oracle_acc": 0.3203,              "expert2_pgd_acc": 0.2926}
+  },
+  "oracle_mean": 0.3244,
+  "oracle_std": 0.0070,
+  "oracle_pooled": 0.3244,
+  "mean_n_l3": 796.0,
+  "expert2_pgd_mean": 0.2929,
+  "cross_check": "expert2_pgd_mean 0.2929 matches canonical recovery_uniform tamsh_force 0.293, confirming this diagnostic pool is equivalent to the recovery table pool.",
+  "derived_vs_canonical_recovery_table": {
+    "passthrough": 0.033,
+    "topology_gate_combined": 0.139,
+    "topology_gate_frac_of_oracle": 0.429,
+    "tamsh_force_pgd": 0.293,
+    "tamsh_force_frac_of_oracle": 0.904,
+    "learned_router": 0.287,
+    "learned_router_frac_of_oracle": 0.885,
+    "oracle_gap_over_passthrough_pp": 29.1
+  }
+}

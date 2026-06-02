@@ -26,6 +26,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+})
+
 ATTACK_ORDER = ['FGSM', 'PGD', 'Square', 'AutoAttack', 'CW']
 ATTACK_COLORS = {
     'FGSM': '#1f77b4',

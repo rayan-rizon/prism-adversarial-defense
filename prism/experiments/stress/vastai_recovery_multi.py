@@ -279,7 +279,9 @@ def main():
               f'topo={agg["topology_acc"]:.3f} ({agg["gap_topo_vs_pass_pp"]:+.1f}pp)  '
               f'force={agg["force_pgd_acc"]:.3f}  oracle={agg["oracle_acc"]:.3f}')
 
-    out_path = os.path.join(HERE, 'vastai_recovery_multi.json')
+    _suffix = os.environ.get('PRISM_OUT_SUFFIX', '')
+    _suffix = f'_{_suffix}' if _suffix else ''
+    out_path = os.path.join(HERE, f'vastai_recovery_multi{_suffix}.json')
     with open(out_path, 'w') as f:
         json.dump(results, f, indent=2)
     print(f'\nwrote {out_path}')

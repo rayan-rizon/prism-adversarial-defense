@@ -1,0 +1,98 @@
+# PRISM config - ViT-B/16 backbone on CIFAR-10.
+#
+# Purpose: non-CNN multi-backbone validation. This config keeps all
+# ViT artifacts separate from the ResNet-18/WRN/CIFAR-100 runs.
+#
+# Full artifact build:
+#   python scripts/pretrain_vit_backbone.py --dataset cifar10 --epochs 20 \
+#       --batch-size 96 --lr 3e-5 --output models/vit_cifar10/vit_b16_cifar10.pt
+#   python scripts/build_profile_testset.py  --config configs/vit_cifar10.yaml
+#   python scripts/train_ensemble_scorer.py --config configs/vit_cifar10.yaml \
+#       --n-train 1500 --source-split profile --balanced-attacks \
+#       --pgd-train-steps 40 --square-train-max-iter 500 \
+#       --use-stability-features --use-logit-profile-features \
+#       --use-side-quadratic-features --use-grad-norm
+#   python scripts/calibrate_ensemble.py --config configs/vit_cifar10.yaml
+#   python scripts/compute_ensemble_val_fpr.py --config configs/vit_cifar10.yaml
+
+model:
+  arch: vit_b_16
+  name: torchvision_vit_b_16
+  backbone_checkpoint: models/vit_cifar10/vit_b16_cifar10.pt
+  num_classes: 10
+  layer_names:
+    - encoder.layers.encoder_layer_3
+    - encoder.layers.encoder_layer_7
+    - encoder.layers.encoder_layer_11
+  layer_weights:
+    encoder.layers.encoder_layer_3: 0.30
+    encoder.layers.encoder_layer_7: 0.30
+    encoder.layers.encoder_layer_11: 0.40
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas:
+    L1: 0.10
+    L2: 0.03
+    L3: 0.005
+  cal_alpha_factor: 0.7
+  tier_cal_alpha_factors:
+    L1: 0.75
+    L2: 0.55
+    L3: 0.52
+
+splits:
+  profile_idx: [0,    5000]
+  cal_idx:     [5000, 7000]
+  val_idx:     [7000, 8000]
+  eval_idx:    [8000, 10000]
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 10
+  alert_run_prob: 0.60
+  warmup_steps: 35
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: cifar10
+  image_size: 224
+  # ImageNet normalization matches the torchvision ViT-B/16 pretrained stem.
+  mean: [0.485, 0.456, 0.406]
+  std:  [0.229, 0.224, 0.225]
+  data_root: ./data
+
+profiling:
+  n_clean_images: 10000
+
+evaluation:
+  n_test_images: 1000
+  attacks:
+    - FGSM
+    - PGD
+    - CW
+    - Square
+    - HopSkipJump
+
+paths:
+  reference_profiles: models/vit_cifar10/reference_profiles.pkl
+  calibrator:         models/vit_cifar10/calibrator.pkl
+  ensemble_scorer:    models/vit_cifar10/ensemble_scorer.pkl
+  experts:            models/vit_cifar10/experts.pkl
+  clean_scores:       experiments/vit_cifar10/calibration/vit_cifar10_clean_scores.npy

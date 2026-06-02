@@ -250,7 +250,7 @@ $39.78$~ms in Table~\ref{tab:latency} (which used the same hardware on
 a different EVAL subsample). The breakdown identifies which channels
 dominate the budget --- relevant for ensemble-pruning ablations and
 for deciding which channels are worth a closed-form differentiable
-surrogate in a future ensemble-complete adaptive attack
+surrogate in ensemble-complete adaptive attacks
 (\S\ref{sec:conclusion}).
 
 \begin{table}[h]
@@ -293,17 +293,17 @@ StabilityV2 climb. Source:
 \paragraph{Implications for adaptive-attack design.}
 The combined gradient-norm + StabilityV2 + ensemble-fusion budget
 ($\sim 60\%$ of forward time) is also the portion of the pipeline that
-the canonical adaptive attack (\S\ref{sec:adaptive}) does not target,
-because StabilityV2's $M{=}5$ jitter-stability statistic has no
-closed-form differentiable surrogate, and gradient-norm is itself a
-gradient quantity. A genuine ensemble-complete BPDA must either
-(i) construct a surrogate (e.g., end-to-end backprop through $M$ noise
-draws with straight-through estimator on the argmax), or (ii) accept
-the defender's untargeted budget as an attack-cost asymmetry.
+the earlier two-channel adaptive attack did not target. The
+ensemble-complete BPDA in Table~\ref{tab:adaptive_pgd} adds surrogate
+losses for these components, but those surrogates are expensive:
+StabilityV2 requires repeated transformed forwards, gradient norm
+requires higher-order differentiation, and the side-quadratic score
+adds cross-channel terms. This turns part of \prism's inference cost
+into an attack-cost asymmetry rather than an untested blind spot.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
-\section{High-Confidence CW Sensitivity ($\kappa$ Sweep)}
+\section{High-Confidence CW Sensitivity (\texorpdfstring{$\kappa$}{kappa} Sweep)}
 \label{app:strong_cw}
 
 The canonical CW evaluation in Table~\ref{tab:main} uses a small
@@ -359,7 +359,7 @@ samples is a natural robustness lever for future work. Source:
 
 % ─────────────────────────────────────────────────────────────────────────────
 
-\section{AutoAttack-$L_\infty$ Evaluation}
+\section{AutoAttack-\texorpdfstring{$L_\infty$}{L-infinity} Evaluation}
 \label{app:autoattack}
 
 AutoAttack~\cite{croce2020reliable} is the de-facto standard
@@ -621,11 +621,20 @@ gating. Diagnostic audit (seed 42, $n=200$ PGD inputs) showed:
 The F4 fix adds an $H_0$ term to the routing metric (Eq.~\ref{eq:routing}):
 $H_0$ medoid diagrams have $\sim$16 points (one per connected component
 at large filtration radius) and are sufficiently dense for Wasserstein
-gating to be informative. On the 5-seed L3-rejected pool, per-input
-oracle (best-of-$K$) ceiling is $39.9\%$ recovery; the combined-metric
-router achieves $13.9\%$ ($35\%$ of oracle, $+10.6$~pp over passthrough);
-always-route-to-expert-2 achieves $29.3\%$ ($73\%$ of oracle, $+26.0$~pp
-over passthrough, clearing the $+15$~pp C4 gate).
+gating to be informative. On the same-protocol 5-seed PGD L3 pool
+($n_{L3}{\approx}796$/seed, recomputed at $n_\text{test}{=}1000$/seed via
+\texttt{scripts/diagnose\_tamsh.py}), the per-input oracle (best-of-$K$)
+ceiling is $\mathbf{32.4\% \pm 0.7}$ recovery; against this ceiling the
+combined-metric router achieves $13.9\%$ ($\approx 43\%$ of oracle,
+$+10.6$~pp over passthrough) and always-route-to-expert-2 achieves
+$29.3\%$ ($\approx 90\%$ of oracle, $+26.0$~pp over passthrough, clearing
+the $+15$~pp C4 gate), where the $13.9\%$/$29.3\%$ recovery accuracies are
+the 5-seed canonical pool values of Table~\ref{tab:recovery}. This oracle
+recompute supersedes an earlier single-seed figure ($39.9\%$ on the
+seed-42 diagnostic, $n_{L3}{=}163$), which was a small-sample overestimate;
+the recomputed $32.4\%$ now agrees with the independent learned-router
+evaluation pool below ($32.5\%$). Source:
+\texttt{experiments/recovery\_oracle/oracle\_aggregate.json}.
 
 \paragraph{Learned router (C4).}
 The combined-metric topology router clears the gate only by a small margin,
@@ -641,8 +650,8 @@ $13.7\%$ ($2.1\times$) --- reproducing the uniform/topology/force baselines
 of the preceding paragraph and Table~\ref{tab:recovery} --- and it matches the
 always-route-to-expert-2 upper baseline ($29.3\%$) \emph{without} hardcoding
 the target expert. (Best-of-$K$ oracle on this router-evaluation pool is
-$32.5\%$; the $39.9\%$ figure above is the canonical recovery pool of
-Table~\ref{tab:recovery}, a different L3 sample.) Critically, the $+25.5$~pp
+$32.5\%$, consistent with the recomputed $32.4\%$ ceiling on the recovery
+pool above; both supersede the earlier single-seed $39.9\%$.) Critically, the $+25.5$~pp
 gain over the uniform control isolates the routing signal from expert
 capacity, which is what the uniform control was designed to test. The router is opt-in
 (\texttt{TopologyAwareMoE.set\_learned\_router}); detection (TAMM/CADG/SACD)
@@ -707,15 +716,16 @@ pool is L1 $=0.073$, L2 $=0.025$, L3 $=0.002$. Source:
 Table~\ref{tab:c100_adaptive} reports adaptive PGD (BPDA,
 activation-matching + DCT-energy matching via
 \texttt{--through-scorer}) with 100 steps and 10 restarts across the
-$\lambda$ sweep used in \S\ref{sec:adaptive}. CIFAR-100 \prism is
-robust to the adaptive attack: TPR holds in $[0.92, 0.95]$ across
-$\lambda \in [0, 10]$, in marked contrast to the CIFAR-10 result
-(Table~\ref{tab:adaptive_pgd}), where the same attack collapses TPR
-from $0.832$ at $\lambda{=}0$ to $0.429$ at $\lambda{=}10$.
+$\lambda$ sweep used before the ensemble-complete CIFAR-10 rerun in
+\S\ref{sec:adaptive}. CIFAR-100 \prism is robust to this two-channel
+attack: TPR holds in $[0.92, 0.95]$ across $\lambda \in [0, 10]$.
+Because Table~\ref{tab:adaptive_pgd} now reports an ensemble-complete
+CIFAR-10 surrogate, the CIFAR-100 rows should be read as a
+partial-coverage comparison rather than a matched adaptive evaluation.
 
 \paragraph{Why CIFAR-100 resists the adaptive attack while CIFAR-10
 collapses.}
-The attack's suppression term covers two ensemble channels: per-layer
+The CIFAR-100 attack's suppression term covers two ensemble channels: per-layer
 activation matching (TAMM target) and DCT high-frequency energy
 matching. It does \emph{not} suppress the StabilityV2, gradient-norm,
 or softmax-entropy channels, which the attack would need separate
@@ -723,7 +733,10 @@ loss terms (and, in StabilityV2's case, a differentiable surrogate of
 the jitter-stability statistic) to attack jointly. On CIFAR-10, the
 channel-mask ablation (Table~\ref{tab:ablation}) shows that TDA and
 DCT together carry the dominant FGSM/PGD discriminative weight, so
-suppressing them removes most of the detector's signal and TPR falls.
+suppressing them removes much of the detector's signal in the older
+two-channel setting; the ensemble-complete CIFAR-10 attack in
+\S\ref{sec:adaptive} pushes further by also targeting the non-TDA
+surrogates.
 On CIFAR-100, the ablation in Table~\ref{tab:c100_abl} and the
 cross-setting analysis in \S\ref{sec:multi_backbone} identify
 StabilityV2 as the dominant non-PGD channel (No-StabilityV2 collapses
@@ -734,16 +747,14 @@ CIFAR-100 adversarials regardless of $\lambda$, and the L3-tier
 trigger rate stays near $88\%$ even at $\lambda{=}10$. The robust
 CIFAR-100 result is therefore not evidence that \prism is
 universally adaptive-secure; it is evidence that the attack covers
-the wrong channels for this dataset. A genuinely ensemble-complete
-adaptive attack --- adding differentiable surrogates for the
-StabilityV2, gradient-norm, and softmax-entropy losses --- is the
-required next step (see \S\ref{sec:conclusion}); the
-$\lambda$-sweep results bound the partial-coverage attacker.
+the wrong channels for this dataset. Extending the ensemble-complete
+surrogate from Table~\ref{tab:adaptive_pgd} to CIFAR-100 is therefore a
+required follow-up before claiming CIFAR-100 adaptive robustness.
 
 The corresponding WRN-28-10 adaptive-PGD evaluation is reported in
 \S\ref{app:wrn_adaptive} (Table~\ref{tab:wrn_adaptive}): WRN behaves
 identically to ResNet-18 on CIFAR-10 under the same attack, so the
-architecture-agnostic interpretation is that the channel-coverage
+multi-backbone interpretation is that the channel-coverage
 analysis above governs both settings.
 
 \begin{table}[h]
@@ -911,10 +922,10 @@ CUDA kernel compilation; steady-state p95 is the deployable figure.
 \section{WRN-28-10 Adaptive PGD}
 \label{app:wrn_adaptive}
 
-The headline adaptive-PGD result (Table~\ref{tab:adaptive_pgd},
-\S\ref{sec:adaptive}) uses CIFAR-10/ResNet-18. To check whether the
-$\lambda$-sweep degradation is architecture-specific, we re-run the
-same attack on WRN-28-10/CIFAR-10 with identical hyperparameters
+Before the ensemble-complete rerun in \S\ref{sec:adaptive}, we checked
+whether the earlier two-channel \texttt{--through-scorer}
+$\lambda$-sweep degradation was architecture-specific by rerunning that
+attack on WRN-28-10/CIFAR-10 with identical hyperparameters
 ($n{=}1000$ EVAL adversarials, $100$ PGD steps, $10$ restarts,
 $\varepsilon{=}8/255$, BPDA via \texttt{--through-scorer}). Results
 in Table~\ref{tab:wrn_adaptive}.
@@ -938,14 +949,13 @@ $\lambda$ & WRN-28-10 TPR [95\% CI] & FPR & ResNet-18 TPR & $\Delta$ \\
 $100$ steps $\times 10$ restarts, $\varepsilon{=}8/255$, BPDA through
 the scorer). FPR holds at the calibrated $0.081$ across all
 $\lambda$ (conformal coverage preserved). The ResNet-18 column
-reproduces the 5-seed pool from Table~\ref{tab:adaptive_pgd}
+reproduces the earlier two-channel 5-seed pool
 ($n{=}5{,}000$ each, FPR $0.075$); WRN here is a single-seed
 $n{=}1000$ rerun, so CIs are wider, but the two architectures
 agree within $\pm 1.0$~pp at every $\lambda$ on a $0.84 \to 0.43$
-collapse curve. The architecture-agnostic interpretation is that
-adaptive-PGD vulnerability on CIFAR-10 is governed by the
-ensemble-channel coverage of the attack, not by the backbone
-choice. Source:
+collapse curve. The multi-backbone interpretation is that
+the two-channel adaptive-PGD vulnerability on CIFAR-10 is governed by
+attack coverage, not by the backbone choice. Source:
 \texttt{experiments/stress/wrn/vastai\_wrn\_adaptive\_pgd*.\{json,jsonl\}}
 (consolidated in \texttt{vastai\_wrn\_adaptive\_pgd\_merged.json}).}
 \label{tab:wrn_adaptive}
@@ -954,21 +964,21 @@ choice. Source:
 \paragraph{Take-away.}
 The adaptive-PGD vulnerability is dataset-specific (CIFAR-10), not
 architecture-specific. WRN-28-10 inherits the same
-ensemble-channel-coverage gap that the CIFAR-10/ResNet-18 adaptive
-attack exploits (\S\ref{sec:adaptive}: TDA + DCT carry dominant
+two-channel coverage gap that the CIFAR-10/ResNet-18 adaptive
+attack exploited in the pre-rerun analysis: TDA + DCT carry dominant
 discriminative weight on CIFAR-10; suppressing them via
 \texttt{--through-scorer} removes most of the detector's signal).
 The CIFAR-100 robustness gap (Table~\ref{tab:c100_adaptive},
 TPR $\in [0.92, 0.95]$ across the same $\lambda$ sweep) confirms the
 same mechanism in reverse: on CIFAR-100, StabilityV2 is the
-dominant signal and is not covered by the adaptive loss. An
-ensemble-complete adaptive attack (adding differentiable surrogates
-for StabilityV2, gradient-norm, and softmax-entropy) is required to
-re-evaluate WRN-28-10 and CIFAR-100; see \S\ref{sec:conclusion}.
+dominant signal and is not covered by the two-channel adaptive loss.
+The ensemble-complete CIFAR-10 rerun in Table~\ref{tab:adaptive_pgd}
+should next be repeated on WRN-28-10 and CIFAR-100; see
+\S\ref{sec:conclusion}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
-\section{AutoAttack $L_\infty$ Epsilon Sensitivity}
+\section{AutoAttack \texorpdfstring{$L_\infty$}{L-infinity} Epsilon Sensitivity}
 \label{app:aa_eps_sweep}
 
 The canonical AA evaluation (\S\ref{app:autoattack}, Table~\ref{tab:autoattack})
@@ -1017,9 +1027,12 @@ objective dominates the budget constraint.
 The bottom line: increasing the adversarial budget either improves PRISM
 TPR (APGD-CE, APGD-DLR, Square) or leaves it statistically unchanged
 (FAB-T, where the residual $\le 0.3$~pp drifts sit well inside the
-$\pm 1.4$~pp seed-pool 95\% CI). The threat model conclusion is that
-the adversary gains nothing from spending more $L_\infty$ budget against
-the detector.}
+$\pm 1.4$~pp seed-pool 95\% CI). The threat model conclusion, \emph{within this non-adaptive AutoAttack
+sweep} ($\varepsilon \in \{8,12,16\}/255$, Square capped at
+$n_\text{queries}{=}1000$, no detector-aware loss), is that the adversary
+gains no detection-evasion benefit from spending more $L_\infty$ budget;
+this is not a claim about adaptive or higher-query attackers
+(see~\S\ref{sec:adaptive}).}
 \label{tab:aa_eps_sweep}
 \end{table}
 
@@ -1079,12 +1092,23 @@ detector per attack: its FGSM/PGD/Square columns are in-distribution, but
 $0.938$ --- $3.8\times$ the CW-\emph{trained} SpectralDefense ($0.244$). PRISM
 is the only detector that holds $\ge 0.88$ on every family with one model that
 generalizes to an untrained family. (Bold marks the per-column best; the
-FGSM/PGD wins are per-attack-supervised and in-distribution.)
+FGSM/PGD wins are per-attack-supervised and in-distribution. The
+$^\dagger$CW column is deliberately \emph{not} bolded because it is not
+config-matched---see the CW-config disclosure below.)
 \emph{Achieved EVAL FPR (mean over the four attacks):} SID $0.082$ and PRISM
 $0.074$ sit below the $0.10$ design target; the supervised MFS detectors run
 slightly above it (InputMFS $0.10$--$0.11$, LayerMFS $0.11$--$0.12$, from the
 threshold-fit$\to$EVAL generalisation gap), which if anything inflates their
-reported TPR --- so PRISM's margin over them is conservative.}
+reported TPR --- so PRISM's margin over them is conservative.
+\textbf{CW-config disclosure.} The CW column is \emph{not} config-matched:
+the PRISM cell ($0.938$) is canonical CW (\texttt{max\_iter}${=}100$,
+\texttt{bss}${=}9$, carried from Table~\ref{tab:main}), whereas the SID and
+SpectralDefense cells use the lighter detection-benchmark CW
+(\texttt{max\_iter}${=}10$, \texttt{bss}${=}5$; ASR $0.93$) used in their
+shared run (\S~``Protocol notes''). Because the lighter CW produces
+larger, more detectable perturbations, this mismatch \emph{understates}
+PRISM's relative advantage; a config-matched CW re-run is the clean fix and
+is not expected to change the qualitative ordering.}
 \label{tab:recent_baselines}
 \end{table}
 
@@ -1103,7 +1127,7 @@ LayerMFS is \emph{more} attack-specific, collapsing $0.73{\to}0.38$ off its
 training attack. This is the supervised counterpart of PRISM's design goal: a
 single, attack-agnostic detector that does not need to anticipate the attack.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \small
 \input{tables/spectral_cross_attack.tex}
@@ -1132,7 +1156,7 @@ in \texttt{experiments/evaluation/recent\_baselines\_layermfs/}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 
-\section{Audit Robustness Checks: PGD Strength and Disjoint-Window CIs}
+\section{Audit Robustness Checks}
 \label{app:audit}
 
 Two checks on the CIFAR-10/ResNet-18 main detection numbers, using the
@@ -1157,10 +1181,29 @@ window per seed, so the five pools overlap ($\approx 1929$ unique images) and
 the pooled Wilson interval is mildly anti-conservative
 (\S\ref{sec:setup}). As a stronger check we partition the window into five
 \emph{disjoint} $400$-image blocks (one per seed), giving $n{=}2000$ genuinely
-independent draws. Pooled TPR and \emph{honest} 95\% Wilson CI: FGSM
-$0.887$ [$0.872, 0.900$], PGD-40 $0.989$ [$0.983, 0.993$], Square $0.890$
-[$0.875, 0.903$], clean FPR $0.074$. The point estimates reproduce the main
-table (FGSM $0.882$, PGD $0.987$, Square $0.886$) within $\le 0.5$~pp and the
-honest intervals are only $\approx 0.3$--$0.5$~pp wider than the overlapping-pool
-intervals, confirming that eval-pool overlap does not materially affect the
-reported conclusions.
+independent draws. Table~\ref{tab:disjoint_ci} reports the resulting pooled TPR
+and \emph{honest} $95\%$ Wilson intervals: the point estimates reproduce the
+main table within $\le 0.5$~pp and the honest intervals are only $\approx
+0.3$--$0.5$~pp wider than the overlapping-pool intervals, confirming that
+eval-pool overlap does not materially affect the reported conclusions.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Attack & Main-table TPR & Disjoint-window TPR & Honest 95\% Wilson CI \\
+\midrule
+FGSM   & 0.882 & 0.887 & [0.872, 0.900] \\
+PGD-40 & 0.987 & 0.989 & [0.983, 0.993] \\
+Square & 0.886 & 0.890 & [0.875, 0.903] \\
+\bottomrule
+\end{tabular}
+\caption{Disjoint-window confidence intervals on CIFAR-10/ResNet-18 (clean FPR
+$0.074$). Five \emph{disjoint} $400$-image blocks give $n{=}2000$ genuinely
+independent draws, versus the overlapping-pool main table. Point estimates
+match within $\le 0.5$~pp; honest Wilson intervals widen by only $\approx
+0.3$--$0.5$~pp, so eval-pool overlap does not materially affect the reported
+conclusions.}
+\label{tab:disjoint_ci}
+\end{table}

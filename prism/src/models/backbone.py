@@ -109,9 +109,12 @@ def load_backbone(device: torch.device,
     ckpt = checkpoint_path or BACKBONE_CHECKPOINT_PATH
     if not Path(ckpt).exists():
         arch_hint = BACKBONE_ARCH
-        script_hint = ('pretrain_wrn_backbone.py'
-                       if arch_hint == 'wrn28_10'
-                       else 'pretrain_cifar_backbone.py')
+        if arch_hint == 'wrn28_10':
+            script_hint = 'pretrain_wrn_backbone.py'
+        elif arch_hint in {'vit_b_16', 'vit-b-16', 'vit_b16'}:
+            script_hint = 'pretrain_vit_backbone.py'
+        else:
+            script_hint = 'pretrain_cifar_backbone.py'
         raise FileNotFoundError(
             f"CIFAR backbone checkpoint not found at '{ckpt}'.\n"
             f"  Run:  python scripts/{script_hint}\n"
@@ -126,6 +129,16 @@ def load_backbone(device: torch.device,
             checkpoint_path=ckpt,
             map_location=str(device),
         )
+    elif BACKBONE_ARCH in {'vit_b_16', 'vit-b-16', 'vit_b16'}:
+        from torchvision.models import vit_b_16
+
+        backbone = vit_b_16(weights=None, num_classes=num_classes)
+        state = torch.load(ckpt, map_location=str(device))
+        if isinstance(state, dict) and 'state_dict' in state:
+            state = state['state_dict']
+        if isinstance(state, dict) and any(k.startswith('module.') for k in state):
+            state = {k.removeprefix('module.'): v for k, v in state.items()}
+        backbone.load_state_dict(state)
     else:
         backbone = cifar_resnet18(
             num_classes=num_classes,

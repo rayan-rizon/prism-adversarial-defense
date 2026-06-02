@@ -1,6 +1,6 @@
 """
-Recompute every number that appears in the paper tables / text from the
-canonical post-fix Vast.ai JSONs, then compare against the .tex files.
+Recompute headline paper numbers from the canonical post-fix JSONs and
+assert that key table-source values still appear in the active .tex files.
 
 Run:
     python prism/scripts/verify_paper_numbers.py
@@ -14,7 +14,17 @@ from pathlib import Path
 from statistics import mean, stdev
 
 ROOT = Path(__file__).resolve().parents[2]
-VASTAI = ROOT / "vastai_full_download_2026-05-20_0830UTC"
+# The canonical CIFAR-10 artifacts were reorganised out of the original
+# `vastai_full_download_2026-05-20_0830UTC/` snapshot into `Cifar 10/`, which
+# preserves the same `project/` (Vast.ai) and `post_fix_local_2026-05-21/`
+# (post-fix local) subtrees. Allow an override and fall back to the legacy
+# snapshot name if a checkout still uses it.
+import os
+_DEFAULT_VASTAI = ROOT / "Cifar 10"
+_LEGACY_VASTAI = ROOT / "vastai_full_download_2026-05-20_0830UTC"
+VASTAI = Path(os.environ.get("PRISM_ARTIFACT_ROOT", "")) if os.environ.get("PRISM_ARTIFACT_ROOT") else (
+    _DEFAULT_VASTAI if _DEFAULT_VASTAI.exists() else _LEGACY_VASTAI
+)
 POST_FIX = VASTAI / "post_fix_local_2026-05-21"
 PROJECT = VASTAI / "project"
 PAPER = ROOT / "prism" / "paper"
@@ -34,6 +44,16 @@ def fmt(x, d=3):
 
 def std(xs):
     return stdev(xs) if len(xs) > 1 else 0.0
+
+
+def require_tex_contains(rel_path: str, needles: list[str]) -> None:
+    path = PAPER / rel_path
+    text = path.read_text(encoding="utf-8")
+    missing = [needle for needle in needles if needle not in text]
+    if missing:
+        raise AssertionError(
+            f"{path} missing expected generated values: {missing}"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -264,6 +284,33 @@ def check_campaign():
 # ──────────────────────────────────────────────────────────────────────────
 def check_adaptive_pgd():
     print("\n=== TABLE: adaptive_pgd.tex ===")
+    summary = ROOT / "prism" / "experiments" / "evaluation" / "ensemble_complete_adaptive_pgd_summary.json"
+    if not summary.exists():
+        summary = PROJECT / "experiments" / "evaluation" / "ensemble_complete_adaptive_pgd_summary.json"
+    if summary.exists():
+        d = load(summary)
+        print("  ensemble-complete adaptive PGD summary found")
+        scan = d.get("lambda_scan_n50_pooled", {})
+        for lam, row in sorted(scan.items(), key=lambda kv: float(kv[0])):
+            ci = row.get("TPR_CI_95", [None, None])
+            print(
+                f"  scan lambda={float(lam):<4.1f} "
+                f"TPR={fmt(row.get('TPR'))} CI=[{fmt(ci[0])}, {fmt(ci[1])}] "
+                f"TPR_succ={fmt(row.get('TPR_on_successful_attacks'))} "
+                f"FPR={fmt(row.get('FPR'))} n={row.get('n_adv')}"
+            )
+        confirm = d.get("worst_lambda_n200_pooled", {})
+        if confirm:
+            ci = confirm.get("TPR_CI_95", [None, None])
+            print(
+                f"  confirm lambda=10.0 TPR={fmt(confirm.get('TPR'))} "
+                f"CI=[{fmt(ci[0])}, {fmt(ci[1])}] "
+                f"TPR_succ={fmt(confirm.get('TPR_on_successful_attacks'))} "
+                f"undetected_success={fmt(confirm.get('undetected_success_rate'))} "
+                f"FPR={fmt(confirm.get('FPR'))} n={confirm.get('n_adv')}"
+            )
+        return d
+
     lambdas = {}
     for s in SEEDS:
         f = PROJECT / "experiments" / "evaluation" / f"results_adaptive_pgd_seed{s}.json"
@@ -295,6 +342,69 @@ def check_adaptive_pgd():
 
 
 # ──────────────────────────────────────────────────────────────────────────
+def check_vit_cifar10_summary():
+    print("\n=== TABLE: main_attacks_multi.tex / ViT-B/16 rows ===")
+    summary = ROOT / "prism" / "experiments" / "evaluation" / "vit_cifar10_summary.json"
+    if not summary.exists():
+        print(f"  MISSING: {summary}")
+        return None
+    d = load(summary)
+    print(f"  source: {d.get('source_download')}")
+    print(f"  scope: standard attacks only; latency_skipped={d['protocol']['latency_skipped']}")
+    print(
+        f"  backbone test_acc={fmt(d['model']['test_acc'], 4)} "
+        f"verify_acc={fmt(d['model']['measured_verify_acc_n1000'], 4)}"
+    )
+    print(f"  {'attack':<8} {'TPR':>7} {'CI':>18} {'FPR':>7} {'n_adv':>6} {'base_ASR':>9}")
+    for attack in ("FGSM", "PGD", "Square"):
+        row = d["aggregate"][attack]
+        ci = row["TPR_CI_95_pooled"]
+        print(
+            f"  {attack:<8} {fmt(row['TPR_mean'], 4):>7} "
+            f"[{fmt(ci[0], 4)}, {fmt(ci[1], 4)}] "
+            f"{fmt(row['FPR_mean'], 4):>7} "
+            f"{row['pool_TP'] + row['pool_FN']:>6} "
+            f"{fmt(row['base_attack_success_rate'], 4):>9}"
+        )
+    gate = d["target_metric_gate"]
+    print(f"  gate passed: {gate['passed']} failures={gate['failures']}")
+    return d
+
+
+def check_tex_sources():
+    print("\n=== STRICT .tex SOURCE CHECKS ===")
+    checks = {
+        "tables/main_attacks.tex": [
+            "$0.882 \\pm 0.004$",
+            "$0.987 \\pm 0.003$",
+            "$0.886 \\pm 0.011$",
+            "$0.938 \\pm 0.008$",
+            "$1.000 \\pm 0.000$",
+        ],
+        "tables/adaptive_pgd.tex": [
+            "Confirm & 10.0 & 1000 & \\textbf{0.479}",
+            "\\textbf{0.866} & 0.082",
+        ],
+        "tables/campaign.tex": [
+            "sustained\\_$\\rho{=}1.00$ & $\\mathbf{2.6 \\pm 0.5}$",
+            "clean\\_only         & ---  (no adversary)",
+        ],
+        "tables/recovery.tex": [
+            "\\textbf{tamsh topology gate} & $\\mathbf{0.139}$",
+            "$\\mathbf{+10.62 \\pm 1.45}$",
+            "Oracle ceiling",
+        ],
+        "tables/main_attacks_multi.tex": [
+            "CIFAR-10  & WRN-28-10  & FGSM       & 0.985",
+            "CIFAR-100 & ResNet-18  & Square     & 0.672",
+            "CIFAR-10  & ViT-B/16   & Square     & 0.9998",
+        ],
+    }
+    for rel_path, needles in checks.items():
+        require_tex_contains(rel_path, needles)
+        print(f"  OK {rel_path}")
+
+
 def main():
     print("=" * 70)
     print("PRISM Paper Number Cross-Check")
@@ -307,6 +417,8 @@ def main():
     check_recovery()
     check_campaign()
     check_adaptive_pgd()
+    check_vit_cifar10_summary()
+    check_tex_sources()
 
 
 if __name__ == "__main__":

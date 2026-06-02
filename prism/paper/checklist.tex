@@ -5,7 +5,7 @@
 \item {\bf Claims}
     \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
     \item[] Answer: \answerYes{}
-    \item[] Justification: The four contributions in the abstract (TAMM, CADG, SACD, TAMSH) map one-to-one to Sections \ref{sec:tamm}--\ref{sec:tamsh} (method) and \ref{sec:detection}--\ref{sec:recovery} (experiments). All headline numbers (0.918/0.938/1.000 mean TPR, $+33.6$~pp baseline beat, 2.6-query campaign-detection latency, $+26$~pp recovery gap) are reproduced verbatim from the locked artifact JSONs listed in the experiments section.
+    \item[] Justification: The four contributions in the abstract (TAMM, CADG, SACD, TAMSH) map one-to-one to Sections \ref{sec:tamm}--\ref{sec:tamsh} (method) and \ref{sec:detection}--\ref{sec:recovery} (experiments). All headline numbers (0.918/0.938/1.000 mean TPR, $+33.6$~pp baseline beat, 2.6-query campaign-detection latency, $+10.6$~pp topology-gate recovery gap, and $28.7\%$ learned-router recovery) are reproduced from the locked artifact JSONs listed in the experiments section.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the abstract and introduction do not include the claims made in the paper.
@@ -47,7 +47,7 @@
     \item {\bf Experimental result reproducibility}
     \item[] Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section \ref{sec:setup} specifies the backbone (CIFAR-native ResNet-18 trained from scratch via \texttt{scripts/pretrain\_cifar\_backbone.py}), per-layer weights, attack hyperparameters (FGSM $\varepsilon{=}8/255$; PGD with $\varepsilon{=}8/255$, step $\varepsilon/4$ --- 40 steps/1 restart on CIFAR-10/ResNet-18, 50 steps/10 restarts on WRN-28-10 and CIFAR-100; CW max\_iter=100, bss=9, $\kappa{=}1.0$; Square 5000 queries; AutoAttack standard ensemble), 5 fixed seeds (42, 123, 456, 789, 999), $n{=}1000$ test images per seed, conformal $\alpha \in \{0.10, 0.03, 0.005\}$, and the exact Vast.ai launch scripts \texttt{run\_vastai\_full.sh} and \texttt{run\_vastai\_cifar100.sh}. Each result JSON is SHA-256 manifested for tamper-evident reproducibility.
+    \item[] Justification: Section \ref{sec:setup} specifies the backbone (CIFAR-native ResNet-18 trained from scratch via \texttt{scripts/pretrain\_cifar\_backbone.py}), per-layer weights, attack hyperparameters (FGSM $\varepsilon{=}8/255$; PGD with $\varepsilon{=}8/255$, step $\varepsilon/4$ --- 40 steps/1 restart on CIFAR-10/ResNet-18, 50 steps/10 restarts on WRN-28-10, CIFAR-100, and ViT-B/16; ensemble-complete adaptive PGD with 100 steps, 10 restarts, $\lambda \in \{0,0.5,1,2,5,10\}$ scan and $\lambda{=}10$ confirmation; CW max\_iter=100, bss=9, $\kappa{=}1.0$; Square 5000 queries; AutoAttack standard ensemble), 5 fixed seeds (42, 123, 456, 789, 999), $n{=}1000$ test images per seed for main attacks and the adaptive-PGD sample sizes stated in Table~\ref{tab:adaptive_pgd}, conformal $\alpha \in \{0.10, 0.03, 0.005\}$, and the exact Vast.ai launch scripts \texttt{run\_vastai\_full.sh}, \texttt{run\_vastai\_cifar100.sh}, and \texttt{run\_vastai\_vit\_cifar10.sh}. The ViT-B/16 run is explicitly limited to FGSM/PGD-50/Square standard attacks and records no ViT latency, CW, AutoAttack, or adaptive-PGD claim. Each result JSON is SHA-256 manifested for tamper-evident reproducibility.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.
@@ -67,7 +67,7 @@
 \item {\bf Open access to data and code}
     \item[] Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
     \item[] Answer: \answerYes{}
-    \item[] Justification: CIFAR-10 and CIFAR-100 are public benchmarks. An anonymized code release with the full Vast.ai launch scripts (\texttt{run\_vastai\_full.sh}, \texttt{run\_vastai\_cifar100.sh}), the resumable orchestrator, the SHA-256 artifact manifest, and all per-seed result JSONs accompanies this submission. The reproduction command is one line: \texttt{bash run\_vastai\_full.sh} on a CUDA 12 GPU instance with PyTorch~2.
+    \item[] Justification: CIFAR-10 and CIFAR-100 are public benchmarks. An anonymized code release with the full Vast.ai launch scripts (\texttt{run\_vastai\_full.sh}, \texttt{run\_vastai\_cifar100.sh}, \texttt{run\_vastai\_vit\_cifar10.sh}), the resumable orchestrator, the SHA-256 artifact manifest, and all per-seed result JSONs accompanies this submission. The reproduction command is one line: \texttt{bash run\_vastai\_full.sh} on a CUDA 12 GPU instance with PyTorch~2.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that paper does not include experiments requiring code.
@@ -112,7 +112,7 @@
 \item {\bf Experiments compute resources}
     \item[] Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments?
     \item[] Answer: \answerYes{}
-    \item[] Justification: The full CIFAR-10 pipeline (backbone training, profile build, ensemble training, calibration, 5-seed evaluation across 5 attack families, ablation, campaign, recovery, baselines) runs in approximately one GPU-day on a single 24~GB-class GPU (Vast.ai 5090-class node); CIFAR-100 follows the same envelope. Post-fix local supplementary runs (baselines aggregation, CW re-runs at weakened parameters, uniform-router ablation) total $\sim$33 minutes on a single GTX~1060.
+    \item[] Justification: The full CIFAR-10 pipeline (backbone training, profile build, ensemble training, calibration, 5-seed evaluation across 5 attack families, ablation, campaign, recovery, baselines) runs in approximately one GPU-day on a single 24~GB-class GPU (Vast.ai 5090-class node); CIFAR-100 follows the same envelope. The ViT-B/16 transfer run uses the same CUDA/Vast.ai setting but reports only FGSM/PGD-50/Square detection, not latency or adaptive attacks. Post-fix local supplementary runs (baselines aggregation, CW re-runs at weakened parameters, uniform-router ablation) total $\sim$33 minutes on a single GTX~1060.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.
@@ -124,7 +124,7 @@
 \item {\bf Code of ethics}
     \item[] Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics \url{https://neurips.cc/public/EthicsGuidelines}?
     \item[] Answer: \answerYes{}
-    \item[] Justification: The work is defensive adversarial-ML research using only public CIFAR-10/CIFAR-100 benchmarks; it involves no human subjects, no personally identifiable information, and no scraping. Reproductions of baseline attacks (FGSM/PGD/CW/Square/AutoAttack) and baseline detectors (LID/Mahalanobis/ODIN/Energy) use published, peer-reviewed implementations.
+    \item[] Justification: The work is defensive adversarial-ML research using only public CIFAR-10/CIFAR-100 benchmarks and public torchvision ImageNet-pretrained weights for the ViT transfer run; it involves no human subjects, no personally identifiable information, and no scraping. Reproductions of baseline attacks (FGSM/PGD/CW/Square/AutoAttack) and baseline detectors (LID/Mahalanobis/ODIN/Energy) use published, peer-reviewed implementations.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the authors have not reviewed the NeurIPS Code of Ethics.
@@ -150,7 +150,7 @@
 \item {\bf Safeguards}
     \item[] Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)?
     \item[] Answer: \answerNA{}
-    \item[] Justification: The released artifacts are a CIFAR-10/CIFAR-100 adversarial-detection model and accompanying calibration thresholds; they carry no significant dual-use risk distinct from the underlying public datasets or the standard ResNet-18 architecture. The paper does not release generative models, language models, or scraped data.
+    \item[] Justification: The released artifacts are CIFAR-10/CIFAR-100 adversarial-detection models, accompanying calibration thresholds, and a compact ViT-B/16 CIFAR-10 transfer summary; they carry no significant dual-use risk distinct from the underlying public datasets or standard classifier architectures. The paper does not release generative models, language models, or scraped data.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper poses no such risks.
@@ -162,7 +162,7 @@
 \item {\bf Licenses for existing assets}
     \item[] Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected?
     \item[] Answer: \answerYes{}
-    \item[] Justification: CIFAR-10/CIFAR-100 \cite{krizhevsky2009learning} are cited with their canonical reference; both are MIT-style public benchmarks. Baseline detectors (LID \cite{ma2018characterizing}, Mahalanobis \cite{lee2018simple}, ODIN \cite{liang2018enhancing}, Energy \cite{liu2020energy}) and attack implementations (FGSM, PGD, CW, Square, AutoAttack \cite{croce2020reliable}, Adversarial Robustness Toolbox \cite{nicolae2018adversarial}) are cited with their original papers. Persistent-homology computation uses \texttt{gudhi}~v3.12 \cite{gudhi2015} (MIT license). All licenses are respected.
+    \item[] Justification: CIFAR-10/CIFAR-100 \cite{krizhevsky2009learning}, ImageNet \cite{deng2009imagenet}, and ViT-B/16 \cite{dosovitskiy2021image} are cited with canonical references. CIFAR benchmarks are MIT-style public benchmarks. Baseline detectors (LID \cite{ma2018characterizing}, Mahalanobis \cite{lee2018simple}, ODIN \cite{liang2018enhancing}, Energy \cite{liu2020energy}) and attack implementations (FGSM, PGD, CW, Square, AutoAttack \cite{croce2020reliable}, Adversarial Robustness Toolbox \cite{nicolae2018adversarial}) are cited with their original papers. Persistent-homology computation uses \texttt{gudhi}~v3.12 \cite{gudhi2015} (MIT license). All licenses are respected.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not use existing assets.

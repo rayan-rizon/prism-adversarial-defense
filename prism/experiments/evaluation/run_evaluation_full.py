@@ -310,6 +310,31 @@ def score_quantiles(scores) -> dict:
     }
 
 
+def detection_auc(clean_scores, adv_scores) -> dict:
+    """Threshold-free detection metrics (AUROC, AUPR) from raw anomaly scores.
+
+    Clean inputs are the negative class (label 0) and adversarials the positive
+    class (label 1); the anomaly score is monotone in adversarialness, so the
+    raw score is used directly as the positive-class score. These metrics are
+    threshold-independent and complement the fixed-FPR TPR rows."""
+    clean = np.asarray(clean_scores, dtype=np.float64)
+    adv = np.asarray(adv_scores, dtype=np.float64)
+    if clean.size == 0 or adv.size == 0:
+        return {}
+    try:
+        from sklearn.metrics import roc_auc_score, average_precision_score
+    except Exception:
+        return {}
+    y = np.concatenate([np.zeros(clean.size), np.ones(adv.size)])
+    s = np.concatenate([clean, adv])
+    return {
+        'auroc': round(float(roc_auc_score(y, s)), 4),
+        'aupr':  round(float(average_precision_score(y, s)), 4),
+        'n_clean': int(clean.size),
+        'n_adv': int(adv.size),
+    }
+
+
 def _json_default(obj):
     """Make evaluation artifacts JSON-safe for NumPy / array scalars."""
     if isinstance(obj, np.generic):
@@ -875,6 +900,7 @@ def run_evaluation_full(
                 'clean': score_quantiles(clean_scores),
                 'adversarial': score_quantiles(adv_scores),
             },
+            'detection_auc': detection_auc(clean_scores, adv_scores),
         }
         if base_success_mask_np is not None:
             _success_n = int(np.sum(base_success_mask_np))
@@ -1122,6 +1148,7 @@ def _run_autoattack(prism, pixel_dataset, sample_idx, device, eps,
             'clean': score_quantiles(clean_scores),
             'adversarial': score_quantiles(adv_scores),
         },
+        'detection_auc': detection_auc(clean_scores, adv_scores),
     }
 
 

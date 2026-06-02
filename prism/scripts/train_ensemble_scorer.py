@@ -380,6 +380,8 @@ def train_ensemble_scorer(
     stability_feature_count: int = DEFAULT_STABILITY_FEATURE_COUNT,
     use_side_quadratic_features: bool = False,
     allow_undertrained_smoke: bool = False,
+    source_start_index: int = 0,
+    source_end_index: int = None,
 ):
     """
     Args:
@@ -399,6 +401,10 @@ def train_ensemble_scorer(
             disjoint test profile split, aligning scorer fitting with the
             profile/calibration/validation/eval protocol used by conformal
             gating.
+        source_start_index/source_end_index: Optional source window for the
+            selected source split. The strict train-split rerun should set
+            source_start_index after the train profile/cal/val windows so
+            scorer fitting is disjoint from conformal calibration.
         use_softmax_entropy: If True (default), append softmax entropy of model
             logits as a feature. Captures CW-L2 decision-boundary proximity.
             Adds <1ms latency; enabled by default to fix CW detection gap.
@@ -482,14 +488,17 @@ def train_ensemble_scorer(
     rng = np.random.RandomState(42)
     source_split = source_split.lower()
     if source_split == 'train':
-        # Legacy source: CIFAR train split. Kept for ablations, but this split
-        # is not exchangeable with the test-profile/cal/val/eval protocol.
         from src.data_loader import load_train_dataset
         pixel_dataset = load_train_dataset(
             root=data_root, download=True, transform=_PIXEL_TRANSFORM
         )
-        all_idx = rng.permutation(len(pixel_dataset))
-        source_desc = f'{DATASET.upper()} train split'
+        end = len(pixel_dataset) if source_end_index is None else min(source_end_index, len(pixel_dataset))
+        start = max(0, int(source_start_index))
+        if start >= end:
+            raise ValueError(f"Invalid train source window [{start}, {end}) for len={len(pixel_dataset)}")
+        pool = np.arange(start, end)
+        all_idx = rng.permutation(pool)
+        source_desc = f'{DATASET.upper()} train split [{start}-{end - 1}]'
     elif source_split in ('profile', 'test-profile'):
         # Research-standard source for the detector head: the disjoint profile
         # segment of the same test-split protocol used for clean profiles,
@@ -500,11 +509,18 @@ def train_ensemble_scorer(
         pixel_dataset = load_test_dataset(
             root=data_root, download=True, transform=_PIXEL_TRANSFORM
         )
-        pool = np.arange(PROFILE_IDX[0], PROFILE_IDX[1])
+        start = PROFILE_IDX[0] if source_start_index == 0 else int(source_start_index)
+        end = PROFILE_IDX[1] if source_end_index is None else min(int(source_end_index), PROFILE_IDX[1])
+        if start < PROFILE_IDX[0] or end > PROFILE_IDX[1] or start >= end:
+            raise ValueError(
+                f"Invalid profile source window [{start}, {end}); must stay inside "
+                f"[{PROFILE_IDX[0]}, {PROFILE_IDX[1]})"
+            )
+        pool = np.arange(start, end)
         all_idx = rng.permutation(pool)
         source_desc = (
             f'{DATASET.upper()} test profile split '
-            f'[{PROFILE_IDX[0]}-{PROFILE_IDX[1] - 1}]'
+            f'[{start}-{end - 1}]'
         )
     else:
         raise ValueError(
@@ -797,8 +813,9 @@ def train_ensemble_scorer(
             f"TDA + entropy + DCT features cannot separate clean from "
             f"adversarial inputs, so the downstream conformal calibration "
             f"will give TPR ≈ FPR ≈ {1 - auc:.0%}.{backbone_acc_msg} "
-            f"Verify models/cifar_resnet18.acc.json reports test_acc ≥ 0.93 "
-            f"and re-run scripts/pretrain_cifar_backbone.py if not."
+            f"Verify the configured backbone checkpoint and sidecar report "
+            f"sufficient clean accuracy, then retrain or provide a matching "
+            f"checkpoint if not."
         )
     if auc is not None and auc < AUC_FLOOR:
         print(
@@ -877,6 +894,10 @@ def train_ensemble_scorer(
     ensemble.selection_objective = selection_objective
     ensemble.training_source_split = source_split
     ensemble.training_source_description = source_desc
+    ensemble.training_source_start_index = int(source_start_index)
+    ensemble.training_source_end_index = (
+        int(source_end_index) if source_end_index is not None else None
+    )
     ensemble.score_channel_aggregation = score_channel_aggregation
     requested_weights = {
         'FGSM': float(fgsm_oversample),
@@ -1029,6 +1050,13 @@ if __name__ == '__main__':
                              'training. Use profile/test-profile for the '
                              'research-standard detector path aligned with '
                              'the conformal split protocol; train is legacy.')
+    parser.add_argument('--source-start-index', type=int, default=0,
+                        help='Optional start index within the chosen source split. '
+                             'For the strict train-split rerun, set this after '
+                             'profile/cal/val train windows to avoid overlap.')
+    parser.add_argument('--source-end-index', type=int, default=None,
+                        help='Optional exclusive end index within the chosen '
+                             'source split.')
     parser.add_argument('--attack-heads', action='store_true',
                         help='Fit one attack-specialist one-vs-clean head per '
                              'training attack and aggregate by max risk before '
@@ -1110,4 +1138,6 @@ if __name__ == '__main__':
         stability_feature_count=args.stability_feature_count,
         use_side_quadratic_features=args.use_side_quadratic_features,
         allow_undertrained_smoke=args.allow_undertrained_smoke,
+        source_start_index=args.source_start_index,
+        source_end_index=args.source_end_index,
     )

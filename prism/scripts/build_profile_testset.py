@@ -26,8 +26,9 @@ This clean separation ensures zero data leakage between:
 USAGE
 -----
   cd prism/
-  python scripts/build_profile_testset.py          # builds from active dataset test
-  python scripts/calibrate_ensemble.py             # calibrates using test cal split
+  python scripts/build_profile_testset.py                         # submitted protocol
+  python scripts/build_profile_testset.py --source-split train     # stricter rerun
+  python scripts/calibrate_ensemble.py --source-split train        # matching calibration
 """
 import torch
 import torchvision
@@ -60,7 +61,7 @@ from src.config import (
     PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX,
     DATASET, PATHS,
 )
-from src.data_loader import load_test_dataset
+from src.data_loader import load_test_dataset, load_train_dataset
 from src.models import load_backbone
 # All shared constants imported from src.config (backed by configs/default.yaml).
 # Split indices are the single source of truth -- do not hardcode here.
@@ -79,30 +80,57 @@ def build_profile_testset(
     output_dir: str = './models',
     device: str = None,
     allow_undertrained_smoke: bool = False,
+    source_split: str = 'test',
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    source_split = source_split.lower()
+    if source_split not in ('test', 'train'):
+        raise ValueError(f"source_split={source_split!r}; expected 'test' or 'train'.")
+    source_label = source_split.upper()
     print(f"Device: {device}")
-    print(f"Building topological profile from {DATASET.upper()} TEST set...")
+    print(f"Building topological profile from {DATASET.upper()} {source_label} set...")
     print(f"  Profile range: indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1}")
+
+    # Dataset dispatches on DATASET (cifar10 / cifar100). The default TEST
+    # source reproduces submitted artifacts; TRAIN source is the strict rerun
+    # path with the official test split held out for final evaluation only.
+    loader = load_train_dataset if source_split == 'train' else load_test_dataset
+    dataset = loader(root=data_root, download=True, transform=_TRANSFORM)
+    print(f"  {DATASET.upper()} {source_split} set size: {len(dataset)}")
+
+    # ── Model ─────────────────────────────────────────────────────────────────
+    model = load_backbone(torch.device(device))
 
     # ── Backbone accuracy precondition ────────────────────────────────────────
     # Profiles built on an undertrained backbone are statistically vacuous:
     # the reference manifold itself becomes noise, so every downstream
     # Wasserstein distance is meaningless. Catch this at script entry rather
     # than letting it propagate silently to the eval gate.
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-    from verify_backbone_acc import verify_backbone_acc as _vba  # noqa: E402
     from src.config import BACKBONE_CHECKPOINT_PATH as _BCP
     _PROFILE_MIN_ACC = 0.90
-    _acc, _n = _vba(_BCP, n=200, device=device, data_root=data_root)
-    print(f"  Backbone test acc: {_acc:.4f} (n={_n}, gate ≥ {_PROFILE_MIN_ACC:.2f})")
+    _n = min(200, len(dataset))
+    _loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(dataset, list(range(_n))),
+        batch_size=128, shuffle=False, num_workers=0,
+    )
+    _correct = 0
+    _total = 0
+    with torch.no_grad():
+        for _x, _y in _loader:
+            _x = _x.to(device)
+            _y = _y.to(device)
+            _pred = model(_x).argmax(dim=1)
+            _correct += int((_pred == _y).sum().item())
+            _total += int(_y.numel())
+    _acc = _correct / max(_total, 1)
+    print(f"  Backbone {source_split} acc: {_acc:.4f} (n={_total}, gate ≥ {_PROFILE_MIN_ACC:.2f})")
     if _acc < _PROFILE_MIN_ACC and not allow_undertrained_smoke:
         raise RuntimeError(
-            f"Backbone at {_BCP} has test acc {_acc:.4f} < {_PROFILE_MIN_ACC:.2f}. "
+            f"Backbone at {_BCP} has {source_split} acc {_acc:.4f} < {_PROFILE_MIN_ACC:.2f}. "
             f"Refusing to build reference profiles on an undertrained backbone — "
             f"the resulting TDA manifold would not represent the clean-data "
-            f"distribution. Run scripts/pretrain_cifar_backbone.py first."
+            f"distribution. Train or provide a checkpoint matching the active config."
         )
     if _acc < _PROFILE_MIN_ACC:
         print(
@@ -111,23 +139,13 @@ def build_profile_testset(
             f"Profile is for local integration testing only."
         )
 
-    # ── Model ─────────────────────────────────────────────────────────────────
-    # Active CIFAR-trained ResNet-18. Profiles built on this backbone are the
-    # reference manifold against which all downstream Wasserstein distances
-    # are computed.
-    model = load_backbone(torch.device(device))
-
     extractor = ActivationExtractor(model, LAYER_NAMES)
     profiler  = TopologicalProfiler(n_subsample=N_SUBSAMPLE, max_dim=MAX_DIM)
-
-    # ── Dataset (test) — dispatches on DATASET (cifar10 / cifar100) ───────────
-    dataset = load_test_dataset(root=data_root, download=True, transform=_TRANSFORM)
-    print(f"  {DATASET.upper()} test set size: {len(dataset)}")
 
     # ── Phase 1: collect persistence diagrams for profile images ───────────────
     n_profile = PROFILE_IDX[1] - PROFILE_IDX[0]
     all_diagrams = {layer: [] for layer in LAYER_NAMES}
-    print(f"\nPhase 1: Collecting diagrams from {n_profile} test images "
+    print(f"\nPhase 1: Collecting diagrams from {n_profile} {source_split} images "
           f"(indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1})...")
     for i in tqdm(range(PROFILE_IDX[0], PROFILE_IDX[1]), desc="Phase 1: diagrams"):
         img, _ = dataset[i]
@@ -158,7 +176,7 @@ def build_profile_testset(
     os.makedirs(os.path.dirname(profile_path) or '.', exist_ok=True)
     with open(profile_path, 'wb') as f:
         pickle.dump(ref_profiles, f)
-    print(f"\nReference profiles saved -> {profile_path} (built from TEST set)")
+    print(f"\nReference profiles saved -> {profile_path} (built from {source_label} set)")
 
     # Free diagram memory before scoring phase
     del all_diagrams
@@ -237,11 +255,14 @@ def build_profile_testset(
             f"(cal mean={cal_scores.mean():.2f})."
         )
 
-    print("\n[OK] Profile built successfully from CIFAR-10 TEST set.")
-    print(f"   Profile : {len(profile_scores)} images (test idx 0-4999)")
-    print(f"   Cal     : {len(cal_scores)} images (test idx 5000-6999)")
-    print(f"   Val     : {len(val_scores)} images (test idx 7000-7999)")
-    print(f"   Eval    : 2000 images HELD OUT (test idx 8000-9999)")
+    print(f"\n[OK] Profile built successfully from {DATASET.upper()} {source_label} set.")
+    print(f"   Profile : {len(profile_scores)} images ({source_split} idx {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1})")
+    print(f"   Cal     : {len(cal_scores)} images ({source_split} idx {CAL_IDX[0]}-{CAL_IDX[1]-1})")
+    print(f"   Val     : {len(val_scores)} images ({source_split} idx {VAL_IDX[0]}-{VAL_IDX[1]-1})")
+    if source_split == 'train':
+        print(f"   Eval    : official test split only (configured test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1})")
+    else:
+        print(f"   Eval    : {EVAL_IDX[1] - EVAL_IDX[0]} images HELD OUT (test idx {EVAL_IDX[0]}-{EVAL_IDX[1]-1})")
     print(f"\nNext step: python scripts/calibrate_ensemble.py")
 
     return ref_profiles, cal_scores, val_scores
@@ -257,6 +278,10 @@ if __name__ == '__main__':
     parser.add_argument('--allow-undertrained-smoke', action='store_true',
                         help='Smoke-only escape hatch: build reference profiles '
                              'even if the backbone is below the publishable gate.')
+    parser.add_argument('--source-split', choices=['test', 'train'], default='test',
+                        help='Clean source for profile/cal/val scores. Default '
+                             'test reproduces submitted artifacts; train is the '
+                             'stricter top-tier rerun path.')
     # --output-dir kept for backward compat; the primary artifact path comes
     # from PATHS[reference_profiles] in the loaded config.
     parser.add_argument('--output-dir', default=None)
@@ -266,4 +291,5 @@ if __name__ == '__main__':
         data_root=args.data_root,
         output_dir=out_dir,
         allow_undertrained_smoke=args.allow_undertrained_smoke,
+        source_split=args.source_split,
     )

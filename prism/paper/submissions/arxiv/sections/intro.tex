@@ -1,0 +1,95 @@
+\section{Introduction}
+\label{sec:intro}
+
+Deep neural networks are vulnerable to adversarial examples---inputs crafted 
+with small, imperceptible perturbations that cause confident misprediction 
+\cite{szegedy2014intriguing,goodfellow2015explaining}.
+Despite more than a decade of research, the arms race between attacks and 
+defenses remains unresolved: architecturally-coupled defenses require model 
+retraining, are often architecture-specific, and may degrade accuracy on clean 
+data \cite{croce2020reliable,athalye2018obfuscated}.
+
+A complementary direction is \emph{runtime detection}: rather than hardening 
+the model, intercept adversarial inputs before they affect predictions.
+Existing detectors often provide no formal statistical guarantees on false 
+alarm rates, rely on features that are themselves vulnerable to adaptive 
+attacks, or require knowledge of the model's training procedure 
+\cite{ma2018characterizing,grosse2017statistical,lee2018simple}.
+
+\textbf{Key insight.} 
+Clean and adversarial inputs traverse fundamentally different paths through 
+a neural network's activation manifold.
+While the output may look confident in both cases, the \emph{topology} of 
+intermediate representations---captured by persistent homology---differs 
+systematically \cite{gebhart2019adversary,carlini2019evaluating}.
+\prism exploits this topological signal at runtime as a 
+computationally tractable anomaly score.
+
+\textbf{Contributions.}
+We make four contributions:
+
+\begin{enumerate}[leftmargin=*, label=\textbf{C\arabic*}]
+
+\item \textbf{Topological activation profiler (\tamm).}
+We compute per-layer persistence features relative to a clean medoid profile
+and combine them with DCT and softmax-entropy features in a calibrated
+ensemble. The ensemble-no-TDA ablation measures the marginal value of the
+topological channel.
+
+\item \textbf{Conformal detection guarantee (\cadg).}
+We apply split conformal prediction to the anomaly score stream, obtaining 
+\emph{distribution-free} FPR certificates at three severity tiers 
+(L1: $\alpha{=}0.10$; L2: $\alpha{=}0.03$; L3: $\alpha{=}0.005$)
+using only a held-out clean calibration set. To our knowledge this is the
+first activation-based adversarial-input detector to attach such a
+distribution-free false-positive-rate certificate to its decision threshold.
+
+\item \textbf{Temporal campaign detector (\sacd).}
+We monitor the score stream with a CUSUM-with-drift-floor change detector
+and report \emph{time-to-detect} (mean queries between the first adversarial
+step and the first L0 trigger) as the headline metric. On sustained
+$\rho{=}1.0$ streams \sacd raises the campaign alert in $2.6 \pm 0.5$
+queries while maintaining $0.0$ false-alarm activation on clean-only
+streams---a threat model absent from prior work.
+
+\item \textbf{Routed MoE recovery (\tamsh).}
+For inputs reaching the L3 severity tier, \prism routes the input through
+an attack-specialist expert sub-network rather than issuing a blanket
+rejection. A \emph{learned} router---logistic regression on the pooled
+final-layer activation, trained on a held-out L3 pool and evaluated on a
+disjoint split (5 seeds)---recovers $28.7\%$ of L3-rejected PGD
+adversarials, $9.1\times$ the uniform $1/K$ control ($3.2\%$) and
+$2.1\times$ the lightweight $H_0{+}H_1$ Wasserstein gate ($13.7\%$),
+matching a prior-augmented upper bound ($29.3\%$) that hardcodes the PGD
+specialist---without that hardcoding. The large margin over the uniform
+control isolates the contribution to the routing signal rather than
+expert capacity
+(Appendix~\ref{app:tamsh_diag}).
+
+\end{enumerate}
+
+Empirically, we report locked multi-seed ($5{\times}n{=}1000$) artifact
+results across three full CNN settings --- CIFAR-10/ResNet-18,
+CIFAR-10/WRN-28-10, and CIFAR-100/ResNet-18 --- covering detection
+(FGSM, PGD, Square, CW, and AutoAttack where run), four reproduced
+baselines (LID, Mahalanobis, ODIN, Energy), campaign streams, recovery,
+and a per-channel ablation that exposes each feature family's
+attack-specific failure mode. We additionally report a standard-attack
+CIFAR-10/ViT-B/16 transfer check for FGSM, PGD-50, and Square only. On the
+main CIFAR-10/ResNet-18 setting, \prism Full outperforms the strongest
+baseline (Mahalanobis) by $+33.6$~pp mean TPR at matched FPR;
+WRN-28-10 holds a $+16.5$~pp gap over Mahalanobis and CIFAR-100 retains
+$+42.6$~pp over ODIN (Table~\ref{tab:baselines_multi}). The full
+CIFAR-100 per-component breakdown is in Appendix~\ref{app:cifar100}.
+The ensemble-complete adaptive PGD claim is scoped to CIFAR-10/ResNet-18;
+WRN and CIFAR-100 adaptive probes are appendix stress tests with narrower
+coverage.
+
+\textbf{Scope and limitations.}
+\prism is a \emph{runtime monitor}, not an adversarial trainer; 
+it complements (but does not replace) robust training.
+Detection latency scales with the number of monitored layers and the TDA
+subsample size; the submitted results report measured GPU latency from the
+same artifact pipeline used for detection.
+Like all detectors, \prism does not provide a guarantee against 
+adaptive adversaries who are aware of the topological scoring mechanism.

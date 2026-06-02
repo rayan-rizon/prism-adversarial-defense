@@ -1,0 +1,38 @@
+% CIFAR-100 channel-mask ablation (5 seeds, n=1000 per seed, per-attack TPR + FPR).
+% Source: ../Cifar 100/.../experiments/ablation/results_cifar100_ablation_multiseed.json
+% Methodology mirrors CIFAR-10 (Table ablation): each config zeroes one feature
+% family at scoring time while reusing the Full-PRISM threshold. On CIFAR-100,
+% TWO configs show threshold-collapse "improved" TPR via inflated FPR:
+% No-GradNorm (FPR 0.658) and No-LogitProfile (FPR 0.258) -- both far above the
+% 0.10 design target, so their apparent FGSM/PGD TPR gains are artifacts of a
+% collapsed threshold, not genuine detection. No-DCT (0.068) and No-StabilityV2
+% (0.019) stay at/below target and mostly LOSE TPR on removal. The FPR column
+% exposes both collapses directly.
+%
+% Reconciliation note: the Full PRISM row here (FGSM 0.832, PGD 0.980,
+% Square 0.673, CW 0.679, FPR 0.073) is computed from the ablation
+% pipeline's own scorer/calibration so that all channel-mask arms share
+% a common threshold and feature pipeline (required for the fair
+% channel-marginal comparison). The Full PRISM row in
+% Table~\ref{tab:main_multi} (FGSM 0.835, PGD 0.984, Square 0.672,
+% CW 0.687, FPR 0.077) is the detection-pipeline run on the same seed
+% list. The two runs differ by 0.1--0.8~pp on TPR (mean 0.4~pp, max
+% 0.8~pp on CW: 0.679 vs 0.687) and 0.4~pp on FPR, and overlap within the
+% Wilson 95\% CIs of Table~\ref{tab:main_multi}. The discrepancy is two
+% independent split-conformal calibration fits (the ablation refits one
+% shared threshold across all arms), reported transparently here.
+\begin{tabular}{lccccc}
+\toprule
+Configuration & FGSM TPR & PGD TPR & Square TPR & CW TPR & FPR \\
+\midrule
+Full PRISM (ablation cal.) & 0.832 & 0.980 & 0.673 & 0.679 & \textbf{0.073} \\
+\midrule
+No-LogitProfile      & 0.893 & 0.996 & 0.602 & 0.350 & \textbf{0.258} \\
+No-StabilityV2       & 0.562 & 0.423 & 0.279 & 0.205 & 0.019 \\
+No-DCT               & 0.750 & 0.982 & 0.564 & 0.629 & 0.068 \\
+No-GradNorm          & 0.987 & 0.998 & 0.996 & 0.998 & \textbf{0.658} \\
+\midrule
+Ensemble-no-TDA      & 0.544 & 0.973 & 0.500 & 0.710 & 0.067 \\
+TDA only             & 0.020 & 0.934 & 0.057 & 0.058 & 0.086 \\
+\bottomrule
+\end{tabular}

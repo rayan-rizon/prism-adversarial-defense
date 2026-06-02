@@ -1,15 +1,19 @@
 % Auto-generated 2026-05-22 (corrected). Source: post-fix 5-seed recovery_uniform pool
-%   vastai_full_download_2026-05-20_0830UTC/post_fix_local_2026-05-21/
+%   Cifar 10/post_fix_local_2026-05-21/
 %   experiments/recovery_uniform/results_recovery_uniform_seed{42,123,456,789,999}.json
 % PGD adversarials, L3-rejected subset.
 %   Mean L3 trigger rate = 0.792 (per-seed [0.801, 0.801, 0.780, 0.786, 0.790]),
 %   within Wilson-95% sanity band [0.10, 0.82].
-% Pre-registered C4 target: best LEARNED router recovery - passthrough >= 15pp.
-% Learned router (tamsh, combined H0+H1) achieves +10.6pp, which falls 4.4pp
-% short of target; reported honestly. tamsh_force is upper-bound analysis,
+% Pre-registered C4 target: best learned/router recovery - passthrough >= 15pp.
+% Topology router (tamsh, combined H0+H1 Wasserstein) achieves +10.6pp, which
+% falls 4.4pp short of target; reported honestly. tamsh_force is upper-bound analysis,
 % not a deployable learned policy.
 % Gaps are paired per-seed (delta computed within each seed, then mean +/- std).
 % Cross-checked numerically against per-seed JSONs via verify_recovery.py.
+% Oracle ceiling recomputed 2026-06-02 on the same-protocol 5-seed PGD L3 pool
+%   (n_test=1000/seed via scripts/diagnose_tamsh.py; n_l3 ~ 796/seed): mean
+%   best-of-K = 0.324 +/- 0.007. Source: experiments/recovery_oracle/oracle_aggregate.json.
+%   Supersedes the prior single-seed 0.399 (seed42, n=200, n_l3=163), a small-sample overestimate.
 \begin{tabular}{lccccc}
 \toprule
 Strategy & Recovery Acc. & 95\% CI & Gap vs passthrough (pp) & Avail. & Router signal \\
@@ -17,10 +21,10 @@ Strategy & Recovery Acc. & 95\% CI & Gap vs passthrough (pp) & Avail. & Router s
 reject              & 0.000 & [0.000, 0.001] & ---     & 0.000 & --- \\
 passthrough         & 0.033 & [0.027, 0.038] & ---     & 1.000 & none \\
 tamsh\_uniform      & 0.033 & [0.027, 0.038] & $+0.00 \pm 0.00$ & 1.000 & uniform $1/K$ (control) \\
-\textbf{tamsh (combined $H_0{+}H_1$, learned)} & $\mathbf{0.139}$ & $\mathbf{[0.128, 0.149]}$ & $\mathbf{+10.62 \pm 1.45}$ & 1.000 & Wasserstein gating \\
+\textbf{tamsh topology gate} & $\mathbf{0.139}$ & $\mathbf{[0.128, 0.149]}$ & $\mathbf{+10.62 \pm 1.45}$ & 1.000 & $H_0{+}H_1$ Wasserstein \\
 \midrule
 \multicolumn{6}{l}{\textit{Upper-bound analysis (not a deployable policy):}} \\
 tamsh\_force (PGD specialist) & 0.293 & [0.280, 0.306] & $+26.00 \pm 1.84$ & 1.000 & oracle prior (always-route) \\
-\multicolumn{6}{l}{\textit{Oracle ceiling (per-input best-of-K on the same L3 subset): $0.399$ recovery accuracy.}} \\
+\multicolumn{6}{l}{\textit{Oracle ceiling (per-input best-of-K, same-protocol 5-seed PGD L3 pool, $n_{L3}{\approx}796$/seed): $0.324 \pm 0.007$ recovery accuracy.}} \\
 \bottomrule
 \end{tabular}

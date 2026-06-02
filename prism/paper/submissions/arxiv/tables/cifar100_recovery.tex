@@ -1,0 +1,16 @@
+% CIFAR-100 L3-recovery (TAMSH, 5 seeds pooled).
+% Source: ../Cifar 100/.../experiments/recovery_uniform/results_cifar100_recovery_uniform_seed*.json
+% Recovery accuracy = correct labels / L3-rejected adversarials.
+% Note: 100-class chance accuracy = 0.01; passthrough baseline already exceeds chance.
+\begin{tabular}{lcccc}
+\toprule
+Strategy        & Recovery Acc. & 95\% CI & Availability & $\Delta$ vs passthrough \\
+\midrule
+reject          & 0.000 & [0.000, 0.001] & 0.000 & --- \\
+passthrough     & 0.056 & [0.050, 0.063] & 1.000 & --- \\
+\midrule
+tamsh           & 0.065 & [0.058, 0.072] & 1.000 & $+0.91$~pp \\
+tamsh\_uniform  & 0.057 & [0.051, 0.064] & 1.000 & $+0.13$~pp \\
+tamsh\_force    & 0.070 & [0.063, 0.077] & 1.000 & $+1.36$~pp \\
+\bottomrule
+\end{tabular}
