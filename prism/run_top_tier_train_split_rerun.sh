@@ -50,6 +50,16 @@ SQUARE_MAX_ITER="${SQUARE_MAX_ITER:-5000}"
 CW_MAX_ITER="${CW_MAX_ITER:-100}"
 CW_BSS="${CW_BSS:-9}"
 CW_CONFIDENCE="${CW_CONFIDENCE:-1.0}"
+# Conformal calibration source. Profile + scorer are fit on the CIFAR TRAIN
+# split (strict: no test images in detector fitting), but the conformal
+# threshold MUST be calibrated on a clean slice exchangeable with the eval
+# distribution. The backbone was trained on CIFAR-train, so train-clean scores
+# run systematically lower than test-clean scores; calibrating on train-clean
+# breaks split-conformal exchangeability and inflates the official-test FPR
+# (observed L1 FPR 0.24 vs 0.10 target). Calibrate on a held-out TEST-clean
+# window (cal_idx/val_idx), disjoint from eval_idx — clean inputs only, never
+# adversarials or the eval slice — restoring a valid FPR certificate.
+CAL_SOURCE="${CAL_SOURCE:-test}"
 
 CONFIG_WAS_SET="${CONFIG+x}"
 RUN_TAG_WAS_SET="${RUN_TAG+x}"
@@ -163,11 +173,11 @@ python scripts/train_ensemble_scorer.py \
   2>&1 | tee "$LOG_DIR/step2_train_scorer_train_window.log"
 
 echo ""
-echo "=== Step 3: train-split conformal calibration and validation ==="
+echo "=== Step 3: conformal calibration (source=$CAL_SOURCE) and validation ==="
 python scripts/calibrate_ensemble.py \
   --config "$CONFIG" \
-  --source-split train \
-  2>&1 | tee "$LOG_DIR/step3_calibrate_train.log"
+  --source-split "$CAL_SOURCE" \
+  2>&1 | tee "$LOG_DIR/step3_calibrate_${CAL_SOURCE}.log"
 
 echo ""
 echo "=== Step 4: official-test multi-seed main attack evaluation ==="
