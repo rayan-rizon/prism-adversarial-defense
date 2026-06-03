@@ -1,0 +1,3744 @@
+{
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    999
+  ],
+  "per_seed": {
+    "42": {
+      "FGSM": {
+        "TPR": 0.894,
+        "TPR_CI_95": [
+          0.8734,
+          0.9116
+        ],
+        "FPR": 0.077,
+        "FPR_CI_95": [
+          0.062,
+          0.0952
+        ],
+        "Precision": 0.9207,
+        "F1": 0.9072,
+        "TP": 894,
+        "FP": 77,
+        "FN": 106,
+        "TN": 923,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.077,
+          "FPR_L2_plus": 0.018,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 923,
+          "L2": 15,
+          "L1": 59,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L2": 423,
+          "L3_REJECT": 160,
+          "L1": 311,
+          "PASS": 106
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.286884,
+            "std": 1.924409,
+            "min": -7.074097,
+            "p05": -2.867126,
+            "p25": -0.821357,
+            "p50": 0.344284,
+            "p75": 1.383732,
+            "p95": 3.328373,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 5.163571,
+            "std": 1.92312,
+            "min": 0.528577,
+            "p05": 2.098295,
+            "p25": 3.716643,
+            "p50": 5.11438,
+            "p75": 6.576786,
+            "p95": 8.457427,
+            "max": 10.614626
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9662,
+          "aupr": 0.9583,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 604,
+        "base_attack_success_rate": 0.604,
+        "detector_TPR_on_base_success": 0.9056,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8797,
+          0.9264
+        ],
+        "detected_base_success": 547,
+        "missed_base_success": 57
+      },
+      "PGD": {
+        "TPR": 0.995,
+        "TPR_CI_95": [
+          0.9883,
+          0.9979
+        ],
+        "FPR": 0.077,
+        "FPR_CI_95": [
+          0.062,
+          0.0952
+        ],
+        "Precision": 0.9282,
+        "F1": 0.9604,
+        "TP": 995,
+        "FP": 77,
+        "FN": 5,
+        "TN": 923,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.077,
+          "FPR_L2_plus": 0.018,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 923,
+          "L2": 15,
+          "L1": 59,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 833,
+          "L2": 130,
+          "L1": 32,
+          "PASS": 5
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.286884,
+            "std": 1.924409,
+            "min": -7.074096,
+            "p05": -2.867126,
+            "p25": -0.821357,
+            "p50": 0.344284,
+            "p75": 1.383732,
+            "p95": 3.328373,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 11.950832,
+            "std": 5.255713,
+            "min": 1.954017,
+            "p05": 4.99422,
+            "p25": 8.409452,
+            "p50": 11.184283,
+            "p75": 14.845643,
+            "p95": 20.404959,
+            "max": 46.609051
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9971,
+          "aupr": 0.9971,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.995,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9883,
+          0.9979
+        ],
+        "detected_base_success": 995,
+        "missed_base_success": 5
+      },
+      "Square": {
+        "TPR": 0.883,
+        "TPR_CI_95": [
+          0.8616,
+          0.9015
+        ],
+        "FPR": 0.077,
+        "FPR_CI_95": [
+          0.062,
+          0.0952
+        ],
+        "Precision": 0.9198,
+        "F1": 0.901,
+        "TP": 883,
+        "FP": 77,
+        "FN": 117,
+        "TN": 923,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.077,
+          "FPR_L2_plus": 0.018,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 923,
+          "L2": 15,
+          "L1": 59,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 249,
+          "L2": 462,
+          "L1": 172,
+          "PASS": 117
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.286884,
+            "std": 1.924409,
+            "min": -7.074096,
+            "p05": -2.867127,
+            "p25": -0.821357,
+            "p50": 0.344285,
+            "p75": 1.383732,
+            "p95": 3.328373,
+            "max": 8.742341
+          },
+          "adversarial": {
+            "mean": 5.614896,
+            "std": 2.152215,
+            "min": -1.951737,
+            "p05": 1.512428,
+            "p25": 4.338904,
+            "p50": 5.875409,
+            "p75": 7.102269,
+            "p95": 8.790689,
+            "max": 10.834295
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9595,
+          "aupr": 0.9604,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 996,
+        "base_attack_success_rate": 0.996,
+        "detector_TPR_on_base_success": 0.8825,
+        "detector_TPR_on_base_success_CI_95": [
+          0.861,
+          0.9011
+        ],
+        "detected_base_success": 879,
+        "missed_base_success": 117
+      },
+      "CW": {
+        "TPR": 0.943,
+        "TPR_CI_95": [
+          0.9269,
+          0.9557
+        ],
+        "FPR": 0.077,
+        "FPR_CI_95": [
+          0.062,
+          0.0952
+        ],
+        "Precision": 0.9245,
+        "F1": 0.9337,
+        "TP": 943,
+        "FP": 77,
+        "FN": 57,
+        "TN": 923,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.077,
+          "FPR_L2_plus": 0.018,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 923,
+          "L2": 15,
+          "L1": 59,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 347,
+          "L2": 443,
+          "L1": 153,
+          "PASS": 57
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.286884,
+            "std": 1.924409,
+            "min": -7.074097,
+            "p05": -2.867126,
+            "p25": -0.821357,
+            "p50": 0.344284,
+            "p75": 1.383732,
+            "p95": 3.328373,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 6.231006,
+            "std": 2.041575,
+            "min": -0.674049,
+            "p05": 2.674314,
+            "p25": 5.011323,
+            "p50": 6.360494,
+            "p75": 7.618399,
+            "p95": 9.424038,
+            "max": 11.571901
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.978,
+          "aupr": 0.9767,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.943,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9269,
+          0.9557
+        ],
+        "detected_base_success": 943,
+        "missed_base_success": 57,
+        "attack_generation": {
+          "engine": "torch",
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0,
+          "mean_success_l2": 0.128345,
+          "max_success_l2": 0.678072,
+          "chunk_timings": [
+            {
+              "start": 0,
+              "end": 128,
+              "chunk_size": 128,
+              "elapsed_s": 30.07,
+              "cumulative_elapsed_s": 30.07,
+              "rate_s_per_img": 0.2349,
+              "base_attack_success_cumulative": 128
+            },
+            {
+              "start": 128,
+              "end": 256,
+              "chunk_size": 128,
+              "elapsed_s": 25.35,
+              "cumulative_elapsed_s": 55.42,
+              "rate_s_per_img": 0.198,
+              "base_attack_success_cumulative": 256
+            },
+            {
+              "start": 256,
+              "end": 384,
+              "chunk_size": 128,
+              "elapsed_s": 25.43,
+              "cumulative_elapsed_s": 80.85,
+              "rate_s_per_img": 0.1986,
+              "base_attack_success_cumulative": 384
+            },
+            {
+              "start": 384,
+              "end": 512,
+              "chunk_size": 128,
+              "elapsed_s": 25.36,
+              "cumulative_elapsed_s": 106.21,
+              "rate_s_per_img": 0.1982,
+              "base_attack_success_cumulative": 512
+            },
+            {
+              "start": 512,
+              "end": 640,
+              "chunk_size": 128,
+              "elapsed_s": 25.33,
+              "cumulative_elapsed_s": 131.54,
+              "rate_s_per_img": 0.1979,
+              "base_attack_success_cumulative": 640
+            },
+            {
+              "start": 640,
+              "end": 768,
+              "chunk_size": 128,
+              "elapsed_s": 25.32,
+              "cumulative_elapsed_s": 156.86,
+              "rate_s_per_img": 0.1978,
+              "base_attack_success_cumulative": 768
+            },
+            {
+              "start": 768,
+              "end": 896,
+              "chunk_size": 128,
+              "elapsed_s": 25.33,
+              "cumulative_elapsed_s": 182.19,
+              "rate_s_per_img": 0.1979,
+              "base_attack_success_cumulative": 896
+            },
+            {
+              "start": 896,
+              "end": 1000,
+              "chunk_size": 104,
+              "elapsed_s": 25.1,
+              "cumulative_elapsed_s": 207.28,
+              "rate_s_per_img": 0.2413,
+              "base_attack_success_cumulative": 1000
+            }
+          ],
+          "initial_chunk": 128,
+          "final_chunk": 128,
+          "max_iter": 100,
+          "binary_search_steps": 9,
+          "confidence": 1.0,
+          "learning_rate": 0.01,
+          "cuda_peak_memory_mb": 2373.86,
+          "detector_TPR_on_base_success": 0.943,
+          "detector_TPR_on_base_success_CI_95": [
+            0.9269,
+            0.9557
+          ],
+          "detected_base_success": 943,
+          "missed_base_success": 57
+        }
+      },
+      "AutoAttack": {
+        "TPR": 1.0,
+        "FPR": 0.077,
+        "Precision": 0.9285,
+        "F1": 0.9629,
+        "TP": 1000,
+        "FP": 77,
+        "FN": 0,
+        "TN": 923,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.077,
+          "FPR_L2_plus": 0.018,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 923,
+          "L2": 15,
+          "L1": 59,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 996,
+          "L2": 4
+        },
+        "TPR_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "FPR_CI_95": [
+          0.062,
+          0.0952
+        ],
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 1.0,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "detected_base_success": 1000,
+        "missed_base_success": 0,
+        "attack_generation": {
+          "engine": "autoattack",
+          "version": "standard",
+          "eps": 0.031373,
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.286884,
+            "std": 1.924409,
+            "min": -7.074097,
+            "p05": -2.867126,
+            "p25": -0.821358,
+            "p50": 0.344285,
+            "p75": 1.383732,
+            "p95": 3.328373,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 22.778027,
+            "std": 7.248587,
+            "min": 4.889532,
+            "p05": 12.390696,
+            "p25": 18.207928,
+            "p50": 22.182247,
+            "p75": 26.686041,
+            "p95": 34.689941,
+            "max": 62.587982
+          }
+        },
+        "detection_auc": {
+          "auroc": 1.0,
+          "aupr": 1.0,
+          "n_clean": 1000,
+          "n_adv": 1000
+        }
+      },
+      "_meta": {
+        "n_test": 1000,
+        "n_actual": 1000,
+        "dataset": "cifar10",
+        "eval_split": "CIFAR10 test idx 8000-9999",
+        "calibration_split": "CIFAR10 test idx 5000-6999",
+        "validation_split": "CIFAR10 test idx 7000-7999",
+        "seed": 42,
+        "eps_linf": 0.03137254901960784,
+        "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+        "attacks": [
+          "FGSM",
+          "PGD",
+          "Square",
+          "CW",
+          "AutoAttack"
+        ],
+        "attack_params": {
+          "FGSM": {
+            "eps_linf": 0.03137254901960784
+          },
+          "PGD": {
+            "eps_linf": 0.03137254901960784,
+            "eps_step": 0.00784313725490196,
+            "max_iter": 50,
+            "num_random_init": 10
+          },
+          "Square": {
+            "eps_linf": 0.03137254901960784,
+            "max_iter": 5000,
+            "nb_restarts": 1
+          },
+          "CW": {
+            "max_iter": 100,
+            "binary_search_steps": 9,
+            "confidence": 1.0,
+            "engine": "torch"
+          },
+          "AutoAttack": {
+            "eps_linf": 0.03137254901960784,
+            "version": "standard"
+          }
+        },
+        "latency": {
+          "skipped": true
+        },
+        "latency_skipped": true,
+        "device": "cuda",
+        "ensemble": {
+          "use_dct": true,
+          "use_grad_norm": true,
+          "use_softmax_entropy": true,
+          "use_logit_profile_features": true,
+          "logit_profile_feature_count": 8,
+          "use_stability_features": true,
+          "stability_feature_count": 8,
+          "training_attacks": [
+            "FGSM",
+            "PGD",
+            "Square"
+          ],
+          "training_n": 1500,
+          "training_eps": 0.03137254901960784,
+          "training_source_split": "profile",
+          "training_source_description": "CIFAR10 test profile split [0-4999]",
+          "n_features": 55,
+          "logistic_input_dim": 245,
+          "use_side_quadratic_features": true,
+          "quadratic_feature_start": 36,
+          "feature_space_version": "pixel-stability-v2+logitprofile+sidequad+gradnorm",
+          "selection_objective": "worst_case_tpr",
+          "fgsm_oversample": 1.0,
+          "pgd_oversample": 1.0,
+          "square_oversample": 1.0,
+          "requested_oversample_weights": {
+            "FGSM": 1.0,
+            "PGD": 1.0,
+            "Square": 1.0
+          },
+          "square_train_max_iter": 500,
+          "attack_head_mode": "off",
+          "score_channel_aggregation": "max",
+          "active_attack_heads": [],
+          "score_channel_mode": null,
+          "score_channel_validation": null,
+          "training_attack_counts": {
+            "FGSM": 500,
+            "PGD": 500,
+            "Square": 500
+          },
+          "balanced_attacks": true,
+          "pgd_train_steps": 40,
+          "per_attack_validation_metrics": {
+            "alpha": 0.2,
+            "auc": 0.9812444444444444,
+            "clean_threshold": 2.4358153343200684,
+            "clean_fpr": 0.09666666666666666,
+            "per_attack_tpr": {
+              "FGSM": 0.9777777777777777,
+              "PGD": 1.0,
+              "Square": 0.9304347826086956
+            },
+            "worst_case_tpr": 0.9304347826086956,
+            "mean_attack_tpr": 0.9694041867954911
+          }
+        },
+        "cw_engine": "torch",
+        "target_metric_gate": {
+          "attacks": {
+            "FGSM": {
+              "TPR": 0.894,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8734,
+                0.9116
+              ]
+            },
+            "PGD": {
+              "TPR": 0.995,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9883,
+                0.9979
+              ]
+            },
+            "Square": {
+              "TPR": 0.883,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8616,
+                0.9015
+              ]
+            },
+            "CW": {
+              "TPR": 0.943,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9269,
+                0.9557
+              ]
+            },
+            "AutoAttack": {
+              "TPR": 1.0,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9962,
+                1.0
+              ]
+            }
+          },
+          "fpr": {
+            "L1": {
+              "FPR": 0.077,
+              "target": 0.1,
+              "passed": true
+            },
+            "L2": {
+              "FPR": 0.018,
+              "target": 0.03,
+              "passed": true
+            },
+            "L3": {
+              "FPR": 0.003,
+              "target": 0.005,
+              "passed": true
+            }
+          },
+          "pooled_tpr": 0.943,
+          "pooled_wilson_lower": 0.9362,
+          "pooled_wilson_lower_target": 0.8,
+          "pooled_wilson_passed": true,
+          "latency_mean_ms": null,
+          "latency_target_ms": 100.0,
+          "latency_passed": null,
+          "passed": true,
+          "failures": []
+        }
+      }
+    },
+    "123": {
+      "FGSM": {
+        "TPR": 0.901,
+        "TPR_CI_95": [
+          0.8809,
+          0.918
+        ],
+        "FPR": 0.075,
+        "FPR_CI_95": [
+          0.0603,
+          0.093
+        ],
+        "Precision": 0.9232,
+        "F1": 0.9119,
+        "TP": 901,
+        "FP": 75,
+        "FN": 99,
+        "TN": 925,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.075,
+          "FPR_L2_plus": 0.014,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 925,
+          "L2": 11,
+          "L1": 61,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L2": 428,
+          "PASS": 99,
+          "L1": 314,
+          "L3_REJECT": 159
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.185828,
+            "std": 1.974725,
+            "min": -7.074097,
+            "p05": -3.12061,
+            "p25": -0.869511,
+            "p50": 0.254763,
+            "p75": 1.352095,
+            "p95": 3.297164,
+            "max": 8.742341
+          },
+          "adversarial": {
+            "mean": 5.168827,
+            "std": 1.852039,
+            "min": 0.389476,
+            "p05": 2.127803,
+            "p25": 3.759272,
+            "p50": 5.114381,
+            "p75": 6.494509,
+            "p95": 8.171816,
+            "max": 12.130988
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9715,
+          "aupr": 0.9641,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 622,
+        "base_attack_success_rate": 0.622,
+        "detector_TPR_on_base_success": 0.9051,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8796,
+          0.9257
+        ],
+        "detected_base_success": 563,
+        "missed_base_success": 59
+      },
+      "PGD": {
+        "TPR": 0.991,
+        "TPR_CI_95": [
+          0.983,
+          0.9953
+        ],
+        "FPR": 0.075,
+        "FPR_CI_95": [
+          0.0603,
+          0.093
+        ],
+        "Precision": 0.9296,
+        "F1": 0.9593,
+        "TP": 991,
+        "FP": 75,
+        "FN": 9,
+        "TN": 925,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.075,
+          "FPR_L2_plus": 0.014,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 925,
+          "L2": 11,
+          "L1": 61,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 823,
+          "L2": 127,
+          "PASS": 9,
+          "L1": 41
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.185828,
+            "std": 1.974725,
+            "min": -7.074096,
+            "p05": -3.12061,
+            "p25": -0.869511,
+            "p50": 0.254763,
+            "p75": 1.352095,
+            "p95": 3.297164,
+            "max": 8.74234
+          },
+          "adversarial": {
+            "mean": 11.693891,
+            "std": 5.237846,
+            "min": 1.046968,
+            "p05": 4.693102,
+            "p25": 8.0844,
+            "p50": 11.017908,
+            "p75": 14.4748,
+            "p95": 20.647228,
+            "max": 47.419979
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9962,
+          "aupr": 0.9964,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 999,
+        "base_attack_success_rate": 0.999,
+        "detector_TPR_on_base_success": 0.991,
+        "detector_TPR_on_base_success_CI_95": [
+          0.983,
+          0.9953
+        ],
+        "detected_base_success": 990,
+        "missed_base_success": 9
+      },
+      "Square": {
+        "TPR": 0.891,
+        "TPR_CI_95": [
+          0.8702,
+          0.9088
+        ],
+        "FPR": 0.075,
+        "FPR_CI_95": [
+          0.0603,
+          0.093
+        ],
+        "Precision": 0.9224,
+        "F1": 0.9064,
+        "TP": 891,
+        "FP": 75,
+        "FN": 109,
+        "TN": 925,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.075,
+          "FPR_L2_plus": 0.014,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 925,
+          "L2": 11,
+          "L1": 61,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L2": 449,
+          "PASS": 109,
+          "L3_REJECT": 228,
+          "L1": 214
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.185828,
+            "std": 1.974725,
+            "min": -7.074097,
+            "p05": -3.12061,
+            "p25": -0.869511,
+            "p50": 0.254763,
+            "p75": 1.352095,
+            "p95": 3.297164,
+            "max": 8.74234
+          },
+          "adversarial": {
+            "mean": 5.483477,
+            "std": 2.155321,
+            "min": -4.206736,
+            "p05": 1.951048,
+            "p25": 3.988025,
+            "p50": 5.70309,
+            "p75": 6.978698,
+            "p95": 8.615674,
+            "max": 12.239634
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9626,
+          "aupr": 0.9629,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 997,
+        "base_attack_success_rate": 0.997,
+        "detector_TPR_on_base_success": 0.8907,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8698,
+          0.9086
+        ],
+        "detected_base_success": 888,
+        "missed_base_success": 109
+      },
+      "CW": {
+        "TPR": 0.933,
+        "TPR_CI_95": [
+          0.9158,
+          0.9469
+        ],
+        "FPR": 0.075,
+        "FPR_CI_95": [
+          0.0603,
+          0.093
+        ],
+        "Precision": 0.9256,
+        "F1": 0.9293,
+        "TP": 933,
+        "FP": 75,
+        "FN": 67,
+        "TN": 925,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.075,
+          "FPR_L2_plus": 0.014,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 925,
+          "L2": 11,
+          "L1": 61,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L2": 466,
+          "L1": 145,
+          "L3_REJECT": 322,
+          "PASS": 67
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.185828,
+            "std": 1.974725,
+            "min": -7.074097,
+            "p05": -3.12061,
+            "p25": -0.869511,
+            "p50": 0.254763,
+            "p75": 1.352095,
+            "p95": 3.297164,
+            "max": 8.74234
+          },
+          "adversarial": {
+            "mean": 6.166693,
+            "std": 2.117936,
+            "min": -1.025728,
+            "p05": 2.436588,
+            "p25": 4.892394,
+            "p50": 6.318485,
+            "p75": 7.464284,
+            "p95": 9.473989,
+            "max": 17.307667
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9769,
+          "aupr": 0.9769,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.933,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9158,
+          0.9469
+        ],
+        "detected_base_success": 933,
+        "missed_base_success": 67,
+        "attack_generation": {
+          "engine": "torch",
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0,
+          "mean_success_l2": 0.126534,
+          "max_success_l2": 0.661915,
+          "chunk_timings": [
+            {
+              "start": 0,
+              "end": 128,
+              "chunk_size": 128,
+              "elapsed_s": 24.79,
+              "cumulative_elapsed_s": 24.79,
+              "rate_s_per_img": 0.1937,
+              "base_attack_success_cumulative": 128
+            },
+            {
+              "start": 128,
+              "end": 256,
+              "chunk_size": 128,
+              "elapsed_s": 25.25,
+              "cumulative_elapsed_s": 50.04,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 256
+            },
+            {
+              "start": 256,
+              "end": 384,
+              "chunk_size": 128,
+              "elapsed_s": 25.29,
+              "cumulative_elapsed_s": 75.33,
+              "rate_s_per_img": 0.1975,
+              "base_attack_success_cumulative": 384
+            },
+            {
+              "start": 384,
+              "end": 512,
+              "chunk_size": 128,
+              "elapsed_s": 25.28,
+              "cumulative_elapsed_s": 100.61,
+              "rate_s_per_img": 0.1975,
+              "base_attack_success_cumulative": 512
+            },
+            {
+              "start": 512,
+              "end": 640,
+              "chunk_size": 128,
+              "elapsed_s": 25.24,
+              "cumulative_elapsed_s": 125.84,
+              "rate_s_per_img": 0.1972,
+              "base_attack_success_cumulative": 640
+            },
+            {
+              "start": 640,
+              "end": 768,
+              "chunk_size": 128,
+              "elapsed_s": 25.22,
+              "cumulative_elapsed_s": 151.06,
+              "rate_s_per_img": 0.197,
+              "base_attack_success_cumulative": 768
+            },
+            {
+              "start": 768,
+              "end": 896,
+              "chunk_size": 128,
+              "elapsed_s": 25.22,
+              "cumulative_elapsed_s": 176.29,
+              "rate_s_per_img": 0.1971,
+              "base_attack_success_cumulative": 896
+            },
+            {
+              "start": 896,
+              "end": 1000,
+              "chunk_size": 104,
+              "elapsed_s": 20.06,
+              "cumulative_elapsed_s": 196.35,
+              "rate_s_per_img": 0.1929,
+              "base_attack_success_cumulative": 1000
+            }
+          ],
+          "initial_chunk": 128,
+          "final_chunk": 128,
+          "max_iter": 100,
+          "binary_search_steps": 9,
+          "confidence": 1.0,
+          "learning_rate": 0.01,
+          "cuda_peak_memory_mb": 921.2,
+          "detector_TPR_on_base_success": 0.933,
+          "detector_TPR_on_base_success_CI_95": [
+            0.9158,
+            0.9469
+          ],
+          "detected_base_success": 933,
+          "missed_base_success": 67
+        }
+      },
+      "AutoAttack": {
+        "TPR": 1.0,
+        "FPR": 0.075,
+        "Precision": 0.9302,
+        "F1": 0.9639,
+        "TP": 1000,
+        "FP": 75,
+        "FN": 0,
+        "TN": 925,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.075,
+          "FPR_L2_plus": 0.014,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 925,
+          "L2": 11,
+          "L1": 61,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 995,
+          "L2": 5
+        },
+        "TPR_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "FPR_CI_95": [
+          0.0603,
+          0.093
+        ],
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 1.0,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "detected_base_success": 1000,
+        "missed_base_success": 0,
+        "attack_generation": {
+          "engine": "autoattack",
+          "version": "standard",
+          "eps": 0.031373,
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.185828,
+            "std": 1.974725,
+            "min": -7.074098,
+            "p05": -3.12061,
+            "p25": -0.869511,
+            "p50": 0.254763,
+            "p75": 1.352095,
+            "p95": 3.297164,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 22.714844,
+            "std": 7.218172,
+            "min": 5.501835,
+            "p05": 12.064794,
+            "p25": 17.981894,
+            "p50": 22.096802,
+            "p75": 26.920574,
+            "p95": 33.873356,
+            "max": 73.15036
+          }
+        },
+        "detection_auc": {
+          "auroc": 1.0,
+          "aupr": 1.0,
+          "n_clean": 1000,
+          "n_adv": 1000
+        }
+      },
+      "_meta": {
+        "n_test": 1000,
+        "n_actual": 1000,
+        "dataset": "cifar10",
+        "eval_split": "CIFAR10 test idx 8000-9999",
+        "calibration_split": "CIFAR10 test idx 5000-6999",
+        "validation_split": "CIFAR10 test idx 7000-7999",
+        "seed": 123,
+        "eps_linf": 0.03137254901960784,
+        "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+        "attacks": [
+          "FGSM",
+          "PGD",
+          "Square",
+          "CW",
+          "AutoAttack"
+        ],
+        "attack_params": {
+          "FGSM": {
+            "eps_linf": 0.03137254901960784
+          },
+          "PGD": {
+            "eps_linf": 0.03137254901960784,
+            "eps_step": 0.00784313725490196,
+            "max_iter": 50,
+            "num_random_init": 10
+          },
+          "Square": {
+            "eps_linf": 0.03137254901960784,
+            "max_iter": 5000,
+            "nb_restarts": 1
+          },
+          "CW": {
+            "max_iter": 100,
+            "binary_search_steps": 9,
+            "confidence": 1.0,
+            "engine": "torch"
+          },
+          "AutoAttack": {
+            "eps_linf": 0.03137254901960784,
+            "version": "standard"
+          }
+        },
+        "latency": {
+          "skipped": true
+        },
+        "latency_skipped": true,
+        "device": "cuda",
+        "ensemble": {
+          "use_dct": true,
+          "use_grad_norm": true,
+          "use_softmax_entropy": true,
+          "use_logit_profile_features": true,
+          "logit_profile_feature_count": 8,
+          "use_stability_features": true,
+          "stability_feature_count": 8,
+          "training_attacks": [
+            "FGSM",
+            "PGD",
+            "Square"
+          ],
+          "training_n": 1500,
+          "training_eps": 0.03137254901960784,
+          "training_source_split": "profile",
+          "training_source_description": "CIFAR10 test profile split [0-4999]",
+          "n_features": 55,
+          "logistic_input_dim": 245,
+          "use_side_quadratic_features": true,
+          "quadratic_feature_start": 36,
+          "feature_space_version": "pixel-stability-v2+logitprofile+sidequad+gradnorm",
+          "selection_objective": "worst_case_tpr",
+          "fgsm_oversample": 1.0,
+          "pgd_oversample": 1.0,
+          "square_oversample": 1.0,
+          "requested_oversample_weights": {
+            "FGSM": 1.0,
+            "PGD": 1.0,
+            "Square": 1.0
+          },
+          "square_train_max_iter": 500,
+          "attack_head_mode": "off",
+          "score_channel_aggregation": "max",
+          "active_attack_heads": [],
+          "score_channel_mode": null,
+          "score_channel_validation": null,
+          "training_attack_counts": {
+            "FGSM": 500,
+            "PGD": 500,
+            "Square": 500
+          },
+          "balanced_attacks": true,
+          "pgd_train_steps": 40,
+          "per_attack_validation_metrics": {
+            "alpha": 0.2,
+            "auc": 0.9812444444444444,
+            "clean_threshold": 2.4358153343200684,
+            "clean_fpr": 0.09666666666666666,
+            "per_attack_tpr": {
+              "FGSM": 0.9777777777777777,
+              "PGD": 1.0,
+              "Square": 0.9304347826086956
+            },
+            "worst_case_tpr": 0.9304347826086956,
+            "mean_attack_tpr": 0.9694041867954911
+          }
+        },
+        "cw_engine": "torch",
+        "target_metric_gate": {
+          "attacks": {
+            "FGSM": {
+              "TPR": 0.901,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8809,
+                0.918
+              ]
+            },
+            "PGD": {
+              "TPR": 0.991,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.983,
+                0.9953
+              ]
+            },
+            "Square": {
+              "TPR": 0.891,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8702,
+                0.9088
+              ]
+            },
+            "CW": {
+              "TPR": 0.933,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9158,
+                0.9469
+              ]
+            },
+            "AutoAttack": {
+              "TPR": 1.0,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9962,
+                1.0
+              ]
+            }
+          },
+          "fpr": {
+            "L1": {
+              "FPR": 0.075,
+              "target": 0.1,
+              "passed": true
+            },
+            "L2": {
+              "FPR": 0.014,
+              "target": 0.03,
+              "passed": true
+            },
+            "L3": {
+              "FPR": 0.003,
+              "target": 0.005,
+              "passed": true
+            }
+          },
+          "pooled_tpr": 0.9432,
+          "pooled_wilson_lower": 0.9364,
+          "pooled_wilson_lower_target": 0.8,
+          "pooled_wilson_passed": true,
+          "latency_mean_ms": null,
+          "latency_target_ms": 100.0,
+          "latency_passed": null,
+          "passed": true,
+          "failures": []
+        }
+      }
+    },
+    "456": {
+      "FGSM": {
+        "TPR": 0.892,
+        "TPR_CI_95": [
+          0.8712,
+          0.9098
+        ],
+        "FPR": 0.072,
+        "FPR_CI_95": [
+          0.0576,
+          0.0897
+        ],
+        "Precision": 0.9253,
+        "F1": 0.9084,
+        "TP": 892,
+        "FP": 72,
+        "FN": 108,
+        "TN": 928,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.072,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 928,
+          "L2": 16,
+          "L1": 53,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "PASS": 108,
+          "L2": 429,
+          "L1": 305,
+          "L3_REJECT": 158
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.162035,
+            "std": 1.962256,
+            "min": -8.219474,
+            "p05": -3.003504,
+            "p25": -1.034031,
+            "p50": 0.224995,
+            "p75": 1.276855,
+            "p95": 3.192362,
+            "max": 8.74234
+          },
+          "adversarial": {
+            "mean": 5.145951,
+            "std": 1.912973,
+            "min": 0.397011,
+            "p05": 2.053905,
+            "p25": 3.742952,
+            "p50": 5.155467,
+            "p75": 6.412219,
+            "p95": 8.326196,
+            "max": 12.130989
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9672,
+          "aupr": 0.958,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 609,
+        "base_attack_success_rate": 0.609,
+        "detector_TPR_on_base_success": 0.8933,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8662,
+          0.9154
+        ],
+        "detected_base_success": 544,
+        "missed_base_success": 65
+      },
+      "PGD": {
+        "TPR": 0.99,
+        "TPR_CI_95": [
+          0.9817,
+          0.9946
+        ],
+        "FPR": 0.072,
+        "FPR_CI_95": [
+          0.0576,
+          0.0897
+        ],
+        "Precision": 0.9322,
+        "F1": 0.9602,
+        "TP": 990,
+        "FP": 72,
+        "FN": 10,
+        "TN": 928,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.072,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 928,
+          "L2": 16,
+          "L1": 53,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 817,
+          "L2": 125,
+          "L1": 48,
+          "PASS": 10
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.162035,
+            "std": 1.962256,
+            "min": -8.219474,
+            "p05": -3.003504,
+            "p25": -1.034031,
+            "p50": 0.224994,
+            "p75": 1.276855,
+            "p95": 3.192362,
+            "max": 8.74234
+          },
+          "adversarial": {
+            "mean": 11.477389,
+            "std": 4.971031,
+            "min": 1.114926,
+            "p05": 4.48489,
+            "p25": 8.061272,
+            "p50": 10.873632,
+            "p75": 14.306423,
+            "p95": 19.280949,
+            "max": 38.637871
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9956,
+          "aupr": 0.9957,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.99,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9817,
+          0.9946
+        ],
+        "detected_base_success": 990,
+        "missed_base_success": 10
+      },
+      "Square": {
+        "TPR": 0.866,
+        "TPR_CI_95": [
+          0.8435,
+          0.8857
+        ],
+        "FPR": 0.072,
+        "FPR_CI_95": [
+          0.0576,
+          0.0897
+        ],
+        "Precision": 0.9232,
+        "F1": 0.8937,
+        "TP": 866,
+        "FP": 72,
+        "FN": 134,
+        "TN": 928,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.072,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 928,
+          "L2": 16,
+          "L1": 53,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 260,
+          "L1": 199,
+          "PASS": 134,
+          "L2": 407
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.162035,
+            "std": 1.962256,
+            "min": -8.219474,
+            "p05": -3.003504,
+            "p25": -1.034031,
+            "p50": 0.224995,
+            "p75": 1.276855,
+            "p95": 3.192362,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 5.518588,
+            "std": 2.285647,
+            "min": -2.772813,
+            "p05": 1.490347,
+            "p25": 4.044156,
+            "p50": 5.65977,
+            "p75": 7.165606,
+            "p95": 8.928308,
+            "max": 12.247196
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9568,
+          "aupr": 0.9571,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 997,
+        "base_attack_success_rate": 0.997,
+        "detector_TPR_on_base_success": 0.8656,
+        "detector_TPR_on_base_success_CI_95": [
+          0.843,
+          0.8854
+        ],
+        "detected_base_success": 863,
+        "missed_base_success": 134
+      },
+      "CW": {
+        "TPR": 0.93,
+        "TPR_CI_95": [
+          0.9125,
+          0.9442
+        ],
+        "FPR": 0.072,
+        "FPR_CI_95": [
+          0.0576,
+          0.0897
+        ],
+        "Precision": 0.9281,
+        "F1": 0.9291,
+        "TP": 930,
+        "FP": 72,
+        "FN": 70,
+        "TN": 928,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.072,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 928,
+          "L2": 16,
+          "L1": 53,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "PASS": 70,
+          "L1": 144,
+          "L2": 475,
+          "L3_REJECT": 311
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.162035,
+            "std": 1.962256,
+            "min": -8.219474,
+            "p05": -3.003504,
+            "p25": -1.034032,
+            "p50": 0.224995,
+            "p75": 1.276855,
+            "p95": 3.192362,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 6.073421,
+            "std": 2.088101,
+            "min": -1.567832,
+            "p05": 2.36383,
+            "p25": 4.911554,
+            "p50": 6.24467,
+            "p75": 7.418533,
+            "p95": 9.284,
+            "max": 16.704229
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9738,
+          "aupr": 0.9726,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.93,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9125,
+          0.9442
+        ],
+        "detected_base_success": 930,
+        "missed_base_success": 70,
+        "attack_generation": {
+          "engine": "torch",
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0,
+          "mean_success_l2": 0.129728,
+          "max_success_l2": 0.650209,
+          "chunk_timings": [
+            {
+              "start": 0,
+              "end": 128,
+              "chunk_size": 128,
+              "elapsed_s": 24.63,
+              "cumulative_elapsed_s": 24.63,
+              "rate_s_per_img": 0.1924,
+              "base_attack_success_cumulative": 128
+            },
+            {
+              "start": 128,
+              "end": 256,
+              "chunk_size": 128,
+              "elapsed_s": 25.08,
+              "cumulative_elapsed_s": 49.71,
+              "rate_s_per_img": 0.196,
+              "base_attack_success_cumulative": 256
+            },
+            {
+              "start": 256,
+              "end": 384,
+              "chunk_size": 128,
+              "elapsed_s": 25.26,
+              "cumulative_elapsed_s": 74.97,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 384
+            },
+            {
+              "start": 384,
+              "end": 512,
+              "chunk_size": 128,
+              "elapsed_s": 25.25,
+              "cumulative_elapsed_s": 100.22,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 512
+            },
+            {
+              "start": 512,
+              "end": 640,
+              "chunk_size": 128,
+              "elapsed_s": 25.22,
+              "cumulative_elapsed_s": 125.44,
+              "rate_s_per_img": 0.197,
+              "base_attack_success_cumulative": 640
+            },
+            {
+              "start": 640,
+              "end": 768,
+              "chunk_size": 128,
+              "elapsed_s": 25.18,
+              "cumulative_elapsed_s": 150.62,
+              "rate_s_per_img": 0.1967,
+              "base_attack_success_cumulative": 768
+            },
+            {
+              "start": 768,
+              "end": 896,
+              "chunk_size": 128,
+              "elapsed_s": 25.18,
+              "cumulative_elapsed_s": 175.8,
+              "rate_s_per_img": 0.1967,
+              "base_attack_success_cumulative": 896
+            },
+            {
+              "start": 896,
+              "end": 1000,
+              "chunk_size": 104,
+              "elapsed_s": 20.0,
+              "cumulative_elapsed_s": 195.8,
+              "rate_s_per_img": 0.1924,
+              "base_attack_success_cumulative": 1000
+            }
+          ],
+          "initial_chunk": 128,
+          "final_chunk": 128,
+          "max_iter": 100,
+          "binary_search_steps": 9,
+          "confidence": 1.0,
+          "learning_rate": 0.01,
+          "cuda_peak_memory_mb": 964.72,
+          "detector_TPR_on_base_success": 0.93,
+          "detector_TPR_on_base_success_CI_95": [
+            0.9125,
+            0.9442
+          ],
+          "detected_base_success": 930,
+          "missed_base_success": 70
+        }
+      },
+      "AutoAttack": {
+        "TPR": 1.0,
+        "FPR": 0.072,
+        "Precision": 0.9328,
+        "F1": 0.9653,
+        "TP": 1000,
+        "FP": 72,
+        "FN": 0,
+        "TN": 928,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.072,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 928,
+          "L2": 16,
+          "L1": 53,
+          "L3_REJECT": 3
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 995,
+          "L2": 5
+        },
+        "TPR_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "FPR_CI_95": [
+          0.0576,
+          0.0897
+        ],
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 1.0,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "detected_base_success": 1000,
+        "missed_base_success": 0,
+        "attack_generation": {
+          "engine": "autoattack",
+          "version": "standard",
+          "eps": 0.031373,
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.162035,
+            "std": 1.962256,
+            "min": -8.219474,
+            "p05": -3.003504,
+            "p25": -1.034032,
+            "p50": 0.224995,
+            "p75": 1.276856,
+            "p95": 3.192362,
+            "max": 8.742339
+          },
+          "adversarial": {
+            "mean": 22.64209,
+            "std": 6.817318,
+            "min": 5.461713,
+            "p05": 11.873264,
+            "p25": 18.156494,
+            "p50": 22.326639,
+            "p75": 26.92445,
+            "p95": 33.671879,
+            "max": 56.895176
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9999,
+          "aupr": 0.9999,
+          "n_clean": 1000,
+          "n_adv": 1000
+        }
+      },
+      "_meta": {
+        "n_test": 1000,
+        "n_actual": 1000,
+        "dataset": "cifar10",
+        "eval_split": "CIFAR10 test idx 8000-9999",
+        "calibration_split": "CIFAR10 test idx 5000-6999",
+        "validation_split": "CIFAR10 test idx 7000-7999",
+        "seed": 456,
+        "eps_linf": 0.03137254901960784,
+        "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+        "attacks": [
+          "FGSM",
+          "PGD",
+          "Square",
+          "CW",
+          "AutoAttack"
+        ],
+        "attack_params": {
+          "FGSM": {
+            "eps_linf": 0.03137254901960784
+          },
+          "PGD": {
+            "eps_linf": 0.03137254901960784,
+            "eps_step": 0.00784313725490196,
+            "max_iter": 50,
+            "num_random_init": 10
+          },
+          "Square": {
+            "eps_linf": 0.03137254901960784,
+            "max_iter": 5000,
+            "nb_restarts": 1
+          },
+          "CW": {
+            "max_iter": 100,
+            "binary_search_steps": 9,
+            "confidence": 1.0,
+            "engine": "torch"
+          },
+          "AutoAttack": {
+            "eps_linf": 0.03137254901960784,
+            "version": "standard"
+          }
+        },
+        "latency": {
+          "skipped": true
+        },
+        "latency_skipped": true,
+        "device": "cuda",
+        "ensemble": {
+          "use_dct": true,
+          "use_grad_norm": true,
+          "use_softmax_entropy": true,
+          "use_logit_profile_features": true,
+          "logit_profile_feature_count": 8,
+          "use_stability_features": true,
+          "stability_feature_count": 8,
+          "training_attacks": [
+            "FGSM",
+            "PGD",
+            "Square"
+          ],
+          "training_n": 1500,
+          "training_eps": 0.03137254901960784,
+          "training_source_split": "profile",
+          "training_source_description": "CIFAR10 test profile split [0-4999]",
+          "n_features": 55,
+          "logistic_input_dim": 245,
+          "use_side_quadratic_features": true,
+          "quadratic_feature_start": 36,
+          "feature_space_version": "pixel-stability-v2+logitprofile+sidequad+gradnorm",
+          "selection_objective": "worst_case_tpr",
+          "fgsm_oversample": 1.0,
+          "pgd_oversample": 1.0,
+          "square_oversample": 1.0,
+          "requested_oversample_weights": {
+            "FGSM": 1.0,
+            "PGD": 1.0,
+            "Square": 1.0
+          },
+          "square_train_max_iter": 500,
+          "attack_head_mode": "off",
+          "score_channel_aggregation": "max",
+          "active_attack_heads": [],
+          "score_channel_mode": null,
+          "score_channel_validation": null,
+          "training_attack_counts": {
+            "FGSM": 500,
+            "PGD": 500,
+            "Square": 500
+          },
+          "balanced_attacks": true,
+          "pgd_train_steps": 40,
+          "per_attack_validation_metrics": {
+            "alpha": 0.2,
+            "auc": 0.9812444444444444,
+            "clean_threshold": 2.4358153343200684,
+            "clean_fpr": 0.09666666666666666,
+            "per_attack_tpr": {
+              "FGSM": 0.9777777777777777,
+              "PGD": 1.0,
+              "Square": 0.9304347826086956
+            },
+            "worst_case_tpr": 0.9304347826086956,
+            "mean_attack_tpr": 0.9694041867954911
+          }
+        },
+        "cw_engine": "torch",
+        "target_metric_gate": {
+          "attacks": {
+            "FGSM": {
+              "TPR": 0.892,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8712,
+                0.9098
+              ]
+            },
+            "PGD": {
+              "TPR": 0.99,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9817,
+                0.9946
+              ]
+            },
+            "Square": {
+              "TPR": 0.866,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8435,
+                0.8857
+              ]
+            },
+            "CW": {
+              "TPR": 0.93,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9125,
+                0.9442
+              ]
+            },
+            "AutoAttack": {
+              "TPR": 1.0,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9962,
+                1.0
+              ]
+            }
+          },
+          "fpr": {
+            "L1": {
+              "FPR": 0.072,
+              "target": 0.1,
+              "passed": true
+            },
+            "L2": {
+              "FPR": 0.019,
+              "target": 0.03,
+              "passed": true
+            },
+            "L3": {
+              "FPR": 0.003,
+              "target": 0.005,
+              "passed": true
+            }
+          },
+          "pooled_tpr": 0.9356,
+          "pooled_wilson_lower": 0.9285,
+          "pooled_wilson_lower_target": 0.8,
+          "pooled_wilson_passed": true,
+          "latency_mean_ms": null,
+          "latency_target_ms": 100.0,
+          "latency_passed": null,
+          "passed": true,
+          "failures": []
+        }
+      }
+    },
+    "789": {
+      "FGSM": {
+        "TPR": 0.896,
+        "TPR_CI_95": [
+          0.8755,
+          0.9134
+        ],
+        "FPR": 0.073,
+        "FPR_CI_95": [
+          0.0585,
+          0.0908
+        ],
+        "Precision": 0.9247,
+        "F1": 0.9101,
+        "TP": 896,
+        "FP": 73,
+        "FN": 104,
+        "TN": 927,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.073,
+          "FPR_L2_plus": 0.017,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 927,
+          "L1": 56,
+          "L3_REJECT": 3,
+          "L2": 14
+        },
+        "adversarial_level_distribution": {
+          "L1": 300,
+          "L2": 434,
+          "PASS": 104,
+          "L3_REJECT": 162
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.158779,
+            "std": 1.951067,
+            "min": -8.219474,
+            "p05": -3.055475,
+            "p25": -0.965218,
+            "p50": 0.223045,
+            "p75": 1.295739,
+            "p95": 3.193811,
+            "max": 8.038
+          },
+          "adversarial": {
+            "mean": 5.172204,
+            "std": 1.885108,
+            "min": 0.389475,
+            "p05": 2.0649,
+            "p25": 3.760477,
+            "p50": 5.126773,
+            "p75": 6.509695,
+            "p95": 8.325478,
+            "max": 10.4003
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9696,
+          "aupr": 0.9624,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 618,
+        "base_attack_success_rate": 0.618,
+        "detector_TPR_on_base_success": 0.8964,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8699,
+          0.9181
+        ],
+        "detected_base_success": 554,
+        "missed_base_success": 64
+      },
+      "PGD": {
+        "TPR": 0.992,
+        "TPR_CI_95": [
+          0.9843,
+          0.9959
+        ],
+        "FPR": 0.073,
+        "FPR_CI_95": [
+          0.0585,
+          0.0908
+        ],
+        "Precision": 0.9315,
+        "F1": 0.9608,
+        "TP": 992,
+        "FP": 73,
+        "FN": 8,
+        "TN": 927,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.073,
+          "FPR_L2_plus": 0.017,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 927,
+          "L1": 56,
+          "L3_REJECT": 3,
+          "L2": 14
+        },
+        "adversarial_level_distribution": {
+          "L1": 37,
+          "L3_REJECT": 851,
+          "PASS": 8,
+          "L2": 104
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.158779,
+            "std": 1.951067,
+            "min": -8.219474,
+            "p05": -3.055476,
+            "p25": -0.965218,
+            "p50": 0.223045,
+            "p75": 1.295739,
+            "p95": 3.193811,
+            "max": 8.038002
+          },
+          "adversarial": {
+            "mean": 11.647485,
+            "std": 4.805879,
+            "min": 1.349316,
+            "p05": 4.763531,
+            "p25": 8.211358,
+            "p50": 11.076117,
+            "p75": 14.383206,
+            "p95": 19.827444,
+            "max": 43.317181
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9967,
+          "aupr": 0.9968,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.992,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9843,
+          0.9959
+        ],
+        "detected_base_success": 992,
+        "missed_base_success": 8
+      },
+      "Square": {
+        "TPR": 0.891,
+        "TPR_CI_95": [
+          0.8702,
+          0.9088
+        ],
+        "FPR": 0.073,
+        "FPR_CI_95": [
+          0.0585,
+          0.0908
+        ],
+        "Precision": 0.9243,
+        "F1": 0.9073,
+        "TP": 891,
+        "FP": 73,
+        "FN": 109,
+        "TN": 927,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.073,
+          "FPR_L2_plus": 0.017,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 927,
+          "L1": 56,
+          "L3_REJECT": 3,
+          "L2": 14
+        },
+        "adversarial_level_distribution": {
+          "PASS": 109,
+          "L2": 423,
+          "L1": 220,
+          "L3_REJECT": 248
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.158779,
+            "std": 1.951067,
+            "min": -8.219475,
+            "p05": -3.055475,
+            "p25": -0.965218,
+            "p50": 0.223044,
+            "p75": 1.295739,
+            "p95": 3.193812,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 5.566219,
+            "std": 2.196199,
+            "min": -2.331324,
+            "p05": 1.569896,
+            "p25": 4.188036,
+            "p50": 5.763428,
+            "p75": 7.096714,
+            "p95": 8.8606,
+            "max": 12.552483
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9616,
+          "aupr": 0.9629,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 994,
+        "base_attack_success_rate": 0.994,
+        "detector_TPR_on_base_success": 0.8903,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8694,
+          0.9083
+        ],
+        "detected_base_success": 885,
+        "missed_base_success": 109
+      },
+      "CW": {
+        "TPR": 0.945,
+        "TPR_CI_95": [
+          0.9291,
+          0.9575
+        ],
+        "FPR": 0.073,
+        "FPR_CI_95": [
+          0.0585,
+          0.0908
+        ],
+        "Precision": 0.9283,
+        "F1": 0.9366,
+        "TP": 945,
+        "FP": 73,
+        "FN": 55,
+        "TN": 927,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.073,
+          "FPR_L2_plus": 0.017,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 927,
+          "L1": 56,
+          "L3_REJECT": 3,
+          "L2": 14
+        },
+        "adversarial_level_distribution": {
+          "L2": 468,
+          "L3_REJECT": 320,
+          "L1": 157,
+          "PASS": 55
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.158779,
+            "std": 1.951067,
+            "min": -8.219475,
+            "p05": -3.055477,
+            "p25": -0.965218,
+            "p50": 0.223045,
+            "p75": 1.295739,
+            "p95": 3.193811,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 6.19611,
+            "std": 2.062554,
+            "min": -0.644502,
+            "p05": 2.703175,
+            "p25": 4.937729,
+            "p50": 6.338529,
+            "p75": 7.491422,
+            "p95": 9.400846,
+            "max": 17.586725
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.98,
+          "aupr": 0.9787,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.945,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9291,
+          0.9575
+        ],
+        "detected_base_success": 945,
+        "missed_base_success": 55,
+        "attack_generation": {
+          "engine": "torch",
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0,
+          "mean_success_l2": 0.130713,
+          "max_success_l2": 0.714712,
+          "chunk_timings": [
+            {
+              "start": 0,
+              "end": 128,
+              "chunk_size": 128,
+              "elapsed_s": 24.8,
+              "cumulative_elapsed_s": 24.8,
+              "rate_s_per_img": 0.1938,
+              "base_attack_success_cumulative": 128
+            },
+            {
+              "start": 128,
+              "end": 256,
+              "chunk_size": 128,
+              "elapsed_s": 25.3,
+              "cumulative_elapsed_s": 50.1,
+              "rate_s_per_img": 0.1976,
+              "base_attack_success_cumulative": 256
+            },
+            {
+              "start": 256,
+              "end": 384,
+              "chunk_size": 128,
+              "elapsed_s": 25.33,
+              "cumulative_elapsed_s": 75.42,
+              "rate_s_per_img": 0.1979,
+              "base_attack_success_cumulative": 384
+            },
+            {
+              "start": 384,
+              "end": 512,
+              "chunk_size": 128,
+              "elapsed_s": 25.27,
+              "cumulative_elapsed_s": 100.7,
+              "rate_s_per_img": 0.1975,
+              "base_attack_success_cumulative": 512
+            },
+            {
+              "start": 512,
+              "end": 640,
+              "chunk_size": 128,
+              "elapsed_s": 25.26,
+              "cumulative_elapsed_s": 125.96,
+              "rate_s_per_img": 0.1974,
+              "base_attack_success_cumulative": 640
+            },
+            {
+              "start": 640,
+              "end": 768,
+              "chunk_size": 128,
+              "elapsed_s": 25.25,
+              "cumulative_elapsed_s": 151.21,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 768
+            },
+            {
+              "start": 768,
+              "end": 896,
+              "chunk_size": 128,
+              "elapsed_s": 25.23,
+              "cumulative_elapsed_s": 176.44,
+              "rate_s_per_img": 0.1971,
+              "base_attack_success_cumulative": 896
+            },
+            {
+              "start": 896,
+              "end": 1000,
+              "chunk_size": 104,
+              "elapsed_s": 20.04,
+              "cumulative_elapsed_s": 196.48,
+              "rate_s_per_img": 0.1927,
+              "base_attack_success_cumulative": 1000
+            }
+          ],
+          "initial_chunk": 128,
+          "final_chunk": 128,
+          "max_iter": 100,
+          "binary_search_steps": 9,
+          "confidence": 1.0,
+          "learning_rate": 0.01,
+          "cuda_peak_memory_mb": 1010.74,
+          "detector_TPR_on_base_success": 0.945,
+          "detector_TPR_on_base_success_CI_95": [
+            0.9291,
+            0.9575
+          ],
+          "detected_base_success": 945,
+          "missed_base_success": 55
+        }
+      },
+      "AutoAttack": {
+        "TPR": 1.0,
+        "FPR": 0.073,
+        "Precision": 0.932,
+        "F1": 0.9648,
+        "TP": 1000,
+        "FP": 73,
+        "FN": 0,
+        "TN": 927,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.073,
+          "FPR_L2_plus": 0.017,
+          "FPR_L3_plus": 0.003,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 927,
+          "L1": 56,
+          "L3_REJECT": 3,
+          "L2": 14
+        },
+        "adversarial_level_distribution": {
+          "L2": 10,
+          "L3_REJECT": 990
+        },
+        "TPR_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "FPR_CI_95": [
+          0.0585,
+          0.0908
+        ],
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 1.0,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "detected_base_success": 1000,
+        "missed_base_success": 0,
+        "attack_generation": {
+          "engine": "autoattack",
+          "version": "standard",
+          "eps": 0.031373,
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.158779,
+            "std": 1.951067,
+            "min": -8.219475,
+            "p05": -3.055477,
+            "p25": -0.965218,
+            "p50": 0.223045,
+            "p75": 1.295739,
+            "p95": 3.193812,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 22.372082,
+            "std": 6.775128,
+            "min": 5.130305,
+            "p05": 12.394015,
+            "p25": 17.935425,
+            "p50": 21.915569,
+            "p75": 26.571709,
+            "p95": 33.504307,
+            "max": 63.851768
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9999,
+          "aupr": 0.9999,
+          "n_clean": 1000,
+          "n_adv": 1000
+        }
+      },
+      "_meta": {
+        "n_test": 1000,
+        "n_actual": 1000,
+        "dataset": "cifar10",
+        "eval_split": "CIFAR10 test idx 8000-9999",
+        "calibration_split": "CIFAR10 test idx 5000-6999",
+        "validation_split": "CIFAR10 test idx 7000-7999",
+        "seed": 789,
+        "eps_linf": 0.03137254901960784,
+        "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+        "attacks": [
+          "FGSM",
+          "PGD",
+          "Square",
+          "CW",
+          "AutoAttack"
+        ],
+        "attack_params": {
+          "FGSM": {
+            "eps_linf": 0.03137254901960784
+          },
+          "PGD": {
+            "eps_linf": 0.03137254901960784,
+            "eps_step": 0.00784313725490196,
+            "max_iter": 50,
+            "num_random_init": 10
+          },
+          "Square": {
+            "eps_linf": 0.03137254901960784,
+            "max_iter": 5000,
+            "nb_restarts": 1
+          },
+          "CW": {
+            "max_iter": 100,
+            "binary_search_steps": 9,
+            "confidence": 1.0,
+            "engine": "torch"
+          },
+          "AutoAttack": {
+            "eps_linf": 0.03137254901960784,
+            "version": "standard"
+          }
+        },
+        "latency": {
+          "skipped": true
+        },
+        "latency_skipped": true,
+        "device": "cuda",
+        "ensemble": {
+          "use_dct": true,
+          "use_grad_norm": true,
+          "use_softmax_entropy": true,
+          "use_logit_profile_features": true,
+          "logit_profile_feature_count": 8,
+          "use_stability_features": true,
+          "stability_feature_count": 8,
+          "training_attacks": [
+            "FGSM",
+            "PGD",
+            "Square"
+          ],
+          "training_n": 1500,
+          "training_eps": 0.03137254901960784,
+          "training_source_split": "profile",
+          "training_source_description": "CIFAR10 test profile split [0-4999]",
+          "n_features": 55,
+          "logistic_input_dim": 245,
+          "use_side_quadratic_features": true,
+          "quadratic_feature_start": 36,
+          "feature_space_version": "pixel-stability-v2+logitprofile+sidequad+gradnorm",
+          "selection_objective": "worst_case_tpr",
+          "fgsm_oversample": 1.0,
+          "pgd_oversample": 1.0,
+          "square_oversample": 1.0,
+          "requested_oversample_weights": {
+            "FGSM": 1.0,
+            "PGD": 1.0,
+            "Square": 1.0
+          },
+          "square_train_max_iter": 500,
+          "attack_head_mode": "off",
+          "score_channel_aggregation": "max",
+          "active_attack_heads": [],
+          "score_channel_mode": null,
+          "score_channel_validation": null,
+          "training_attack_counts": {
+            "FGSM": 500,
+            "PGD": 500,
+            "Square": 500
+          },
+          "balanced_attacks": true,
+          "pgd_train_steps": 40,
+          "per_attack_validation_metrics": {
+            "alpha": 0.2,
+            "auc": 0.9812444444444444,
+            "clean_threshold": 2.4358153343200684,
+            "clean_fpr": 0.09666666666666666,
+            "per_attack_tpr": {
+              "FGSM": 0.9777777777777777,
+              "PGD": 1.0,
+              "Square": 0.9304347826086956
+            },
+            "worst_case_tpr": 0.9304347826086956,
+            "mean_attack_tpr": 0.9694041867954911
+          }
+        },
+        "cw_engine": "torch",
+        "target_metric_gate": {
+          "attacks": {
+            "FGSM": {
+              "TPR": 0.896,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8755,
+                0.9134
+              ]
+            },
+            "PGD": {
+              "TPR": 0.992,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9843,
+                0.9959
+              ]
+            },
+            "Square": {
+              "TPR": 0.891,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8702,
+                0.9088
+              ]
+            },
+            "CW": {
+              "TPR": 0.945,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9291,
+                0.9575
+              ]
+            },
+            "AutoAttack": {
+              "TPR": 1.0,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9962,
+                1.0
+              ]
+            }
+          },
+          "fpr": {
+            "L1": {
+              "FPR": 0.073,
+              "target": 0.1,
+              "passed": true
+            },
+            "L2": {
+              "FPR": 0.017,
+              "target": 0.03,
+              "passed": true
+            },
+            "L3": {
+              "FPR": 0.003,
+              "target": 0.005,
+              "passed": true
+            }
+          },
+          "pooled_tpr": 0.9448,
+          "pooled_wilson_lower": 0.9381,
+          "pooled_wilson_lower_target": 0.8,
+          "pooled_wilson_passed": true,
+          "latency_mean_ms": null,
+          "latency_target_ms": 100.0,
+          "latency_passed": null,
+          "passed": true,
+          "failures": []
+        }
+      }
+    },
+    "999": {
+      "FGSM": {
+        "TPR": 0.9,
+        "TPR_CI_95": [
+          0.8798,
+          0.9171
+        ],
+        "FPR": 0.079,
+        "FPR_CI_95": [
+          0.0638,
+          0.0974
+        ],
+        "Precision": 0.9193,
+        "F1": 0.9096,
+        "TP": 900,
+        "FP": 79,
+        "FN": 100,
+        "TN": 921,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.079,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.002,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 921,
+          "L1": 60,
+          "L2": 17,
+          "L3_REJECT": 2
+        },
+        "adversarial_level_distribution": {
+          "L1": 307,
+          "L2": 438,
+          "PASS": 100,
+          "L3_REJECT": 155
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.199601,
+            "std": 2.011021,
+            "min": -8.219474,
+            "p05": -3.140056,
+            "p25": -0.992302,
+            "p50": 0.270059,
+            "p75": 1.345041,
+            "p95": 3.394218,
+            "max": 8.038
+          },
+          "adversarial": {
+            "mean": 5.181891,
+            "std": 1.87049,
+            "min": -0.005799,
+            "p05": 2.084338,
+            "p25": 3.783409,
+            "p50": 5.151772,
+            "p75": 6.537975,
+            "p95": 8.273562,
+            "max": 10.874349
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9669,
+          "aupr": 0.9595,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 629,
+        "base_attack_success_rate": 0.629,
+        "detector_TPR_on_base_success": 0.9062,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8809,
+          0.9266
+        ],
+        "detected_base_success": 570,
+        "missed_base_success": 59
+      },
+      "PGD": {
+        "TPR": 0.988,
+        "TPR_CI_95": [
+          0.9791,
+          0.9931
+        ],
+        "FPR": 0.079,
+        "FPR_CI_95": [
+          0.0638,
+          0.0974
+        ],
+        "Precision": 0.926,
+        "F1": 0.956,
+        "TP": 988,
+        "FP": 79,
+        "FN": 12,
+        "TN": 921,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.079,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.002,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 921,
+          "L1": 60,
+          "L2": 17,
+          "L3_REJECT": 2
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 827,
+          "L2": 126,
+          "L1": 35,
+          "PASS": 12
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.199601,
+            "std": 2.011021,
+            "min": -8.219475,
+            "p05": -3.140056,
+            "p25": -0.992303,
+            "p50": 0.270059,
+            "p75": 1.345041,
+            "p95": 3.394218,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 11.718398,
+            "std": 5.214143,
+            "min": -0.425856,
+            "p05": 4.773779,
+            "p25": 8.168689,
+            "p50": 11.062668,
+            "p75": 14.452132,
+            "p95": 20.625383,
+            "max": 40.965584
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9958,
+          "aupr": 0.9961,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.988,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9791,
+          0.9931
+        ],
+        "detected_base_success": 988,
+        "missed_base_success": 12
+      },
+      "Square": {
+        "TPR": 0.887,
+        "TPR_CI_95": [
+          0.8659,
+          0.9052
+        ],
+        "FPR": 0.079,
+        "FPR_CI_95": [
+          0.0638,
+          0.0974
+        ],
+        "Precision": 0.9182,
+        "F1": 0.9023,
+        "TP": 887,
+        "FP": 79,
+        "FN": 113,
+        "TN": 921,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.079,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.002,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 921,
+          "L1": 60,
+          "L2": 17,
+          "L3_REJECT": 2
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 240,
+          "L2": 422,
+          "L1": 225,
+          "PASS": 113
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.199601,
+            "std": 2.011021,
+            "min": -8.219475,
+            "p05": -3.140056,
+            "p25": -0.992302,
+            "p50": 0.270059,
+            "p75": 1.345041,
+            "p95": 3.394218,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 5.507025,
+            "std": 2.149427,
+            "min": -1.844514,
+            "p05": 1.829463,
+            "p25": 4.13013,
+            "p50": 5.573648,
+            "p75": 7.038229,
+            "p95": 8.82586,
+            "max": 13.216806
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9611,
+          "aupr": 0.9606,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 999,
+        "base_attack_success_rate": 0.999,
+        "detector_TPR_on_base_success": 0.8869,
+        "detector_TPR_on_base_success_CI_95": [
+          0.8657,
+          0.9051
+        ],
+        "detected_base_success": 886,
+        "missed_base_success": 113
+      },
+      "CW": {
+        "TPR": 0.95,
+        "TPR_CI_95": [
+          0.9347,
+          0.9619
+        ],
+        "FPR": 0.079,
+        "FPR_CI_95": [
+          0.0638,
+          0.0974
+        ],
+        "Precision": 0.9232,
+        "F1": 0.9364,
+        "TP": 950,
+        "FP": 79,
+        "FN": 50,
+        "TN": 921,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.079,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.002,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 921,
+          "L1": 60,
+          "L2": 17,
+          "L3_REJECT": 2
+        },
+        "adversarial_level_distribution": {
+          "L2": 462,
+          "L1": 162,
+          "L3_REJECT": 326,
+          "PASS": 50
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.199601,
+            "std": 2.011021,
+            "min": -8.219475,
+            "p05": -3.140056,
+            "p25": -0.992303,
+            "p50": 0.270059,
+            "p75": 1.345041,
+            "p95": 3.394218,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 6.220149,
+            "std": 2.081743,
+            "min": -3.512445,
+            "p05": 2.836224,
+            "p25": 4.869622,
+            "p50": 6.289824,
+            "p75": 7.575393,
+            "p95": 9.489901,
+            "max": 16.279095
+          }
+        },
+        "detection_auc": {
+          "auroc": 0.9782,
+          "aupr": 0.9775,
+          "n_clean": 1000,
+          "n_adv": 1000
+        },
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 0.95,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9347,
+          0.9619
+        ],
+        "detected_base_success": 950,
+        "missed_base_success": 50,
+        "attack_generation": {
+          "engine": "torch",
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0,
+          "mean_success_l2": 0.127419,
+          "max_success_l2": 0.523421,
+          "chunk_timings": [
+            {
+              "start": 0,
+              "end": 128,
+              "chunk_size": 128,
+              "elapsed_s": 24.79,
+              "cumulative_elapsed_s": 24.79,
+              "rate_s_per_img": 0.1937,
+              "base_attack_success_cumulative": 128
+            },
+            {
+              "start": 128,
+              "end": 256,
+              "chunk_size": 128,
+              "elapsed_s": 25.28,
+              "cumulative_elapsed_s": 50.08,
+              "rate_s_per_img": 0.1975,
+              "base_attack_success_cumulative": 256
+            },
+            {
+              "start": 256,
+              "end": 384,
+              "chunk_size": 128,
+              "elapsed_s": 25.31,
+              "cumulative_elapsed_s": 75.38,
+              "rate_s_per_img": 0.1977,
+              "base_attack_success_cumulative": 384
+            },
+            {
+              "start": 384,
+              "end": 512,
+              "chunk_size": 128,
+              "elapsed_s": 25.29,
+              "cumulative_elapsed_s": 100.67,
+              "rate_s_per_img": 0.1975,
+              "base_attack_success_cumulative": 512
+            },
+            {
+              "start": 512,
+              "end": 640,
+              "chunk_size": 128,
+              "elapsed_s": 25.26,
+              "cumulative_elapsed_s": 125.93,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 640
+            },
+            {
+              "start": 640,
+              "end": 768,
+              "chunk_size": 128,
+              "elapsed_s": 25.25,
+              "cumulative_elapsed_s": 151.17,
+              "rate_s_per_img": 0.1972,
+              "base_attack_success_cumulative": 768
+            },
+            {
+              "start": 768,
+              "end": 896,
+              "chunk_size": 128,
+              "elapsed_s": 25.25,
+              "cumulative_elapsed_s": 176.42,
+              "rate_s_per_img": 0.1973,
+              "base_attack_success_cumulative": 896
+            },
+            {
+              "start": 896,
+              "end": 1000,
+              "chunk_size": 104,
+              "elapsed_s": 20.06,
+              "cumulative_elapsed_s": 196.48,
+              "rate_s_per_img": 0.1929,
+              "base_attack_success_cumulative": 1000
+            }
+          ],
+          "initial_chunk": 128,
+          "final_chunk": 128,
+          "max_iter": 100,
+          "binary_search_steps": 9,
+          "confidence": 1.0,
+          "learning_rate": 0.01,
+          "cuda_peak_memory_mb": 1053.77,
+          "detector_TPR_on_base_success": 0.95,
+          "detector_TPR_on_base_success_CI_95": [
+            0.9347,
+            0.9619
+          ],
+          "detected_base_success": 950,
+          "missed_base_success": 50
+        }
+      },
+      "AutoAttack": {
+        "TPR": 1.0,
+        "FPR": 0.079,
+        "Precision": 0.9268,
+        "F1": 0.962,
+        "TP": 1000,
+        "FP": 79,
+        "FN": 0,
+        "TN": 921,
+        "n_adv": 1000,
+        "n_clean": 1000,
+        "per_tier_fpr": {
+          "FPR_L1_plus": 0.079,
+          "FPR_L2_plus": 0.019,
+          "FPR_L3_plus": 0.002,
+          "target_L1": 0.1,
+          "target_L2": 0.03,
+          "target_L3": 0.005,
+          "pass_L1": true,
+          "pass_L2": true,
+          "pass_L3": true
+        },
+        "clean_level_distribution": {
+          "PASS": 921,
+          "L1": 60,
+          "L2": 17,
+          "L3_REJECT": 2
+        },
+        "adversarial_level_distribution": {
+          "L3_REJECT": 995,
+          "L2": 5
+        },
+        "TPR_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "FPR_CI_95": [
+          0.0638,
+          0.0974
+        ],
+        "base_attack_success": 1000,
+        "base_attack_success_rate": 1.0,
+        "detector_TPR_on_base_success": 1.0,
+        "detector_TPR_on_base_success_CI_95": [
+          0.9962,
+          1.0
+        ],
+        "detected_base_success": 1000,
+        "missed_base_success": 0,
+        "attack_generation": {
+          "engine": "autoattack",
+          "version": "standard",
+          "eps": 0.031373,
+          "base_attack_success": 1000,
+          "base_attack_success_rate": 1.0
+        },
+        "score_quantiles": {
+          "clean": {
+            "mean": 0.199601,
+            "std": 2.011021,
+            "min": -8.219474,
+            "p05": -3.140056,
+            "p25": -0.992303,
+            "p50": 0.270059,
+            "p75": 1.345041,
+            "p95": 3.394218,
+            "max": 8.038003
+          },
+          "adversarial": {
+            "mean": 22.578989,
+            "std": 6.880895,
+            "min": 6.121009,
+            "p05": 12.126948,
+            "p25": 17.946932,
+            "p50": 22.149269,
+            "p75": 26.406517,
+            "p95": 33.515217,
+            "max": 63.24667
+          }
+        },
+        "detection_auc": {
+          "auroc": 1.0,
+          "aupr": 1.0,
+          "n_clean": 1000,
+          "n_adv": 1000
+        }
+      },
+      "_meta": {
+        "n_test": 1000,
+        "n_actual": 1000,
+        "dataset": "cifar10",
+        "eval_split": "CIFAR10 test idx 8000-9999",
+        "calibration_split": "CIFAR10 test idx 5000-6999",
+        "validation_split": "CIFAR10 test idx 7000-7999",
+        "seed": 999,
+        "eps_linf": 0.03137254901960784,
+        "eps_note": "8/255 = standard RobustBench/AutoAttack convention",
+        "attacks": [
+          "FGSM",
+          "PGD",
+          "Square",
+          "CW",
+          "AutoAttack"
+        ],
+        "attack_params": {
+          "FGSM": {
+            "eps_linf": 0.03137254901960784
+          },
+          "PGD": {
+            "eps_linf": 0.03137254901960784,
+            "eps_step": 0.00784313725490196,
+            "max_iter": 50,
+            "num_random_init": 10
+          },
+          "Square": {
+            "eps_linf": 0.03137254901960784,
+            "max_iter": 5000,
+            "nb_restarts": 1
+          },
+          "CW": {
+            "max_iter": 100,
+            "binary_search_steps": 9,
+            "confidence": 1.0,
+            "engine": "torch"
+          },
+          "AutoAttack": {
+            "eps_linf": 0.03137254901960784,
+            "version": "standard"
+          }
+        },
+        "latency": {
+          "skipped": true
+        },
+        "latency_skipped": true,
+        "device": "cuda",
+        "ensemble": {
+          "use_dct": true,
+          "use_grad_norm": true,
+          "use_softmax_entropy": true,
+          "use_logit_profile_features": true,
+          "logit_profile_feature_count": 8,
+          "use_stability_features": true,
+          "stability_feature_count": 8,
+          "training_attacks": [
+            "FGSM",
+            "PGD",
+            "Square"
+          ],
+          "training_n": 1500,
+          "training_eps": 0.03137254901960784,
+          "training_source_split": "profile",
+          "training_source_description": "CIFAR10 test profile split [0-4999]",
+          "n_features": 55,
+          "logistic_input_dim": 245,
+          "use_side_quadratic_features": true,
+          "quadratic_feature_start": 36,
+          "feature_space_version": "pixel-stability-v2+logitprofile+sidequad+gradnorm",
+          "selection_objective": "worst_case_tpr",
+          "fgsm_oversample": 1.0,
+          "pgd_oversample": 1.0,
+          "square_oversample": 1.0,
+          "requested_oversample_weights": {
+            "FGSM": 1.0,
+            "PGD": 1.0,
+            "Square": 1.0
+          },
+          "square_train_max_iter": 500,
+          "attack_head_mode": "off",
+          "score_channel_aggregation": "max",
+          "active_attack_heads": [],
+          "score_channel_mode": null,
+          "score_channel_validation": null,
+          "training_attack_counts": {
+            "FGSM": 500,
+            "PGD": 500,
+            "Square": 500
+          },
+          "balanced_attacks": true,
+          "pgd_train_steps": 40,
+          "per_attack_validation_metrics": {
+            "alpha": 0.2,
+            "auc": 0.9812444444444444,
+            "clean_threshold": 2.4358153343200684,
+            "clean_fpr": 0.09666666666666666,
+            "per_attack_tpr": {
+              "FGSM": 0.9777777777777777,
+              "PGD": 1.0,
+              "Square": 0.9304347826086956
+            },
+            "worst_case_tpr": 0.9304347826086956,
+            "mean_attack_tpr": 0.9694041867954911
+          }
+        },
+        "cw_engine": "torch",
+        "target_metric_gate": {
+          "attacks": {
+            "FGSM": {
+              "TPR": 0.9,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8798,
+                0.9171
+              ]
+            },
+            "PGD": {
+              "TPR": 0.988,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9791,
+                0.9931
+              ]
+            },
+            "Square": {
+              "TPR": 0.887,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.8659,
+                0.9052
+              ]
+            },
+            "CW": {
+              "TPR": 0.95,
+              "target": 0.85,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9347,
+                0.9619
+              ]
+            },
+            "AutoAttack": {
+              "TPR": 1.0,
+              "target": 0.9,
+              "passed": true,
+              "TPR_CI_95": [
+                0.9962,
+                1.0
+              ]
+            }
+          },
+          "fpr": {
+            "L1": {
+              "FPR": 0.079,
+              "target": 0.1,
+              "passed": true
+            },
+            "L2": {
+              "FPR": 0.019,
+              "target": 0.03,
+              "passed": true
+            },
+            "L3": {
+              "FPR": 0.002,
+              "target": 0.005,
+              "passed": true
+            }
+          },
+          "pooled_tpr": 0.945,
+          "pooled_wilson_lower": 0.9383,
+          "pooled_wilson_lower_target": 0.8,
+          "pooled_wilson_passed": true,
+          "latency_mean_ms": null,
+          "latency_target_ms": 100.0,
+          "latency_passed": null,
+          "passed": true,
+          "failures": []
+        }
+      }
+    }
+  },
+  "aggregate": {
+    "FGSM": {
+      "TPR_mean": 0.8966,
+      "TPR_std": 0.0038,
+      "FPR_mean": 0.0752,
+      "FPR_std": 0.0029,
+      "F1_mean": 0.9094,
+      "F1_std": 0.0018,
+      "TPR_CI_95_pooled": [
+        0.8879,
+        0.9047
+      ],
+      "FPR_CI_95_pooled": [
+        0.0682,
+        0.0828
+      ],
+      "n_seeds": 5,
+      "pool_TP": 4483,
+      "pool_FP": 376,
+      "pool_FN": 517,
+      "pool_TN": 4624,
+      "base_attack_success_rate": 0.6164,
+      "detector_TPR_on_base_success": 0.9014,
+      "detector_TPR_on_base_success_CI_95": [
+        0.8903,
+        0.9114
+      ],
+      "pool_base_attack_success": 3082,
+      "pool_detected_base_success": 2778,
+      "pool_missed_base_success": 304
+    },
+    "PGD": {
+      "TPR_mean": 0.9912,
+      "TPR_std": 0.0026,
+      "FPR_mean": 0.0752,
+      "FPR_std": 0.0029,
+      "F1_mean": 0.9593,
+      "F1_std": 0.0019,
+      "TPR_CI_95_pooled": [
+        0.9882,
+        0.9934
+      ],
+      "FPR_CI_95_pooled": [
+        0.0682,
+        0.0828
+      ],
+      "n_seeds": 5,
+      "pool_TP": 4956,
+      "pool_FP": 376,
+      "pool_FN": 44,
+      "pool_TN": 4624,
+      "base_attack_success_rate": 0.9998,
+      "detector_TPR_on_base_success": 0.9912,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9882,
+        0.9934
+      ],
+      "pool_base_attack_success": 4999,
+      "pool_detected_base_success": 4955,
+      "pool_missed_base_success": 44
+    },
+    "Square": {
+      "TPR_mean": 0.8836,
+      "TPR_std": 0.0104,
+      "FPR_mean": 0.0752,
+      "FPR_std": 0.0029,
+      "F1_mean": 0.9021,
+      "F1_std": 0.0054,
+      "TPR_CI_95_pooled": [
+        0.8744,
+        0.8922
+      ],
+      "FPR_CI_95_pooled": [
+        0.0682,
+        0.0828
+      ],
+      "n_seeds": 5,
+      "pool_TP": 4418,
+      "pool_FP": 376,
+      "pool_FN": 582,
+      "pool_TN": 4624,
+      "base_attack_success_rate": 0.9966,
+      "detector_TPR_on_base_success": 0.8832,
+      "detector_TPR_on_base_success_CI_95": [
+        0.874,
+        0.8918
+      ],
+      "pool_base_attack_success": 4983,
+      "pool_detected_base_success": 4401,
+      "pool_missed_base_success": 582
+    },
+    "CW": {
+      "TPR_mean": 0.9402,
+      "TPR_std": 0.0084,
+      "FPR_mean": 0.0752,
+      "FPR_std": 0.0029,
+      "F1_mean": 0.933,
+      "F1_std": 0.0037,
+      "TPR_CI_95_pooled": [
+        0.9333,
+        0.9464
+      ],
+      "FPR_CI_95_pooled": [
+        0.0682,
+        0.0828
+      ],
+      "n_seeds": 5,
+      "pool_TP": 4701,
+      "pool_FP": 376,
+      "pool_FN": 299,
+      "pool_TN": 4624,
+      "base_attack_success_rate": 1.0,
+      "detector_TPR_on_base_success": 0.9402,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9333,
+        0.9464
+      ],
+      "pool_base_attack_success": 5000,
+      "pool_detected_base_success": 4701,
+      "pool_missed_base_success": 299
+    },
+    "AutoAttack": {
+      "TPR_mean": 1.0,
+      "TPR_std": 0.0,
+      "FPR_mean": 0.0752,
+      "FPR_std": 0.0029,
+      "F1_mean": 0.9638,
+      "F1_std": 0.0014,
+      "TPR_CI_95_pooled": [
+        0.9992,
+        1.0
+      ],
+      "FPR_CI_95_pooled": [
+        0.0682,
+        0.0828
+      ],
+      "n_seeds": 5,
+      "pool_TP": 5000,
+      "pool_FP": 376,
+      "pool_FN": 0,
+      "pool_TN": 4624,
+      "base_attack_success_rate": 1.0,
+      "detector_TPR_on_base_success": 1.0,
+      "detector_TPR_on_base_success_CI_95": [
+        0.9992,
+        1.0
+      ],
+      "pool_base_attack_success": 5000,
+      "pool_detected_base_success": 5000,
+      "pool_missed_base_success": 0
+    }
+  },
+  "target_metric_gate": {
+    "attacks": {
+      "FGSM": {
+        "TPR_mean": 0.8966,
+        "target": 0.85,
+        "passed": true,
+        "TPR_CI_95_pooled": [
+          0.8879,
+          0.9047
+        ]
+      },
+      "PGD": {
+        "TPR_mean": 0.9912,
+        "target": 0.9,
+        "passed": true,
+        "TPR_CI_95_pooled": [
+          0.9882,
+          0.9934
+        ]
+      },
+      "Square": {
+        "TPR_mean": 0.8836,
+        "target": 0.85,
+        "passed": true,
+        "TPR_CI_95_pooled": [
+          0.8744,
+          0.8922
+        ]
+      },
+      "CW": {
+        "TPR_mean": 0.9402,
+        "target": 0.85,
+        "passed": true,
+        "TPR_CI_95_pooled": [
+          0.9333,
+          0.9464
+        ]
+      },
+      "AutoAttack": {
+        "TPR_mean": 1.0,
+        "target": 0.9,
+        "passed": true,
+        "TPR_CI_95_pooled": [
+          0.9992,
+          1.0
+        ]
+      }
+    },
+    "fpr": {
+      "L1": {
+        "FPR": 0.0752,
+        "target": 0.1,
+        "passed": true,
+        "FPR_CI_95_pooled": [
+          0.0682,
+          0.0828
+        ]
+      },
+      "L2": {
+        "FPR": 0.0174,
+        "target": 0.03,
+        "passed": true,
+        "FPR_CI_95_pooled": [
+          0.0141,
+          0.0214
+        ]
+      },
+      "L3": {
+        "FPR": 0.0028,
+        "target": 0.005,
+        "passed": true,
+        "FPR_CI_95_pooled": [
+          0.0017,
+          0.0047
+        ]
+      }
+    },
+    "pooled_tpr": 0.9423,
+    "pooled_wilson_lower": 0.9394,
+    "pooled_wilson_lower_target": 0.8,
+    "pooled_wilson_passed": true,
+    "latency_worst_mean_ms": null,
+    "latency_target_ms": 100.0,
+    "latency_passed": null,
+    "passed": true,
+    "failures": []
+  },
+  "metadata": {
+    "n_test": 1000,
+    "eps": 0.031373,
+    "eps_255": 8.0,
+    "dataset": "cifar10",
+    "eval_split": [
+      8000,
+      10000
+    ],
+    "attacks": [
+      "FGSM",
+      "PGD",
+      "Square",
+      "CW",
+      "AutoAttack"
+    ],
+    "cw_engine": "torch",
+    "latency_skipped": true
+  }
+}

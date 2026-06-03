@@ -47,8 +47,8 @@ Current package evidence:
 
 | Package | Evidence |
 | --- | --- |
-| NeurIPS | `PRISM_neurips_2026_submission.pdf` is 10 pages total: main body through page 7, references start page 8, protocol appendix page 9, checklist page 10; it is anonymous and includes `NeurIPS Paper Checklist`; `PRISM_neurips_2026_source.zip` has `checklist.tex` and `neurips_2026.sty`, with no build-log entries. |
-| ICLR | `PRISM_iclr_2026_submission.pdf` is 9 pages total: main body through page 6, references start page 7, and protocol notes follow after references; it is anonymous, under review as ICLR 2026, and has no NeurIPS checklist; `PRISM_iclr_2026_source.zip` has ICLR style files and no NeurIPS/checklist entries. |
+| NeurIPS | `PRISM_neurips_2026_submission.pdf` is 11 pages total with the restored architecture-agnostic title: main body through page 8, references start page 9, protocol appendix page 10, checklist page 11; it is anonymous and includes `NeurIPS Paper Checklist`; `PRISM_neurips_2026_source.zip` has `checklist.tex`, `neurips_2026.sty`, and all referenced figures, with no build-log entries. |
+| ICLR | `PRISM_iclr_2026_submission.pdf` is 10 pages total with the restored architecture-agnostic title: main body through page 7, references start page 8, and protocol notes follow after references; it is anonymous, under review as ICLR 2026, and has no NeurIPS checklist; `PRISM_iclr_2026_source.zip` has ICLR style files, all referenced figures, and no NeurIPS/checklist entries. |
 | arXiv | `PRISM_arxiv_preprint.pdf` is 34 pages, nonanonymous, no Type 3 fonts, and has no anonymous/review/checklist markers; `PRISM_arxiv_source.zip` has no NeurIPS/ICLR/checklist entries, no placeholder comments, and fresh-extracts to a 34-page PDF. |
 | Artifact supplement | `PRISM_anonymized_artifact_supplement.zip` has no author/path leak matches, no build byproducts, no checkpoint/numpy/cache files, and includes strict rerun plus smoke configs. It also includes local quick-check JSONs under `prism/experiments/local_quick_checks/`. |
 
