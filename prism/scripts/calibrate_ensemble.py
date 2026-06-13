@@ -54,6 +54,14 @@ from src.models import load_backbone
 _norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 if BACKBONE_INPUT_SIZE == 32:
     _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+elif DATASET == 'imagenet':
+    # Square ImageNet crop (Resize+CenterCrop); a bare Resize leaves the long
+    # side uncropped -> variable-size tensors that cannot be batched/stacked.
+    _PIXEL_TRANSFORM = T.Compose([
+        T.Resize(max(BACKBONE_INPUT_SIZE + 32, 256)),
+        T.CenterCrop(BACKBONE_INPUT_SIZE),
+        T.ToTensor(),
+    ])
 else:
     _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 
