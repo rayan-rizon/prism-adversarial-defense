@@ -54,10 +54,18 @@ N_TEST="${N_TEST:-1000}"
 ATTACKS="${ATTACKS:-FGSM PGD Square}"
 IMAGENET_DIR="${IMAGENET_DIR:-data/imagenet100}"
 RN50_EPOCHS="${RN50_EPOCHS:-15}"
-RN50_BATCH="${RN50_BATCH:-128}"
+RN50_BATCH="${RN50_BATCH:-256}"          # RTX 5090 32GB headroom; saturates GPU
 RN50_LR="${RN50_LR:-1e-3}"
+RN50_WORKERS="${RN50_WORKERS:-32}"       # dataloader workers (box has many cores)
 ENSEMBLE_N_TRAIN="${ENSEMBLE_N_TRAIN:-1500}"
-GEN_CHUNK="${GEN_CHUNK:-64}"
+GEN_CHUNK="${GEN_CHUNK:-256}"            # big GPU attack-gen batch (5090 32GB)
+# Parallel persistent-homology: ripser is CPU-bound and the real bottleneck.
+# Fan it across cores. Default = min(64, nproc/2) so we leave cores for the
+# GPU dataloader + attack generation. Override with WORKERS=N.
+_NPROC="$(nproc 2>/dev/null || echo 8)"
+WORKERS="${WORKERS:-$(( _NPROC/2 < 64 ? _NPROC/2 : 64 ))}"
+BUILD_GPU_BATCH="${BUILD_GPU_BATCH:-256}"
+BUILD_LOADER_WORKERS="${BUILD_LOADER_WORKERS:-16}"
 PGD_TRAIN_STEPS="${PGD_TRAIN_STEPS:-40}"
 SQUARE_TRAIN_MAX_ITER="${SQUARE_TRAIN_MAX_ITER:-500}"
 PGD_EVAL_MAX_ITER="${PGD_EVAL_MAX_ITER:-50}"
@@ -71,8 +79,12 @@ if [ "$SMOKE_ONLY" = "1" ]; then
   ATTACKS="${ATTACKS_SMOKE:-FGSM}"
   RN50_EPOCHS="${RN50_EPOCHS_SMOKE:-1}"
   RN50_BATCH="${RN50_BATCH_SMOKE:-32}"
+  RN50_WORKERS="${RN50_WORKERS_SMOKE:-4}"
   ENSEMBLE_N_TRAIN="${ENSEMBLE_N_TRAIN_SMOKE:-6}"
   GEN_CHUNK="${GEN_CHUNK_SMOKE:-8}"
+  WORKERS="${WORKERS_SMOKE:-4}"
+  BUILD_GPU_BATCH="${BUILD_GPU_BATCH_SMOKE:-16}"
+  BUILD_LOADER_WORKERS="${BUILD_LOADER_WORKERS_SMOKE:-2}"
   PGD_TRAIN_STEPS="${PGD_TRAIN_STEPS_SMOKE:-2}"
   SQUARE_TRAIN_MAX_ITER="${SQUARE_TRAIN_MAX_ITER_SMOKE:-10}"
   PGD_EVAL_MAX_ITER="${PGD_EVAL_MAX_ITER_SMOKE:-2}"
@@ -91,6 +103,7 @@ echo "Repo root: $PRISM_ROOT"
 echo "Config: $PRISM_CONFIG"
 echo "ImageNet dir: $IMAGENET_DIR"
 echo "Seeds: $SEEDS   N_TEST: $N_TEST   Attacks: $ATTACKS (eps=8/255)"
+echo "GPU: fine-tune batch=$RN50_BATCH, gen_chunk=$GEN_CHUNK | PH workers=$WORKERS (nproc=$_NPROC)"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
@@ -120,6 +133,7 @@ if [ ! -f "$CKPT" ]; then
     --epochs "$RN50_EPOCHS" \
     --batch-size "$RN50_BATCH" \
     --lr "$RN50_LR" \
+    --num-workers "$RN50_WORKERS" \
     --num-classes 100 \
     --output "$CKPT" \
     "${TRAIN_EXTRA_ARGS[@]}" \
@@ -153,8 +167,11 @@ print('OK: ResNet-50 224x224 activation extraction + TDA path works.')
 PY
 
 echo ""
-echo "=== Step 1: Build ResNet-50 reference profiles (SLOW at 224x224) ==="
+echo "=== Step 1: Build ResNet-50 reference profiles (parallel PH: $WORKERS workers) ==="
 $PYTHON_BIN scripts/build_profile_testset.py --config "$PRISM_CONFIG" \
+  --workers "$WORKERS" \
+  --gpu-batch "$BUILD_GPU_BATCH" \
+  --loader-workers "$BUILD_LOADER_WORKERS" \
   2>&1 | tee logs/${TAG}/step1_build_profile.log
 
 echo ""

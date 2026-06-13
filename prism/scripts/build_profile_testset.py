@@ -39,6 +39,7 @@ import os
 import sys
 import ssl
 import certifi
+import multiprocessing as mp
 from tqdm import tqdm
 
 # SSL fix
@@ -71,8 +72,55 @@ from src.models import load_backbone
 _norm = T.Normalize(mean=BACKBONE_MEAN, std=BACKBONE_STD)
 if BACKBONE_INPUT_SIZE == 32:
     _TRANSFORM = T.Compose([T.ToTensor(), _norm])
+elif DATASET == 'imagenet':
+    # Square ImageNet crop (Resize+CenterCrop); a bare Resize leaves the long
+    # side uncropped -> variable-size tensors that cannot be batched.
+    _TRANSFORM = T.Compose([
+        T.Resize(max(BACKBONE_INPUT_SIZE + 32, 256)),
+        T.CenterCrop(BACKBONE_INPUT_SIZE),
+        T.ToTensor(), _norm,
+    ])
 else:
     _TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor(), _norm])
+
+
+# ── Parallel persistent-homology helpers (opt-in via --workers) ───────────────
+# The per-image work is: batched GPU forward (cheap) + per-layer ripser
+# (CPU-bound, the real bottleneck). With --workers>0 we decouple them: do the
+# forward in big GPU batches here, then fan the subsampled point clouds out to a
+# multiprocessing pool that runs ripser across many cores. Numerics are
+# identical to the serial path -- the same deterministic hash-subsample and the
+# same ripser call -- so this only changes speed, not results. Default
+# --workers 0 keeps the original serial loop (CIFAR/WRN/ViT unaffected).
+
+def _ripser_dgms(points: np.ndarray):
+    """Module-level (picklable) ripser worker. No CUDA -> fork-safe."""
+    import warnings
+    from ripser import ripser as _ripser
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*more columns than rows.*")
+        return _ripser(points, maxdim=MAX_DIM)['dgms']
+
+
+def _collect_pointclouds(dataset, idx_range, extractor, profiler, device,
+                         gpu_batch, loader_workers, desc):
+    """Batched GPU forward -> per-layer ordered list of subsampled point clouds."""
+    indices = list(range(idx_range[0], idx_range[1]))
+    loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(dataset, indices),
+        batch_size=gpu_batch, shuffle=False, num_workers=loader_workers,
+        pin_memory=(device != 'cpu'),
+    )
+    pcs = {layer: [] for layer in LAYER_NAMES}
+    for xb, _ in tqdm(loader, desc=desc):
+        acts = extractor.extract(xb.to(device))
+        for layer in LAYER_NAMES:
+            a = acts[layer].cpu().numpy()  # (B, C, H, W)
+            for s in range(a.shape[0]):
+                pc = profiler._to_point_cloud(a[s])
+                pc = profiler._subsample(pc)
+                pcs[layer].append(pc)
+    return pcs
 
 
 def build_profile_testset(
@@ -81,6 +129,9 @@ def build_profile_testset(
     device: str = None,
     allow_undertrained_smoke: bool = False,
     source_split: str = 'test',
+    workers: int = 0,
+    gpu_batch: int = 128,
+    loader_workers: int = 4,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -146,14 +197,26 @@ def build_profile_testset(
     n_profile = PROFILE_IDX[1] - PROFILE_IDX[0]
     all_diagrams = {layer: [] for layer in LAYER_NAMES}
     print(f"\nPhase 1: Collecting diagrams from {n_profile} {source_split} images "
-          f"(indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1})...")
-    for i in tqdm(range(PROFILE_IDX[0], PROFILE_IDX[1]), desc="Phase 1: diagrams"):
-        img, _ = dataset[i]
-        x = img.unsqueeze(0).to(device)
-        acts = extractor.extract(x)
-        for layer in LAYER_NAMES:
-            act_np = acts[layer].squeeze(0).cpu().numpy()
-            all_diagrams[layer].append(profiler.compute_diagram(act_np))
+          f"(indices {PROFILE_IDX[0]}-{PROFILE_IDX[1]-1})"
+          f"{f' [parallel: {workers} workers]' if workers > 0 else ''}...")
+    if workers > 0:
+        pcs = _collect_pointclouds(dataset, PROFILE_IDX, extractor, profiler,
+                                   device, gpu_batch, loader_workers,
+                                   desc="Phase 1: GPU forward")
+        with mp.get_context('fork').Pool(workers) as pool:
+            for layer in LAYER_NAMES:
+                all_diagrams[layer] = list(tqdm(
+                    pool.imap(_ripser_dgms, pcs[layer], chunksize=8),
+                    total=len(pcs[layer]), desc=f"Phase 1: ripser {layer}"))
+        del pcs
+    else:
+        for i in tqdm(range(PROFILE_IDX[0], PROFILE_IDX[1]), desc="Phase 1: diagrams"):
+            img, _ = dataset[i]
+            x = img.unsqueeze(0).to(device)
+            acts = extractor.extract(x)
+            for layer in LAYER_NAMES:
+                act_np = acts[layer].squeeze(0).cpu().numpy()
+                all_diagrams[layer].append(profiler.compute_diagram(act_np))
 
     # ── Phase 2: compute medoid reference diagrams ─────────────────────────────
     print("\nPhase 2: Computing medoid reference diagrams "
@@ -197,6 +260,23 @@ def build_profile_testset(
 
     def compute_scores(idx_range, label):
         """Compute anomaly scores for a contiguous index range."""
+        if workers > 0:
+            pcs = _collect_pointclouds(dataset, idx_range, extractor, profiler,
+                                       device, gpu_batch, loader_workers,
+                                       desc=f"Scoring {label}: GPU forward")
+            n = len(pcs[LAYER_NAMES[0]])
+            dgms_by_layer = {}
+            with mp.get_context('fork').Pool(workers) as pool:
+                for layer in LAYER_NAMES:
+                    dgms_by_layer[layer] = list(tqdm(
+                        pool.imap(_ripser_dgms, pcs[layer], chunksize=8),
+                        total=n, desc=f"Scoring {label}: ripser {layer}"))
+            del pcs
+            scores = []
+            for i in range(n):
+                dgms = {layer: dgms_by_layer[layer][i] for layer in LAYER_NAMES}
+                scores.append(scorer.score(dgms))
+            return np.array(scores, dtype=np.float32)
         scores = []
         for i in tqdm(range(idx_range[0], idx_range[1]),
                       desc=f"Scoring {label}"):
@@ -285,6 +365,16 @@ if __name__ == '__main__':
     # --output-dir kept for backward compat; the primary artifact path comes
     # from PATHS[reference_profiles] in the loaded config.
     parser.add_argument('--output-dir', default=None)
+    parser.add_argument('--workers', type=int, default=0,
+                        help='Parallel ripser workers for persistent homology '
+                             '(0=serial, original behaviour). Set high on '
+                             'many-core boxes to parallelise the CPU PH '
+                             'bottleneck; numerics are identical.')
+    parser.add_argument('--gpu-batch', type=int, default=128,
+                        help='Batch size for the batched GPU forward pass when '
+                             '--workers>0.')
+    parser.add_argument('--loader-workers', type=int, default=4,
+                        help='DataLoader worker processes for the forward pass.')
     args = parser.parse_args()
     out_dir = args.output_dir or os.path.dirname(PATHS['reference_profiles']) or './models'
     build_profile_testset(
@@ -292,4 +382,7 @@ if __name__ == '__main__':
         output_dir=out_dir,
         allow_undertrained_smoke=args.allow_undertrained_smoke,
         source_split=args.source_split,
+        workers=args.workers,
+        gpu_batch=args.gpu_batch,
+        loader_workers=args.loader_workers,
     )
