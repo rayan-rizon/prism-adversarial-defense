@@ -1,0 +1,67 @@
+# PRISM ImageNet-100 SMOKE config — wiring check only, NOT paper-valid.
+# Tiny splits over the staged 30k pool so the full pipeline (fine-tune ->
+# profile -> ensemble -> calibrate -> FPR gate -> eval) runs end-to-end in
+# minutes. Artifacts isolated under models/imagenet_smoke/.
+
+model:
+  arch: resnet50
+  name: torchvision_resnet50
+  backbone_checkpoint: models/imagenet_smoke/resnet50_imagenet100.pt
+  num_classes: 100
+  layer_names: [layer2, layer3, layer4]
+  layer_weights: {layer2: 0.30, layer3: 0.30, layer4: 0.40}
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas: {L1: 0.10, L2: 0.03, L3: 0.005}
+  cal_alpha_factor: 0.7
+  tier_cal_alpha_factors: {L1: 0.75, L2: 0.55, L3: 0.52}
+
+# Tiny disjoint splits over the permuted pool (only ~160 images touched).
+splits:
+  profile_idx: [0,   60]
+  cal_idx:     [60,  100]
+  val_idx:     [100, 140]
+  eval_idx:    [140, 200]
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 10
+  alert_run_prob: 0.60
+  warmup_steps: 35
+  l0_factor: 0.8
+
+moe: {n_experts: 4, hidden_dim: 256}
+memory: {match_threshold: 0.5}
+
+data:
+  dataset: imagenet
+  image_size: 224
+  mean: [0.485, 0.456, 0.406]
+  std:  [0.229, 0.224, 0.225]
+  data_root: ./data
+  imagenet_dir: data/imagenet100
+  imagenet_pool_seed: 1234
+
+profiling:
+  n_clean_images: 60
+
+evaluation:
+  n_test_images: 8
+  attacks: [FGSM]
+
+paths:
+  reference_profiles: models/imagenet_smoke/reference_profiles.pkl
+  calibrator:         models/imagenet_smoke/calibrator.pkl
+  ensemble_scorer:    models/imagenet_smoke/ensemble_scorer.pkl
+  experts:            models/imagenet_smoke/experts.pkl
+  clean_scores:       experiments/imagenet_smoke/calibration/imagenet_smoke_clean_scores.npy

@@ -72,8 +72,12 @@ PGD_EVAL_MAX_ITER="${PGD_EVAL_MAX_ITER:-50}"
 PGD_EVAL_RESTARTS="${PGD_EVAL_RESTARTS:-10}"
 SMOKE_ONLY="${SMOKE_ONLY:-0}"
 TRAIN_EXTRA_ARGS=()
+PROFILE_EXTRA_ARGS=()
 
 if [ "$SMOKE_ONLY" = "1" ]; then
+  TAG=imagenet_smoke
+  CONFIG=configs/imagenet_smoke.yaml
+  PROFILE_EXTRA_ARGS=(--allow-undertrained-smoke)  # 1-epoch backbone won't clear the 0.90 profile gate
   SEEDS="${SEEDS_SMOKE:-42}"
   N_TEST="${N_TEST_SMOKE:-8}"
   ATTACKS="${ATTACKS_SMOKE:-FGSM}"
@@ -172,6 +176,7 @@ $PYTHON_BIN scripts/build_profile_testset.py --config "$PRISM_CONFIG" \
   --workers "$WORKERS" \
   --gpu-batch "$BUILD_GPU_BATCH" \
   --loader-workers "$BUILD_LOADER_WORKERS" \
+  "${PROFILE_EXTRA_ARGS[@]}" \
   2>&1 | tee logs/${TAG}/step1_build_profile.log
 
 echo ""
