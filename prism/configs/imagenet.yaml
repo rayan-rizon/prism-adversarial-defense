@@ -111,6 +111,11 @@ data:
 
 profiling:
   n_clean_images: 5000
+  # ResNet-50 @ 224 clean Wasserstein scores are ~39 (vs CIFAR ~0.27); raise the
+  # Phase-4 sanity ceiling above the CIFAR-scale default of 30. Conformal
+  # calibration is quantile-based so absolute scale does not affect the FPR
+  # guarantee; this only guards against a truly degenerate manifold.
+  cal_score_sanity_max: 120
 
 evaluation:
   n_test_images: 1000

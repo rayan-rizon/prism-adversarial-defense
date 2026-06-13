@@ -160,6 +160,16 @@ EVAL_IDX:    Tuple[int, int] = tuple(_splits['eval_idx'])
 # — see src.data_loader.load_test_dataset().
 DATASET: str = _CFG.get('data', {}).get('dataset', 'cifar10').lower()
 
+# Phase-4 clean-calibration-score sanity ceiling in build_profile_testset.
+# Guards against a degenerate/exploding reference manifold. The default 30 is
+# a CIFAR-scale heuristic (CIFAR clean mean ~0.27); larger backbones at higher
+# resolution (e.g. ResNet-50 @ 224, clean mean ~39) need a higher ceiling.
+# Conformal calibration is quantile-based, so the absolute score scale is
+# immaterial to the guarantee -- this only catches true explosions.
+CAL_SCORE_SANITY_MAX: float = float(
+    _CFG.get('profiling', {}).get('cal_score_sanity_max', 30)
+)
+
 # Artifact paths. Config can override these to route per-dataset (e.g.
 # models/cifar100/ensemble_scorer.pkl) so CIFAR-10 artifacts are not clobbered.
 _default_paths = {

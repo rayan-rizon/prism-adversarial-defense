@@ -60,7 +60,7 @@ from src.config import (
     LAYER_NAMES, LAYER_WEIGHTS, DIM_WEIGHTS, N_SUBSAMPLE, MAX_DIM,
     BACKBONE_MEAN, BACKBONE_STD, BACKBONE_INPUT_SIZE,
     PROFILE_IDX, CAL_IDX, VAL_IDX, EVAL_IDX,
-    DATASET, PATHS,
+    DATASET, PATHS, CAL_SCORE_SANITY_MAX,
 )
 from src.data_loader import load_test_dataset, load_train_dataset
 from src.models import load_backbone
@@ -327,8 +327,12 @@ def build_profile_testset(
     assert profile_scores.mean() > 0, "Profile scores must be positive"
     assert np.all(np.isfinite(profile_scores)), "No NaN/inf in profile scores"
     if not allow_undertrained_smoke:
-        assert cal_scores.mean() < 30, \
-            f"Cal score mean={cal_scores.mean():.2f} suspiciously high"
+        assert cal_scores.mean() < CAL_SCORE_SANITY_MAX, \
+            (f"Cal score mean={cal_scores.mean():.2f} exceeds sanity ceiling "
+             f"{CAL_SCORE_SANITY_MAX} (set profiling.cal_score_sanity_max in the "
+             f"config if this backbone's clean Wasserstein scale is legitimately "
+             f"larger -- profile/cal/val means being mutually consistent indicates "
+             f"a healthy manifold, not an explosion).")
     else:
         print(
             f"  [WARN] Skipping clean-score magnitude guard for smoke run "
