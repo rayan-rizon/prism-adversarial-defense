@@ -113,6 +113,8 @@ def load_backbone(device: torch.device,
             script_hint = 'pretrain_wrn_backbone.py'
         elif arch_hint in {'vit_b_16', 'vit-b-16', 'vit_b16'}:
             script_hint = 'pretrain_vit_backbone.py'
+        elif arch_hint in {'resnet50', 'resnet-50', 'imagenet_resnet50'}:
+            script_hint = 'pretrain_imagenet100_backbone.py'
         else:
             script_hint = 'pretrain_cifar_backbone.py'
         raise FileNotFoundError(
@@ -133,6 +135,21 @@ def load_backbone(device: torch.device,
         from torchvision.models import vit_b_16
 
         backbone = vit_b_16(weights=None, num_classes=num_classes)
+        state = torch.load(ckpt, map_location=str(device))
+        if isinstance(state, dict) and 'state_dict' in state:
+            state = state['state_dict']
+        if isinstance(state, dict) and any(k.startswith('module.') for k in state):
+            state = {k.removeprefix('module.'): v for k, v in state.items()}
+        backbone.load_state_dict(state)
+    elif BACKBONE_ARCH in {'resnet50', 'resnet-50', 'imagenet_resnet50'}:
+        # ImageNet-grade backbone for the 224x224 scaling run (Exp 2).
+        # Stock torchvision ResNet-50 with a num_classes head; weights come
+        # from pretrain_imagenet100_backbone.py (ImageNet-1k init, fine-tuned
+        # head). The native layer2/layer3/layer4 submodules are unchanged, so
+        # the activation extractor needs no modification.
+        from torchvision.models import resnet50
+
+        backbone = resnet50(weights=None, num_classes=num_classes)
         state = torch.load(ckpt, map_location=str(device))
         if isinstance(state, dict) and 'state_dict' in state:
             state = state['state_dict']

@@ -2,6 +2,7 @@
 torch>=2.1.0
 torchvision>=0.16.0
 torchaudio>=2.1.0
+Pillow>=9.0.0  # ImageFolder JPEG decode (ImageNet-100 / Exp2); torchvision dep, pinned explicit
 
 # TDA Libraries
 ripser>=0.6.4

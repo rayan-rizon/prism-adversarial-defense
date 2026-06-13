@@ -217,7 +217,13 @@ L3 & 0.005 & split conformal artifact & Expert routing (MoE) or reject \\
 \bottomrule
 \end{tabular}
 \caption{Conformal detection tiers. Thresholds are calibrated on the active
-dataset's clean calibration split and verified on a disjoint validation split.}
+dataset's clean calibration split and verified on a disjoint validation split.
+The L2 \emph{input purification} action is an implemented but
+\emph{unevaluated} placeholder (a Gaussian-smoothing hook,
+\texttt{prism.\_purify\_input}); all reported TPR/FPR are measured at the
+conformal detection threshold \emph{before} any purification, so no headline
+number depends on it. A stronger purifier (e.g.\ DiffPure) is left as future
+work.}
 \label{tab:tiers}
 \end{table}
 

@@ -57,8 +57,13 @@ Point-cloud subsampling in \texttt{TopologicalProfiler} uses
 deterministic MD5-based hashing (rather than a stateful RNG) to ensure
 consistent scoring across calibration and inference passes.
 The conformal calibration assumes the clean test distribution matches
-the calibration distribution---distribution shift (e.g., domain adaptation attacks)
-may inflate FPR.
+the calibration distribution; we \emph{measure} the cost of violating
+this on CIFAR-10-C (\S\ref{sec:cert_shift}): realised FPR inflates to
+$3.9\times$--$28\times$ the certified $\alpha$ depending on tier
+(severity-dependent, worst on noise corruptions), so the certificate
+must be read as in-distribution FPR control and deployments under
+sustained shift need recalibration or shift-aware conformal methods
+\cite{tibshirani2019conformal}.
 The adaptive-attack evaluation in \S\ref{sec:adaptive} now uses an
 ensemble-complete BPDA surrogate that targets activation matching, DCT
 energy, softmax entropy, logit profile, StabilityV2, input gradient norm,

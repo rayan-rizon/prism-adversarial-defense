@@ -40,9 +40,17 @@ topological channel.
 We apply split conformal prediction to the anomaly score stream, obtaining 
 \emph{distribution-free} FPR certificates at three severity tiers 
 (L1: $\alpha{=}0.10$; L2: $\alpha{=}0.03$; L3: $\alpha{=}0.005$)
-using only a held-out clean calibration set. To our knowledge this is the
-first activation-based adversarial-input detector to attach such a
-distribution-free false-positive-rate certificate to its decision threshold.
+using only a held-out clean calibration set. Conformal prediction has been
+applied to outlier and out-of-distribution detection before---iDECODe
+\cite{kaur2022idecode} calibrates an equivariance nonconformity score and
+Bates et al.\ \cite{bates2023outliers} give conformal $p$-value outlier
+tests---but for \emph{novelty/OOD} inputs in input or logit space. To our
+knowledge \prism is the first to attach such a distribution-free
+false-positive-rate certificate to an \emph{adversarial-input} detector
+built on multi-layer activation topology. The guarantee is exact under
+exchangeability; we additionally \emph{audit} it under benign covariate
+shift (CIFAR-10-C) and report the measured FPR inflation rather than a
+qualitative caveat (\S\ref{sec:cert_shift}).
 
 \item \textbf{Temporal campaign detector (\sacd).}
 We monitor the score stream with a CUSUM-with-drift-floor change detector
@@ -50,7 +58,11 @@ and report \emph{time-to-detect} (mean queries between the first adversarial
 step and the first L0 trigger) as the headline metric. On sustained
 $\rho{=}1.0$ streams \sacd raises the campaign alert in $2.6 \pm 0.5$
 queries while maintaining $0.0$ false-alarm activation on clean-only
-streams---a threat model absent from prior work.
+streams---a threat model absent from prior work. Under a surrogate-free
+direct-score attack that drives the single-shot tier down, \sacd flags the
+probing campaign and holds the full-system miss to $0.03$
+(\S\ref{sec:direct_score}), so campaign detection is load-bearing for
+adaptive robustness, not an auxiliary feature.
 
 \item \textbf{Routed MoE recovery (\tamsh).}
 For inputs reaching the L3 severity tier, \prism routes the input through

@@ -5,9 +5,11 @@ neural network activations. \prism integrates four complementary components:
 (1)~\tamm (Topological Activation Manifold Monitor), which extracts persistence 
 diagrams from per-layer activations and scores each inference against a 
 calibrated clean-data profile using Wasserstein distance; 
-(2)~\cadg (Conformal Adversarial Detection Guarantee), which provides 
-distribution-free false-positive rate certificates at three severity tiers via 
-split conformal prediction; 
+(2)~\cadg (Conformal Adversarial Detection Guarantee), which provides
+distribution-free false-positive rate certificates at three severity tiers via
+split conformal prediction (exact in-distribution; a CIFAR-10-C audit
+measures its degradation under benign covariate shift,
+\S\ref{sec:cert_shift});
 (3)~\sacd (Sequential Adversarial Campaign Detector), a CUSUM-on-score-stream
 monitor that flags sustained attack campaigns at a mean latency of
 \textbf{2.6 queries} on $\rho{=}1.0$ streams while maintaining $0.0$
@@ -52,7 +54,10 @@ $0.077$) by $+33.6$~pp on the FGSM/PGD/Square pool. On the
 CIFAR-10/ResNet-18 setting, an ensemble-complete adaptive PGD surrogate
 drops all-input TPR to
 $0.479$, but \prism still detects $0.866$ of successful adversarials
-and leaves a $0.074$ undetected-success rate. The WRN-28-10
+and leaves a $0.074$ undetected-success rate. A surrogate-free
+direct-score attack (NES on the exact deployed score) drives the
+single-shot tier lower still, yet the live \sacd campaign monitor holds
+the full-system miss to $0.03$ (\S\ref{sec:direct_score}). The WRN-28-10
 backbone lifts the same pool to $0.975$ at FPR $0.073$; CIFAR-100 holds
 $0.830$ at FPR $0.077$; ViT-B/16 reaches
 $1.000/1.000/0.9998$ TPR on FGSM/PGD-50/Square at FPR $0.0828$
@@ -63,6 +68,9 @@ appendix-only stress evidence, not ensemble-complete headline claims.
 Unlike detector-coupled defenses, \prism operates on any wrappable
 pre-trained classifier with accessible intermediate activations---
 requiring per-model clean profiling and conformal calibration but no
-backbone retraining or architecture modification---and is, to
-our knowledge, the first activation-based adversarial detector to provide
-a split-conformal, distribution-free false-positive-rate certificate.
+backbone retraining or architecture modification. To our knowledge it is
+the first to attach a split-conformal, distribution-free false-positive-rate
+certificate to an \emph{activation-topology adversarial-input} detector,
+distinct from prior conformal outlier/OOD tests
+\cite{kaur2022idecode,bates2023outliers} that calibrate novelty rather than
+adversarial-input detection.

@@ -1,0 +1,128 @@
+# PRISM config — ImageNet-100 / ResNet-50 @ 224x224 (Exp 2 scaling run).
+#
+# Purpose: deflect the "CIFAR-only / 32x32 toy benchmark" reviewer objection
+# with ONE standard-attack run at ImageNet grade. Standard attacks only
+# (FGSM / PGD / Square at eps=8/255); NO adaptive, NO CW, NO AutoAttack, NO
+# latency claim — scoped exactly like the ViT-B/16 transfer row.
+#
+# Data staging (do this once on the box; ImageFolder layout, one dir per class):
+#   data/imagenet100/
+#     n01558993/ *.JPEG
+#     n01692333/ *.JPEG
+#     ... (100 class dirs)
+# A 100-class subset (>=10k images total) is required so the flat split ranges
+# below (profile/cal/val/eval over indices [0,10000)) all fit. The standard
+# ImageNet-100 train split (~130k images) is the intended source. Point
+# data.imagenet_dir at it.
+#
+# Full artifact build (after staging + fine-tuning the 100-way head):
+#   PRISM_CONFIG=configs/imagenet.yaml
+#   python scripts/pretrain_imagenet100_backbone.py \
+#       --data-dir data/imagenet100 --epochs 15 \
+#       --output models/imagenet/resnet50_imagenet100.pt
+#   python scripts/build_profile_testset.py  --config configs/imagenet.yaml
+#   python scripts/train_ensemble_scorer.py  --config configs/imagenet.yaml \
+#       --n-train 1500 --source-split train --balanced-attacks \
+#       --pgd-train-steps 40 --square-train-max-iter 500 \
+#       --use-stability-features --use-logit-profile-features \
+#       --use-side-quadratic-features --use-grad-norm \
+#       --output models/imagenet/ensemble_scorer.pkl
+#   python scripts/calibrate_ensemble.py        --config configs/imagenet.yaml
+#   python scripts/compute_ensemble_val_fpr.py  --config configs/imagenet.yaml
+#   python experiments/evaluation/run_evaluation_full.py \
+#       --config configs/imagenet.yaml --n-test 1000 \
+#       --attacks FGSM PGD Square --multi-seed --seeds 42 123 456 \
+#       --skip-latency --output experiments/evaluation/results_imagenet.json
+
+model:
+  arch: resnet50
+  name: torchvision_resnet50
+  backbone_checkpoint: models/imagenet/resnet50_imagenet100.pt
+  num_classes: 100
+  # Stock torchvision ResNet-50 exposes layer2/layer3/layer4 natively, so the
+  # activation extractor is unchanged. Same shallow-to-deep weighting as CIFAR.
+  layer_names:
+    - layer2
+    - layer3
+    - layer4
+  layer_weights:
+    layer2: 0.30
+    layer3: 0.30
+    layer4: 0.40
+
+tda:
+  n_subsample: 150
+  max_dim: 1
+  n_reference: 50
+  dim_weights: [0.70, 0.30]
+
+conformal:
+  alphas:
+    L1: 0.10
+    L2: 0.03
+    L3: 0.005
+  cal_alpha_factor: 0.7
+  tier_cal_alpha_factors:
+    L1: 0.75
+    L2: 0.55
+    L3: 0.52
+
+# Flat split ranges over the deterministic permuted ImageNet-100 pool
+# (src.data_loader._imagenet_pool). All four are disjoint by construction and
+# each spans all 100 classes; eval is a held-out slice of the same pool (same
+# protocol the paper already discloses for CIFAR). Requires the pool to hold
+# >= 10000 images.
+splits:
+  profile_idx: [0,    5000]
+  cal_idx:     [5000, 7000]
+  val_idx:     [7000, 8000]
+  eval_idx:    [8000, 10000]
+
+campaign:
+  window_size: 100
+  cp_threshold: 0.3
+  hazard_rate: 0.033
+  mu0: 7.0
+  beta0: 15.0
+  alert_run_length: 10
+  alert_run_prob: 0.60
+  warmup_steps: 35
+  l0_factor: 0.8
+
+moe:
+  n_experts: 4
+  hidden_dim: 256
+
+memory:
+  match_threshold: 0.5
+
+data:
+  dataset: imagenet
+  image_size: 224
+  # ImageNet channel statistics (match the torchvision ResNet-50 stem).
+  mean: [0.485, 0.456, 0.406]
+  std:  [0.229, 0.224, 0.225]
+  data_root: ./data
+  # Staged ImageNet-100 directory (ImageFolder layout). REQUIRED.
+  imagenet_dir: data/imagenet100
+  # Fixed permutation seed for the flat-index pool. Do not change between
+  # pipeline stages or the splits stop being disjoint.
+  imagenet_pool_seed: 1234
+
+profiling:
+  n_clean_images: 5000
+
+evaluation:
+  n_test_images: 1000
+  # Standard attacks only — eps = 8/255, matching every other PRISM setting.
+  attacks:
+    - FGSM
+    - PGD
+    - Square
+
+paths:
+  reference_profiles: models/imagenet/reference_profiles.pkl
+  calibrator:         models/imagenet/calibrator.pkl
+  ensemble_scorer:    models/imagenet/ensemble_scorer.pkl
+  experts:            models/imagenet/experts.pkl
+  clean_scores:       experiments/imagenet/calibration/imagenet_clean_scores.npy

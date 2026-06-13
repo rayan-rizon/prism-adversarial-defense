@@ -114,6 +114,14 @@ _MEAN = BACKBONE_MEAN
 _STD  = BACKBONE_STD
 if BACKBONE_INPUT_SIZE == 32:
     _PIXEL_TRANSFORM = T.Compose([T.ToTensor()])
+elif DATASET == 'imagenet':
+    # Square ImageNet crop (Resize+CenterCrop). A bare Resize leaves the long
+    # side uncropped -> variable-size tensors that cannot be batched.
+    _PIXEL_TRANSFORM = T.Compose([
+        T.Resize(max(BACKBONE_INPUT_SIZE + 32, 256)),
+        T.CenterCrop(BACKBONE_INPUT_SIZE),
+        T.ToTensor(),
+    ])
 else:
     _PIXEL_TRANSFORM = T.Compose([T.Resize(BACKBONE_INPUT_SIZE), T.ToTensor()])
 _NORMALIZE       = T.Normalize(mean=_MEAN, std=_STD)

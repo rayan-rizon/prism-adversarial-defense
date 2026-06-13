@@ -116,7 +116,10 @@ AutoAttack & 1.000 & 0.075 & 1.000 & 1.000 \\
 rerun (5 seeds, $n{=}1000$ clean and $n{=}1000$ adversarial per seed) under the
 same disjoint-window protocol. AUROC/AUPR are computed from the raw ensemble
 anomaly scores (5-seed mean, per-seed std $\le 0.002$); the paired TPR/FPR at the
-L1 operating point reproduce Table~\ref{tab:main} within its 95\% CIs. AUROC
+L1 operating point reproduce Table~\ref{tab:main} to within $1.5$~pp
+(Square, CW-L2, and AutoAttack fall inside the pooled 95\% CIs; FGSM
+$0.897$ vs.\ $0.882$ and PGD $0.991$ vs.\ $0.987$ sit just outside,
+consistent with rerun-level seed/training variance). AUROC
 $\ge 0.96$ on every attack family confirms that clean/adversarial separation holds
 across all thresholds, not only at the calibrated operating point.}
 \label{tab:auroc}
@@ -127,8 +130,8 @@ Table~\ref{tab:auroc} reports AUROC and AUPR for the primary CIFAR-10/ResNet-18
 setting. Every attack family exceeds $0.96$ AUROC, with PGD and AutoAttack near
 $1.0$, so the detection signal is not an artifact of the calibrated L1 threshold.
 These numbers come from a fixed-seed rerun that emits per-sample anomaly scores;
-the operating-point TPR/FPR match Table~\ref{tab:main} within its confidence
-intervals.
+the operating-point TPR/FPR track Table~\ref{tab:main} to within $1.5$~pp
+(per-attack agreement detailed in the caption).
 
 \paragraph{Key observations.}
 The paper reports only numbers produced by the locked artifact pipeline.
@@ -348,6 +351,100 @@ $0.079/0.026/0.003$, while one $n{=}200$ confirmation seed has a noisy
 L3 estimate of $2/200=0.010$ and the pooled confirmation is exactly
 $0.005$. We therefore frame the confirmation as a five-seed Monte Carlo
 stress test, not a disjoint-$1000$ clean benchmark.
+
+% ── Direct surrogate-free score attack ────────────────────────────────────
+\subsection{Direct Surrogate-Free Score Attack and Campaign Rescue}
+\label{sec:direct_score}
+
+The adaptive attack of \S\ref{sec:adaptive} attacks differentiable
+\emph{surrogates} for the non-TDA side channels, leaving open the objection
+that the surrogate gap---not robustness---explains residual detection. We
+close this with a \emph{surrogate-free} attack that estimates the gradient of
+the \emph{exact deployed} score $S(x)$ by NES finite differences (antithetic
+sampling, $Q{=}12$ pairs, $\sigma{=}0.01$) and ascends the combined objective
+$J(x) = \mathcal{L}_\text{CE}(f(x),y) - c\,S(x)$, with both gradients
+\emph{unit-normalised} before combining so the trade-off weight $c$ acts as a
+true dial rather than an on/off switch. The classifier is white-box; the
+detector is reachable only through its scalar score. All runs use
+$\varepsilon{=}8/255$ and $n{=}100$ evaluation images sampled (seed $42$)
+from the held-out evaluation window (test indices $[8000,10000)$).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+$c$ (evasion weight) & model ASR & per-sample TPR & undetected-success \\
+\midrule
+0.0 & 1.00 & 0.990 & 0.010 \\
+0.5 & 1.00 & 0.960 & 0.040 \\
+1.0 & 1.00 & 0.940 & 0.060 \\
+2.0 & 1.00 & 0.870 & 0.130 \\
+4.0 & 0.99 & 0.620 & 0.380 \\
+8.0 & 0.85 & 0.160 & 0.740 \\
+\bottomrule
+\end{tabular}
+\caption{%
+  Surrogate-free direct-score attack on CIFAR-10/ResNet-18, \emph{per-sample}
+  detector only (campaign monitor off). NES runs on the exact deployed $S(x)$,
+  so the BPDA surrogate gap is removed. At $c{=}2$ the attack reproduces the
+  \S\ref{sec:adaptive} adaptive-PGD operating point
+  ($0.87$ per-sample TPR) with no surrogate, confirming the surrogate gap is
+  not hiding robustness. As evasion pressure rises the single-shot detector
+  degrades ($\mathrm{TPR}{\to}0.16$ at $c{=}8$): the expected
+  Carlini--Wagner outcome for any single-shot detector, so $0.866$ is a point
+  on a curve, not a floor.
+}
+\label{tab:direct_score}
+\end{table}
+
+\paragraph{The campaign monitor is load-bearing.} The surrogate-free attack
+needs ${\approx}960$ score queries per image to converge, so the attack is
+\emph{itself a campaign}. With the deployed \sacd CUSUM monitor live
+(\texttt{models/l0\_thresholds.pkl}; every NES probe flows through it; the
+monitor is \emph{reset per image}, the hardest case for the defender), the
+full system catches what the single-shot tier alone misses
+(Table~\ref{tab:direct_score_sacd}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+ & $c{=}4$ & $c{=}8$ \\
+\midrule
+per-sample TPR                                  & 0.68 & 0.26 \\
+campaign caught (\sacd)                          & 0.95 & 0.91 \\
+median queries-to-alert                          & 40   & 54 \\
+\textbf{system TPR} (tier $\lor$ \sacd)          & \textbf{0.96} & \textbf{0.92} \\
+\textbf{undetected full-system miss}             & \textbf{0.03} & \textbf{0.03} \\
+\bottomrule
+\end{tabular}
+\caption{%
+  Same surrogate-free attack, \emph{full} \prism (per-sample tier OR \sacd
+  campaign monitor). \sacd fires at $40$--$54$ of the ${\approx}960$ required
+  queries ($<6\%$ of the budget): the attacker drives $S(x)$ \emph{down}, but
+  the early transient (random $\pm\varepsilon$ initialisation and
+  pre-convergence probes) trips the upward-drift CUSUM. The true full-system
+  miss is $0.03$, \emph{flat} across $c{=}4$ and $c{=}8$---a floor, not a
+  cliff. Per-sample TPR is \emph{higher} here than in
+  Table~\ref{tab:direct_score} ($0.16{\to}0.26$, $0.62{\to}0.68$) because a
+  fired campaign monitor tightens the per-sample tier
+  (\texttt{classify}$(\cdot, l0\_\text{active}{=}\text{True})$ applies the
+  $\lambda{=}0.8$ factor of \S\ref{sec:sacd}); the two layers reinforce.
+  Monitor-reset-per-image makes $0.03$ an \emph{upper bound} on the deployed
+  miss.
+}
+\label{tab:direct_score_sacd}
+\end{table}
+
+\paragraph{Scope.} This attack adapts against $S(x)$, not against \sacd. A
+\emph{dual-adaptive} attacker that ramps slowly to stay under the CUSUM drift
+floor is untested and left as future work; the flat $0.03$ floor suggests it
+is hard, because per-sample tier evasion requires exactly the many queries
+that trip the campaign monitor. This is the operative form of contribution
+C3 (\S\ref{sec:intro}): \sacd is load-bearing for adaptive robustness, not an
+auxiliary feature.
 
 % ── Ablation ──────────────────────────────────────────────────────────────
 \subsection{Ablation Study}
@@ -645,3 +742,58 @@ Proposition~\ref{prop:coverage}.
            with 25 bootstrap subsamples per size.}
   \label{fig:calib}
 \end{figure}
+
+% ── Certificate under benign covariate shift ──────────────────────────────
+\subsection{Certificate Validity Under Benign Covariate Shift (CIFAR-10-C)}
+\label{sec:cert_shift}
+
+The \cadg guarantee (Proposition~\ref{prop:coverage}) is exact only under
+exchangeability: the clean test distribution must match the calibration
+distribution. We audit what happens when this assumption is \emph{benignly}
+violated, using CIFAR-10-C \cite{hendrycks2019benchmarking}: 8 corruption
+families (gaussian noise, shot noise, defocus blur, motion blur, fog, frost,
+contrast, JPEG compression) at severities $\{1,3,5\}$, $n{=}1000$ images per
+cell (24 cells, forward passes only, seed 42). Every non-PASS verdict on a
+corrupted-but-benign input counts as a false positive against the certified
+$\alpha$.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccccc}
+\toprule
+ & & \multicolumn{3}{c}{realised FPR by severity} & & cells within \\
+\cmidrule(lr){3-5}
+Tier & certified $\alpha$ & sev.\ 1 & sev.\ 3 & sev.\ 5 & max & target (of 24) \\
+\midrule
+L1 & 0.10  & 0.194 & 0.394 & 0.573 & 0.999 & 5 \\
+L2 & 0.03  & 0.060 & 0.272 & 0.429 & 0.992 & 6 \\
+L3 & 0.005 & 0.009 & 0.139 & 0.278 & 0.920 & 6 \\
+\bottomrule
+\end{tabular}
+\caption{%
+  Conformal-certificate audit under benign covariate shift (CIFAR-10-C,
+  8 corruptions $\times$ severities $\{1,3,5\}$, $n{=}1000$/cell). The
+  certificate degrades severely: the overall mean realised FPR is
+  $0.387$ at L1 ($3.9\times$ the certified $0.10$), $0.254$ at L2
+  ($8.5\times$), and $0.142$ at L3 ($28\times$), with noise corruptions
+  worst (gaussian-noise L1 mean $0.863$) and weather/compression mildest
+  (fog $0.120$). At severity 1 the L3 tier nearly holds ($0.009$ vs.\
+  certified $0.005$). This is the expected behaviour of split conformal
+  prediction when exchangeability is broken
+  \cite{tibshirani2019conformal}, not a \prism-specific defect, and the
+  failure direction is conservative for safety (over-flagging benign
+  inputs costs availability; it never silently admits them). Deployments
+  expecting sustained distribution shift should recalibrate online or use
+  shift-aware conformal methods \cite{tibshirani2019conformal}.
+}
+\label{tab:cert_shift}
+\end{table}
+
+\paragraph{Reading.} The certificate should be advertised as
+\emph{in-distribution} FPR control. Under benign corruption it fails in the
+flagging direction --- corrupted inputs look anomalous to the same channels
+that flag adversarials --- so the system remains safe but loses availability;
+the measured degradation in Table~\ref{tab:cert_shift} replaces the
+qualitative caveat of earlier drafts and bounds the operational cost of
+deploying \prism under shift without recalibration.
