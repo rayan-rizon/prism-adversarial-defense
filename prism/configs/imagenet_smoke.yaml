@@ -22,12 +22,14 @@ conformal:
   cal_alpha_factor: 0.7
   tier_cal_alpha_factors: {L1: 0.75, L2: 0.55, L3: 0.52}
 
-# Tiny disjoint splits over the permuted pool (only ~160 images touched).
+# Small disjoint splits over the permuted pool. cal/val >= 100 because the
+# conformal calibrator hard-requires >= 100 samples; still tiny enough to run
+# the full pipeline in minutes.
 splits:
-  profile_idx: [0,   60]
-  cal_idx:     [60,  100]
-  val_idx:     [100, 140]
-  eval_idx:    [140, 200]
+  profile_idx: [0,   200]
+  cal_idx:     [200, 360]
+  val_idx:     [360, 480]
+  eval_idx:    [480, 540]
 
 campaign:
   window_size: 100
@@ -53,7 +55,7 @@ data:
   imagenet_pool_seed: 1234
 
 profiling:
-  n_clean_images: 60
+  n_clean_images: 200
 
 evaluation:
   n_test_images: 8
