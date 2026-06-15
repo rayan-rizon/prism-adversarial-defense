@@ -1,0 +1,16 @@
+% Campaign-monitor adaptive robustness: dual-adaptive (slow-ramp) + minimal
+% attacker vs SACD, under per-image reset (deployed) vs session-level monitoring.
+% Source: experiments/evaluation/campaign_robustness/ (Vast Test #1, 5 seeds,
+% n=100/seed = 500/cell, CIFAR-10/ResNet-18, deployed scorer + l0_thresholds.pkl,
+% steps=24, nes=5). Pooled by aggregate_t1.py. Anchor row from local n=20 run.
+\begin{tabular}{llcccc}
+\toprule
+ & & \multicolumn{2}{c}{per-image reset (deployed)} & \multicolumn{2}{c}{session-level (fix)} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Attacker & ASR & \sacd\ caught & system miss [95\% CI] & \sacd\ caught & system miss [95\% CI] \\
+\midrule
+Faithful high-query (anchor) & $1.00$ & $0.99$ & $0.01$ [0.00, 0.06] & --- & --- \\
+Score-budgeted (slow-ramp, $S{\le}$knee) & $0.46$ & $0.73$ & $\mathbf{0.272}$ [0.235, 0.313] & $1.00$ & $\mathbf{0.002}$ [0.000, 0.011] \\
+Minimal-perturbation ($\approx$2 query) & $1.00$ & $0.00$ & $\mathbf{0.472}$ [0.429, 0.516] & $0.94$ & $\mathbf{0.026}$ [0.015, 0.044] \\
+\bottomrule
+\end{tabular}

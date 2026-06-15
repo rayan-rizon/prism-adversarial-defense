@@ -596,10 +596,10 @@ CW does not produce this signature and falls in a detector blind spot.}
 
 % ─────────────────────────────────────────────────────────────────────────────
 
-\section{Appendix-Only: TAMSH Router Diagnosis (F4 Fix)}
+\section{Appendix-Only: TAMSH Router Diagnosis}
 \label{app:tamsh_diag}
 
-The pre-fix TAMSH router used $H_1$-only Wasserstein distance for expert
+An $H_1$-only Wasserstein routing metric is degenerate for expert
 gating. Diagnostic audit (seed 42, $n=200$ PGD inputs) showed:
 
 \begin{enumerate}[leftmargin=*,noitemsep]
@@ -618,7 +618,7 @@ gating. Diagnostic audit (seed 42, $n=200$ PGD inputs) showed:
 \end{enumerate}
 
 \noindent
-The F4 fix adds an $H_0$ term to the routing metric (Eq.~\ref{eq:routing}):
+The deployed router adds an $H_0$ term to the routing metric (Eq.~\ref{eq:routing}):
 $H_0$ medoid diagrams have $\sim$16 points (one per connected component
 at large filtration radius) and are sufficiently dense for Wasserstein
 gating to be informative. On the same-protocol 5-seed PGD L3 pool
@@ -814,15 +814,14 @@ case, the ASR gap is structurally bounded
 (\S\ref{sec:campaign}): the upstream L1/L3 conformal already crushes
 campaign ASR to $\le 4.3\%$, leaving at most $1.50$~pp of additional
 headroom for L0 across any scenario. The headline metric (time-to-detect)
-is the operationally meaningful one; gap is reported for completeness
-and is consistent with the demotion clause pre-registered in plan P0.4.
+is the operationally meaningful one; gap is reported for completeness.
 
 \begin{table}[h]
 \centering
 \small
 \input{tables/cifar100_campaign.tex}
 \caption{%
-  CIFAR-100 campaign-stream ASR with L0 off vs.\ on (5 seeds, post-fix).
+  CIFAR-100 campaign-stream ASR with L0 off vs.\ on (5 seeds).
   Clean-only false alarm rate is $0.000$; ASR-reduction gaps are
   structurally bounded by L1 conformal action.
 }
@@ -838,8 +837,7 @@ $0.01$) and the recovery ceiling: the CIFAR-10 \texttt{tamsh\_force}
 upper-bound ($+26$~pp; Table~\ref{tab:recovery}) does not transfer to
 CIFAR-100, indicating that the PGD-trained expert's specialization no
 longer corresponds to a recoverable label cluster when the class space
-is $10\times$ larger. We accept this miss per the pre-registered
-demotion clause in plan P0.5: TAMSH (C4) is reported as an
+is $10\times$ larger. We therefore report TAMSH (C4) as an
 appendix-only secondary result on CIFAR-100.
 
 \begin{table}[h]
@@ -897,8 +895,8 @@ attack (RTX~4090, deployed C100 scorer, $L_3$ threshold
 $=5.584$). Wilson 95\% CIs on the topology row are FGSM
 $[0.084, 0.123]$, Square $[0.292, 0.379]$, CW $[0.391, 0.488]$. The
 $+42.4$~pp CW and $+31.4$~pp Square recovery decisively exceed the
-$+15$~pp C4 gate, so the C4 demotion clause in plan P0.5 applies
-only to the PGD/FGSM sub-cases on CIFAR-100. Source:
+$+15$~pp C4 gate, so the CIFAR-100 appendix-only demotion applies
+only to the PGD/FGSM sub-cases. Source:
 \texttt{experiments/stress/vastai\_recovery\_multi\_c100.json}.}
 \label{tab:c100_rec_multi}
 \end{table}
@@ -1107,8 +1105,8 @@ SpectralDefense cells use the lighter detection-benchmark CW
 (\texttt{max\_iter}${=}10$, \texttt{bss}${=}5$; ASR $0.93$) used in their
 shared run (\S~``Protocol notes''). Because the lighter CW produces
 larger, more detectable perturbations, this mismatch \emph{understates}
-PRISM's relative advantage; a config-matched CW re-run is the clean fix and
-is not expected to change the qualitative ordering.}
+PRISM's relative advantage; a config-matched CW re-run would remove the
+mismatch and is not expected to change the qualitative ordering.}
 \label{tab:recent_baselines}
 \end{table}
 

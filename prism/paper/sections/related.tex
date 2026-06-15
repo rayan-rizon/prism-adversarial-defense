@@ -26,7 +26,10 @@ flags inconsistencies.
 Mahala\-nobis detector \cite{lee2018simple} constructs class-conditional 
 Gaussians over intermediate representations.
 LID \cite{ma2018characterizing} uses local intrinsic dimensionality.
-These approaches lack formal coverage guarantees and are vulnerable to 
+MagNet \cite{meng2017magnet} couples a manifold-distance detector with an
+autoencoder reformer, and Feinman et al.\ \cite{feinman2017detecting} combine
+kernel-density and Bayesian-uncertainty estimates.
+These approaches lack formal coverage guarantees and are vulnerable to
 adaptive attacks that optimize for the same feature space \cite{carlini2017adversarial}.
 \prism combines topological features (harder to optimize against) with 
 conformal calibration (providing formal guarantees).

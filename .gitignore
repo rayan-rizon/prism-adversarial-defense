@@ -128,3 +128,7 @@ prism/paper/figures/*.png
 
 # Smoke-test outputs (code-path verification only, not publishable evidence).
 **/experiments/*_smoke/
+
+# Top-level working/result mirrors (kept local; consistent with /Cifar 10/ etc.)
+/ImageNet/
+/Revision/

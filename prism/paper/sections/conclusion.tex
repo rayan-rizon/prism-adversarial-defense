@@ -15,7 +15,12 @@ sustained $\rho{=}1.0$ attacks within $2.6 \pm 0.5$ queries with zero
 false-alarm activation on clean-only streams up to $1{,}000$ queries
 (the deployed $C^*{=}5.0$ admits its first spurious trigger only beyond
 $\approx 1{,}800$ steps; $C^*{\geq}8$ or periodic reset removes this,
-App.~\ref{app:l0_stress}). On L3-rejected PGD
+App.~\ref{app:l0_stress}). A slow-ramp or minimal-perturbation dual-adaptive
+attacker defeats the per-image-reset monitor (miss $0.27$--$0.47$), but
+session-level monitoring---where the change detector persists across the
+attacker's query stream---restores the full-system miss to ${\le}0.03$
+(\S\ref{sec:campaign_robust}), so C3 is scoped to session-granularity
+monitoring. On L3-rejected PGD
 adversarials, a \tamsh router trained directly on the L3 pool (logistic
 regression on final-layer activations) recovers $28.7\%$ of inputs ---
 $9.1\times$ the uniform $1/K$ control ($3.2\%$) and $2.1\times$ the
@@ -33,7 +38,7 @@ strategy beyond PGD. A prior-augmented upper-bound variant that always
 routes to the PGD specialist reaches $+26$~pp and is reported as an
 analysis ceiling against the per-input oracle ($0.324$ recovery,
 $+29.1$~pp over passthrough), not as a deployable policy. All numbers
-are generated from the locked CIFAR-10 Vast.ai + post-fix local pipelines,
+are generated from the locked CIFAR-10 Vast.ai and local pipelines,
 with attack detection, adaptive attacks, matched-FPR baselines, campaign
 streams, recovery, and ablation tables all derived from result JSONs
 rather than manually transcribed values. A separate standard-attack
@@ -61,8 +66,10 @@ the calibration distribution; we \emph{measure} the cost of violating
 this on CIFAR-10-C (\S\ref{sec:cert_shift}): realised FPR inflates to
 $3.9\times$--$28\times$ the certified $\alpha$ depending on tier
 (severity-dependent, worst on noise corruptions), so the certificate
-must be read as in-distribution FPR control and deployments under
-sustained shift need recalibration or shift-aware conformal methods
+must be read as in-distribution FPR control. Online shift-aware
+recalibration on a small benign slice of the shifted stream restores
+realised FPR to ${\approx}\alpha$ (mean L1 $0.39{\to}0.09$;
+\S\ref{sec:cert_shift}, Table~\ref{tab:cert_restore})
 \cite{tibshirani2019conformal}.
 The adaptive-attack evaluation in \S\ref{sec:adaptive} now uses an
 ensemble-complete BPDA surrogate that targets activation matching, DCT
@@ -111,13 +118,16 @@ CIFAR-10/WRN-28-10 (mean pool TPR $0.975$, FPR $0.073$) and
 CIFAR-100/ResNet-18 (mean pool TPR $0.830$, FPR $0.077$), both run
 on the same 5 seeds and same calibration scheme. It also reports a
 standard-attack CIFAR-10/ViT-B/16 transfer run (FGSM/PGD-50/Square only)
-with $1.000/1.000/0.9998$ TPR at FPR $0.0828$.
+with $1.000/1.000/0.9998$ TPR at FPR $0.0828$, and a $224\times224$
+ImageNet-100/ResNet-50 resolution-scaling run (FGSM/PGD-50/Square, 3
+seeds) with $0.924/1.000/0.852$ TPR at FPR $0.065$; the conformal
+certificate stays valid there despite a $\sim$100$\times$ larger clean
+score scale, since the guarantee is a calibration-score quantile.
 The full per-component CIFAR-100 breakdown (adaptive PGD,
 channel-mask ablation with FPR disclosure, campaign, recovery, latency)
 is in Appendix~\ref{app:cifar100}. The TAMSH C4 recovery contribution
 does not transfer to the 100-class setting (within $1.4$~pp of
-passthrough) and is reported as appendix-only on CIFAR-100 per the
-pre-registered demotion clause.
+passthrough) and is reported as appendix-only on CIFAR-100.
 
 \paragraph{Broader impact.}
 \prism is a defensive tool designed to improve the reliability 

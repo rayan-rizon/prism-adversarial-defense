@@ -70,6 +70,47 @@ We reproduce four matched-FPR baselines on the same splits:
 \cite{lee2018simple}, \textbf{ODIN} \cite{liang2018enhancing}, and
 \textbf{Energy} \cite{liu2020energy}.
 
+\subsection{Threat Model and Coverage}
+\label{sec:threat_model}
+Table~\ref{tab:threat_model} organises the evaluation by adversary capability
+and identity model, mapping each tier to the experiment that measures it and the
+residual it leaves. Two axes matter: how much of \prism the attacker can see
+(classifier only, a differentiable detector surrogate, or the exact deployed
+score $S(x)$), and the granularity at which the campaign monitor resets (per
+image, per session, or per account). \prism's single-shot adaptive robustness is
+deliberately not overclaimed---a surrogate-free attack on the exact score drives
+the per-image tier to $0.16$ (\S\ref{sec:direct_score})---and the single-session
+campaign monitor is what restores the full-system miss to ${\le}0.03$
+(\S\ref{sec:campaign_robust}); per-account identity rotation (Sybil) is the
+explicit out-of-scope boundary of the C3 claim, addressed by orthogonal
+account-level rate-limiting rather than by the detector.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.31\linewidth}p{0.14\linewidth}p{0.20\linewidth}p{0.23\linewidth}}
+\toprule
+Adversary (knowledge) & Identity model & Measured by & Result (CIFAR-10/ResNet-18) \\
+\midrule
+Black-box, score-based (Square) & per-image & Table~\ref{tab:main} & TPR $0.886$ @ FPR $0.074$ \\
+White-box classifier, detector-blind (FGSM/PGD/CW/AA) & per-image & Table~\ref{tab:main} & TPR $0.88$--$1.00$ \\
+White-box $+$ differentiable detector surrogate (ensemble-complete BPDA) & per-image & Table~\ref{tab:adaptive_pgd} & all-input $0.479$; successful-only $0.866$; undetected-success $0.074$ \\
+Surrogate-free, exact score (NES on $S(x)$) & per-image, fast-query & Tables~\ref{tab:direct_score},~\ref{tab:direct_score_sacd} & single-shot ${\to}0.16$ ($c{=}8$); full-system miss $0.03$ with \sacd \\
+Dual-adaptive, evades \sacd (slow-ramp / ${\approx}2$-query) & per-image reset & Table~\ref{tab:campaign_robust} & miss $0.27$--$0.47$ \\
+Dual-adaptive, evades \sacd & session-level & Table~\ref{tab:campaign_robust} & miss $0.002$--$0.026$ \\
+Dual-adaptive $+$ identity rotation (Sybil) & per-account & \emph{out of scope} & reverts to per-image reset; needs account rate-limit / cost \\
+Benign covariate shift (CIFAR-10-C) & --- & Tables~\ref{tab:cert_shift},~\ref{tab:cert_restore} & FPR $3.9$--$28{\times}\,\alpha$; online recal.\ restores ${\approx}\alpha$ \\
+\bottomrule
+\end{tabular}
+\caption{Threat-model coverage map (all entries are existing measurements,
+cross-referenced to their source tables). Each adversary tier is matched to the
+experiment that measures it and the residual miss/FPR it leaves. The progression
+from per-image to session to per-account granularity makes the load-bearing role
+of \sacd explicit and names the Sybil boundary of the C3 robustness claim.}
+\label{tab:threat_model}
+\end{table}
+
 % ── Main results ──────────────────────────────────────────────────────────
 \subsection{Attack Detection Results}
 \label{sec:detection}
@@ -153,7 +194,12 @@ transformer transfer check on (iii) CIFAR-10 with ViT-B/16, using the
 same calibration scheme ($\alpha \in \{0.10, 0.03, 0.005\}$) and the
 same five seeds ($n=1000$ adversarials per attack per seed). The ViT
 rows do not include CW-L2, AutoAttack, adaptive PGD, latency, or
-baselines.
+baselines. To answer the ``CIFAR-only 32$\times$32 toy benchmark''
+objection at scale, we additionally run (iv) a resolution-scaling check
+on ImageNet-100 with a fine-tuned ResNet-50 at $224\times224$ (100
+classes; standard FGSM/PGD-50/Square only; 3 seeds, $n=1000$
+adversarials per attack per seed). The ImageNet-100 rows likewise carry
+no CW-L2, AutoAttack, adaptive-PGD, latency, or baseline claim.
 
 \begin{table}[h]
 \centering
@@ -180,6 +226,12 @@ baselines.
   (10 restarts). Re-running CIFAR-10/ResNet-18 at PGD-50$\times$10 yields
   $0.991$ (Appendix~\ref{app:audit}), statistically tied with the
   PGD-40 $0.987$, so the detection result is invariant to the stronger PGD.
+  The ImageNet-100/ResNet-50 rows ($224\times224$, 100 classes, 3 seeds
+  $\times n{=}1000 = 3000$, PGD-50$\times$10) hold FGSM $0.924$, PGD
+  $1.000$, and Square $0.852$ at pooled FPR $0.065$ (per-tier L2 $0.012$,
+  L3 $0.001$); the split-conformal certificate stays valid despite the
+  clean anomaly score scale being $\sim$100$\times$ larger than CIFAR,
+  confirming the quantile-based guarantee is scale-invariant.
 }
 \label{tab:main_multi}
 \end{table}
@@ -282,6 +334,17 @@ it still beats the strongest baseline on every CIFAR-100 attack
 Figure~\ref{fig:baselines_panel} visualises both points; the steeper
 L3 trade-off on CIFAR-100 in Figure~\ref{fig:tiers_panel} (subfigure
 \ref{fig:tiers_c100}) reflects the larger 100-class label space.
+(v)~The ImageNet-100/ResNet-50 run scales the detector from
+$32\times32$ to $224\times224$ inputs with no architecture or feature
+changes and clears the standard-attack gate (FGSM $0.924$, PGD $1.000$,
+Square $0.852$ at FPR $0.065$). Critically, the conformal FPR
+certificate holds even though the clean Wasserstein anomaly scores are
+$\sim$100$\times$ larger in absolute magnitude than on CIFAR (clean mean
+$\approx 7.6$ vs.\ $\approx 0.05$): the certificate is a quantile of the
+calibration scores, so absolute scale is immaterial to the guarantee.
+This directly rebuts the ``CIFAR-only toy benchmark'' objection. Like the
+ViT row, it is not evidence for ImageNet-scale latency, CW-L2,
+AutoAttack, or adaptive robustness, none of which were executed.
 
 % ── Adaptive attacks ──────────────────────────────────────────────────────
 \subsection{Adaptive Attack Evaluation}
@@ -425,26 +488,80 @@ median queries-to-alert                          & 40   & 54 \\
   campaign monitor). \sacd fires at $40$--$54$ of the ${\approx}960$ required
   queries ($<6\%$ of the budget): the attacker drives $S(x)$ \emph{down}, but
   the early transient (random $\pm\varepsilon$ initialisation and
-  pre-convergence probes) trips the upward-drift CUSUM. The true full-system
-  miss is $0.03$, \emph{flat} across $c{=}4$ and $c{=}8$---a floor, not a
-  cliff. Per-sample TPR is \emph{higher} here than in
+  pre-convergence probes) trips the upward-drift CUSUM. For this
+  \emph{fast-query} attacker the full-system miss is $0.03$, flat across
+  $c{=}4$ and $c{=}8$; \S\ref{sec:campaign_robust} shows this is \emph{not} a
+  universal floor under attackers that evade \sacd itself. Per-sample TPR is \emph{higher} here than in
   Table~\ref{tab:direct_score} ($0.16{\to}0.26$, $0.62{\to}0.68$) because a
   fired campaign monitor tightens the per-sample tier
   (\texttt{classify}$(\cdot, l0\_\text{active}{=}\text{True})$ applies the
   $\lambda{=}0.8$ factor of \S\ref{sec:sacd}); the two layers reinforce.
-  Monitor-reset-per-image makes $0.03$ an \emph{upper bound} on the deployed
-  miss.
+  The monitor is reset per image here; \S\ref{sec:campaign_robust} shows a
+  slow-ramp or minimal adaptive attacker exploits exactly this per-image reset,
+  and that session-level monitoring restores the low miss.
 }
 \label{tab:direct_score_sacd}
 \end{table}
 
-\paragraph{Scope.} This attack adapts against $S(x)$, not against \sacd. A
-\emph{dual-adaptive} attacker that ramps slowly to stay under the CUSUM drift
-floor is untested and left as future work; the flat $0.03$ floor suggests it
-is hard, because per-sample tier evasion requires exactly the many queries
-that trip the campaign monitor. This is the operative form of contribution
-C3 (\S\ref{sec:intro}): \sacd is load-bearing for adaptive robustness, not an
-auxiliary feature.
+\paragraph{Scope, and the dual-adaptive attacker.} This attack adapts against
+$S(x)$, not against \sacd. We now run the \emph{dual-adaptive} attacker the
+earlier draft left as future work (\S\ref{sec:campaign_robust}): a slow-ramp
+that holds $S(x)$ under the CUSUM knee, and a minimal-perturbation
+${\approx}2$-query attacker that never probes the detector. Under the deployed
+\emph{per-image reset} these raise the full-system miss to $0.27$ and $0.47$,
+so $0.03$ is \emph{not} a universal floor; removing the per-image reset
+(session-level monitoring) restores it to $0.002$ and $0.026$. Campaign
+detection is thus load-bearing for adaptive robustness (contribution C3), but
+only at \emph{session} rather than per-image granularity.
+
+% ── Campaign-monitor adaptive robustness ──────────────────────────────────
+\subsection{Campaign-Monitor Adaptive Robustness (Dual-Adaptive Attack)}
+\label{sec:campaign_robust}
+
+The $0.03$ rescue of \S\ref{sec:direct_score} is measured against a fast-query
+attacker whose probing \emph{is} a campaign. We stress it with two attackers
+designed to evade \sacd itself, on the deployed CIFAR-10/ResNet-18 scorer and
+the calibrated \texttt{l0\_thresholds.pkl} (CUSUM knee $S{=}1.92$; every query
+streamed through the live monitor; 5 seeds, $n{=}100$/seed): (i) a
+\emph{score-budgeted slow-ramp} that ascends \(\mathcal{L}_\text{CE}\) while
+holding $S(x)$ below the CUSUM knee---which also places the adversarial below
+the per-sample L1 threshold $2.81$; and (ii) a \emph{minimal-perturbation}
+${\approx}2$-query attacker that never probes the detector. Each is evaluated
+under the deployed \emph{per-image reset} and under \emph{session-level}
+monitoring (the change detector persists across the attacker's stream).
+
+\begin{table}[h]
+\centering
+\small
+\input{tables/campaign_robustness.tex}
+\caption{%
+  Dual-adaptive campaign attack vs.\ \sacd (CIFAR-10/ResNet-18, 5 seeds,
+  $n{=}500$/cell). Under the deployed \emph{per-image reset}, the slow-ramp and
+  minimal attackers raise the full-system miss to $0.272$ and $0.472$: the
+  $0.03$ of Table~\ref{tab:direct_score_sacd} is \emph{not} a universal floor.
+  \emph{Session-level} monitoring restores it to $0.002$ and $0.026$; the
+  minimal residual shrinks with session length ($0.11$ at $n{=}20$ to $0.026$
+  at $n{=}500$), i.e.\ the change detector asymptotically re-accumulates the
+  signal. The anchor row (faithful high-query attacker) reproduces the $0.03$
+  of Table~\ref{tab:direct_score_sacd}, validating the harness.
+}
+\label{tab:campaign_robust}
+\end{table}
+
+\paragraph{Take-away.} Per-image reset---advertised in \S\ref{sec:direct_score}
+as the defender's hardest case---is in fact the \emph{exploitable} case: it
+grants every input a fresh warm-up window an adaptive attacker can flip within
+before the CUSUM accumulates. Session- or account-scoped monitoring, in which
+the change detector persists across an attacker's queries, restores the low
+miss and is the deployable configuration. We therefore scope contribution C3 to
+session-level monitoring, and report the per-image-reset numbers as the honest
+adaptive-stress result rather than a robustness guarantee. Session-scoped
+monitoring assumes the adversary cannot cheaply acquire fresh sessions: an
+attacker who rotates identities (one query stream per account) reverts the
+monitor to the exploitable per-image-reset regime, so the deployable
+configuration pairs session-level detection with account-level rate-limiting
+or cost (the orthogonal Sybil control). We scope the C3 robustness claim to
+this single-session threat model.
 
 % ── Ablation ──────────────────────────────────────────────────────────────
 \subsection{Ablation Study}
@@ -471,7 +588,7 @@ not an IID detector.
 \small
 \input{tables/ablation.tex}
 \caption{%
-  IID ablation generated from the post-fix multi-seed ablation JSON
+  IID ablation generated from the multi-seed ablation JSON
   (5 seeds, $n=1000$ per seed). C1 is evaluated as the marginal gap between
   Full \prism and Ensemble-no-TDA (mean TPR $0.918 - 0.787 = +13.1$~pp).
   Each channel-mask arm exposes a distinct failure mode:
@@ -610,9 +727,9 @@ $2$ queries due to early CUSUM accumulation, four took $18$--$24$).
 \small
 \input{tables/campaign.tex}
 \caption{%
-  Campaign detection across stream scenarios (5 seeds, post-fix). The
+  Campaign detection across stream scenarios (5 seeds). The
   headline metric is mean time-to-detect; clean-only L0 activation fraction
-  is 0.000 on all 5 seeds after the F1 CUSUM drift-floor fix.
+  is 0.000 on all 5 seeds with the CUSUM drift floor $\delta{=}1.0$.
 }
 \label{tab:campaign}
 \end{table}
@@ -631,10 +748,10 @@ learns of an attack within 3 queries can deploy mitigations
 has issued more than a handful of queries against the deployed system.
 
 \paragraph{Clean-only false alarm rate.}
-After the F1 CUSUM drift-floor fix, L0 activation fraction on the
-500-step calibration clean streams is $0.000$ on all 5 seeds (pre-fix:
-up to $0.594$ on 2 of 5 seeds, a defect that would not have survived
-peer review pre-fix). For 50-query clean windows (warmup$=20$, 30
+With the CUSUM drift floor $\delta{=}1.0$ (\S\ref{sec:sacd}), L0 activation
+fraction on the 500-step calibration clean streams is $0.000$ on all 5 seeds
+(with $\delta{=}0$ it reaches up to $0.594$ on 2 of 5 seeds). For 50-query
+clean windows (warmup$=20$, 30
 at-risk steps), empirical false alarm probability is $< 5\%$.
 A stress test on longer clean streams (bootstrap-resampled from
 $n{=}1{,}000$ real post-fusion ensemble scores generated end-to-end on
@@ -655,7 +772,7 @@ The \emph{FPR (clean steps)} column in Table~\ref{tab:campaign}
 underlying IID detector --- the same FPR reported in
 Table~\ref{tab:main} --- not the L0 campaign-trigger rate. A deployment
 that quarantines accounts should gate on L0 firing (clean-only rate
-$0.000$ after the F1 fix), not on every L1 step; L1 alerts are
+$0.000$ with the drift floor), not on every L1 step; L1 alerts are
 appropriate for softer signals such as elevated logging or rate-limiting,
 where a $\sim$10\% per-query rate is acceptable because the action is
 reversible and per-query.
@@ -797,3 +914,47 @@ that flag adversarials --- so the system remains safe but loses availability;
 the measured degradation in Table~\ref{tab:cert_shift} replaces the
 qualitative caveat of earlier drafts and bounds the operational cost of
 deploying \prism under shift without recalibration.
+
+\paragraph{Restoring the certificate online.} The degradation is
+\emph{recoverable}. Because broken exchangeability is the cause, re-fitting the
+split-conformal quantile on a small held-out slice of the \emph{same}
+corrupted-but-benign stream ($n_\text{recal}{=}300$ confirmed-clean images per
+corruption$\times$severity cell, evaluated on the disjoint $n_\text{eval}{\approx}700$
+remainder) restores realised FPR to the certified target.
+Table~\ref{tab:cert_restore} pools the frozen-vs-recalibrated FPR over the same
+24 cells: mean L1 FPR falls from $0.386$ to $0.092$ ($\le\alpha{=}0.10$), L2
+from $0.253$ to $0.025$, and L3 from $0.142$ to $0.0034$; even the worst noise
+cell (gaussian-noise sev.\ 5) recovers from $0.999$ to $0.096$. This is the
+certificate analogue of the session-level campaign fix
+(\S\ref{sec:campaign_robust}): a measured negative (the certificate breaks
+under shift) becomes a measured positive (online shift-aware recalibration
+restores it). The recalibration only assumes a small \emph{benign}
+(non-adversarial) calibration slice of the shifted stream---the standard
+online-conformal-under-covariate-shift assumption
+\cite{tibshirani2019conformal}---and does not require knowing the corruption
+type.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+Tier & certified $\alpha$ & mean frozen FPR & mean recalibrated FPR & cells $\le\alpha$ (of 24) \\
+\midrule
+L1 & 0.10  & 0.386 & \textbf{0.092}   & 20 \\
+L2 & 0.03  & 0.253 & \textbf{0.025}   & 19 \\
+L3 & 0.005 & 0.142 & \textbf{0.0034}  & 16 \\
+\bottomrule
+\end{tabular}
+\caption{%
+  Certificate \emph{restoration} under benign covariate shift (CIFAR-10-C, same
+  8 corruptions $\times$ severities $\{1,3,5\}$, 24 cells, $n_\text{recal}{=}300$,
+  $n_\text{eval}{\approx}700$/cell). \emph{Frozen} reproduces the audit of
+  Table~\ref{tab:cert_shift} ($0.386/0.253/0.142$); shift-aware split-conformal
+  recalibration on a held-out benign slice of the same corruption restores
+  realised FPR to ${\approx}\alpha$ at every tier. Worst cell (gaussian-noise
+  sev.\ 5): L1 $0.999{\to}0.096$. The few residual over-target cells lie within
+  the Wilson interval at $n_\text{eval}{\approx}700$.
+}
+\label{tab:cert_restore}
+\end{table}

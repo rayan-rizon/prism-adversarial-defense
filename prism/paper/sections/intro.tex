@@ -34,7 +34,10 @@ We make four contributions:
 We compute per-layer persistence features relative to a clean medoid profile
 and combine them with DCT and softmax-entropy features in a calibrated
 ensemble. The ensemble-no-TDA ablation measures the marginal value of the
-topological channel.
+topological channel: on CIFAR-10/ResNet-18 it is $+13.1$~pp mean TPR
+(Full $0.918$ vs.\ ensemble-no-TDA $0.787$, Table~\ref{tab:ablation}), so
+topology is a strong \emph{contributing} channel within the calibrated
+ensemble rather than a standalone detector (TDA-only scores $0.031$ mean TPR).
 
 \item \textbf{Conformal detection guarantee (\cadg).}
 We apply split conformal prediction to the anomaly score stream, obtaining 
@@ -62,8 +65,13 @@ streams up to $1{,}000$ queries (longer streams need $C^*{\geq}8$ or
 periodic reset; App.~\ref{app:l0_stress})---a threat model absent from
 prior work. Under a surrogate-free direct-score attack that drives the
 single-shot tier down, \sacd flags the probing campaign and holds the
-full-system miss to $0.03$ (\S\ref{sec:direct_score}), so campaign
-detection is load-bearing for adaptive robustness, not an auxiliary
+full-system miss to $0.03$ (\S\ref{sec:direct_score}). A stronger
+\emph{dual-adaptive} attacker (slow-ramp under the CUSUM knee, or a minimal
+${\approx}2$-query perturbation) defeats the \emph{per-image-reset} monitor
+(miss $0.27$--$0.47$), but \emph{session-level} monitoring---in which the
+change detector persists across the attacker's query stream---restores the
+miss to ${\le}0.03$ (\S\ref{sec:campaign_robust}). Campaign detection is thus
+load-bearing for adaptive robustness at session granularity, not an auxiliary
 feature.
 
 \item \textbf{Routed MoE recovery (\tamsh).}
@@ -89,7 +97,11 @@ CIFAR-10/WRN-28-10, and CIFAR-100/ResNet-18 --- covering detection
 baselines (LID, Mahalanobis, ODIN, Energy), campaign streams, recovery,
 and a per-channel ablation that exposes each feature family's
 attack-specific failure mode. We additionally report a standard-attack
-CIFAR-10/ViT-B/16 transfer check for FGSM, PGD-50, and Square only. On the
+CIFAR-10/ViT-B/16 transfer check for FGSM, PGD-50, and Square only, and a
+$224\times224$ ImageNet-100/ResNet-50 resolution-scaling check (FGSM,
+PGD-50, Square; 3 seeds) that holds $0.924/1.000/0.852$ TPR at FPR
+$0.065$ and confirms the conformal certificate is scale-invariant,
+directly answering the ``CIFAR-only toy benchmark'' objection. On the
 main CIFAR-10/ResNet-18 setting, \prism Full outperforms the strongest
 baseline (Mahalanobis) by $+33.6$~pp mean TPR at matched FPR;
 WRN-28-10 holds a $+16.5$~pp gap over Mahalanobis and CIFAR-100 retains

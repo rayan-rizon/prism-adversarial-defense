@@ -1,0 +1,167 @@
+{
+  "aggregate": {
+    "L1": {
+      "cells_restored_within_target": 2,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.2243,
+      "max_restored_FPR": 0.1257,
+      "mean_frozen_FPR": 0.1162,
+      "mean_restored_FPR": 0.1033,
+      "target_alpha": 0.1
+    },
+    "L2": {
+      "cells_restored_within_target": 2,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.1314,
+      "max_restored_FPR": 0.0329,
+      "mean_frozen_FPR": 0.0586,
+      "mean_restored_FPR": 0.0262,
+      "target_alpha": 0.03
+    },
+    "L3": {
+      "cells_restored_within_target": 2,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.0514,
+      "max_restored_FPR": 0.0071,
+      "mean_frozen_FPR": 0.019,
+      "mean_restored_FPR": 0.0024,
+      "target_alpha": 0.005
+    }
+  },
+  "backbone": "resnet18",
+  "dataset": "cifar10",
+  "elapsed_sec": 283.6,
+  "experiment": "cifar10c_certificate_restoration",
+  "method": "shift-aware split-conformal recalibration: re-fit q_alpha on a held-out slice of the same corruption, measure FPR on the rest.",
+  "n_per": 1000,
+  "n_recal": 300,
+  "per_cell": {
+    "fog_sev1": {
+      "corruption": "fog",
+      "frozen_FPR": {
+        "L1": 0.0529,
+        "L2": 0.0114,
+        "L3": 0.0
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.0943,
+        "L2": 0.02,
+        "L3": 0.0
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.0748,
+            0.1182
+          ],
+          "FPR": 0.0943,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.012,
+            0.0333
+          ],
+          "FPR": 0.02,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0,
+            0.0055
+          ],
+          "FPR": 0.0,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 1
+    },
+    "fog_sev3": {
+      "corruption": "fog",
+      "frozen_FPR": {
+        "L1": 0.0714,
+        "L2": 0.0329,
+        "L3": 0.0057
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.09,
+        "L2": 0.0329,
+        "L3": 0.0
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.071,
+            0.1135
+          ],
+          "FPR": 0.09,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.022,
+            0.0488
+          ],
+          "FPR": 0.0329,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0,
+            0.0055
+          ],
+          "FPR": 0.0,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 3
+    },
+    "fog_sev5": {
+      "corruption": "fog",
+      "frozen_FPR": {
+        "L1": 0.2243,
+        "L2": 0.1314,
+        "L3": 0.0514
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.1257,
+        "L2": 0.0257,
+        "L3": 0.0071
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.1032,
+            0.1523
+          ],
+          "FPR": 0.1257,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.0163,
+            0.0403
+          ],
+          "FPR": 0.0257,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0031,
+            0.0166
+          ],
+          "FPR": 0.0071,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 5
+    }
+  },
+  "seed": 42
+}

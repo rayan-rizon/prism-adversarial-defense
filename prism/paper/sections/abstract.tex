@@ -8,7 +8,8 @@ calibrated clean-data profile using Wasserstein distance;
 (2)~\cadg (Conformal Adversarial Detection Guarantee), which provides
 distribution-free false-positive rate certificates at three severity tiers via
 split conformal prediction (exact in-distribution; a CIFAR-10-C audit
-measures its degradation under benign covariate shift,
+measures its degradation under benign covariate shift, which online
+shift-aware recalibration restores to ${\approx}\alpha$,
 \S\ref{sec:cert_shift});
 (3)~\sacd (Sequential Adversarial Campaign Detector), a CUSUM-on-score-stream
 monitor that flags sustained attack campaigns at a mean latency of
@@ -25,10 +26,9 @@ Wasserstein) delivers \textbf{+10.6pp} recovery gap over passthrough under
 PGD, short of a pre-registered $+15$~pp target; a \emph{learned} router
 trained on the L3 pool (logistic regression on final-layer activations)
 clears it, recovering \textbf{28.7\%} of L3-rejected PGD inputs --
-$9.1\times$ a uniform $1/K$ control ($3.2\%$, which isolates the routing
-signal from expert capacity) and matching a prior-augmented upper bound
-($29.3\%$, which hardcodes the PGD specialist) \emph{without} that
-hardcoding (App.~\ref{app:tamsh_diag}).
+$9.1\times$ a uniform $1/K$ control ($3.2\%$) and matching a
+prior-augmented upper bound ($29.3\%$) \emph{without} hardcoding the
+specialist (App.~\ref{app:tamsh_diag}).
 
 We evaluate \prism on three full CNN settings (5 seeds,
 $n{=}1000$/seed, de-duplicated per Table~\ref{tab:main_multi}):
@@ -42,13 +42,13 @@ Mahalanobis, ODIN, and Energy (matched on CIFAR-10/ResNet-18; three
 baselines exceed the $10\%$ target on WRN-28-10/CIFAR-100, reported
 unfiltered), campaign detection, and L3 recovery. We additionally run a
 standard-attack transformer transfer check on CIFAR-10/ViT-B/16
-(FGSM, PGD-50, and Square only). On the main CIFAR-10/ResNet-18 setting,
+(FGSM, PGD-50, and Square only) and a $224\times224$ ImageNet-100/ResNet-50
+resolution-scaling check (same attacks, 3 seeds). On the main CIFAR-10/ResNet-18 setting,
 \prism Full achieves
 $0.918$ mean TPR on FGSM/PGD/Square (matched empirical FPR $0.074$),
 $0.938$ on CW-L2 ($0.075$), and $1.000$ on the AutoAttack ensemble's
-final adversarials ($0.075$; individual sub-attacks detected at
-$0.71$--$0.97$ @ L1, weakest standalone Square $0.706$,
-App.~\ref{app:autoattack}), beating
+final adversarials ($0.075$; per-sub-attack detection $0.71$--$0.97$ @ L1
+in App.~\ref{app:autoattack}), beating
 the strongest reproduced baseline (Mahalanobis $0.582$ mean TPR at FPR
 $0.077$) by $+33.6$~pp on the FGSM/PGD/Square pool. On the
 CIFAR-10/ResNet-18 setting, an ensemble-complete adaptive PGD surrogate
@@ -56,12 +56,18 @@ drops all-input TPR to
 $0.479$, but \prism still detects $0.866$ of successful adversarials
 and leaves a $0.074$ undetected-success rate. A surrogate-free
 direct-score attack (NES on the exact deployed score) drives the
-single-shot tier lower still, yet the live \sacd campaign monitor holds
-the full-system miss to $0.03$ (\S\ref{sec:direct_score}). The WRN-28-10
+single-shot tier lower still; the live \sacd campaign monitor holds the
+full-system miss to $0.03$ against this fast-query attacker, but a
+slow-ramp or minimal-perturbation \emph{dual-adaptive} attacker raises the
+per-image-reset miss to $0.27$--$0.47$, and \emph{session-level} monitoring
+restores it to ${\le}0.03$ (\S\ref{sec:campaign_robust}). The WRN-28-10
 backbone lifts the same pool to $0.975$ at FPR $0.073$; CIFAR-100 holds
 $0.830$ at FPR $0.077$; ViT-B/16 reaches
 $1.000/1.000/0.9998$ TPR on FGSM/PGD-50/Square at FPR $0.0828$
-(no ViT latency or adaptive-attack claim). Per-setting tables and the
+(no ViT latency or adaptive-attack claim); and ImageNet-100/ResNet-50 at
+$224\times224$ holds $0.924/1.000/0.852$ on FGSM/PGD-50/Square at FPR
+$0.065$, with the conformal certificate valid despite a $\sim$100$\times$
+larger clean score scale (no ImageNet latency or adaptive-attack claim). Per-setting tables and the
 full CIFAR-100 appendix are reported in \S\ref{sec:multi_backbone} and
 Appendix~\ref{app:cifar100}; WRN/CIFAR-100 adaptive-PGD probes remain
 appendix-only stress evidence, not ensemble-complete headline claims.

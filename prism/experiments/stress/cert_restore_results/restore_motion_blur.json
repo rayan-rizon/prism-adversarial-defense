@@ -1,0 +1,167 @@
+{
+  "aggregate": {
+    "L1": {
+      "cells_restored_within_target": 1,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.2514,
+      "max_restored_FPR": 0.1257,
+      "mean_frozen_FPR": 0.1733,
+      "mean_restored_FPR": 0.1014,
+      "target_alpha": 0.1
+    },
+    "L2": {
+      "cells_restored_within_target": 1,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.1014,
+      "max_restored_FPR": 0.0371,
+      "mean_frozen_FPR": 0.0652,
+      "mean_restored_FPR": 0.0276,
+      "target_alpha": 0.03
+    },
+    "L3": {
+      "cells_restored_within_target": 1,
+      "cells_total": 3,
+      "max_frozen_FPR": 0.0157,
+      "max_restored_FPR": 0.0114,
+      "mean_frozen_FPR": 0.0105,
+      "mean_restored_FPR": 0.0071,
+      "target_alpha": 0.005
+    }
+  },
+  "backbone": "resnet18",
+  "dataset": "cifar10",
+  "elapsed_sec": 281.8,
+  "experiment": "cifar10c_certificate_restoration",
+  "method": "shift-aware split-conformal recalibration: re-fit q_alpha on a held-out slice of the same corruption, measure FPR on the rest.",
+  "n_per": 1000,
+  "n_recal": 300,
+  "per_cell": {
+    "motion_blur_sev1": {
+      "corruption": "motion_blur",
+      "frozen_FPR": {
+        "L1": 0.0929,
+        "L2": 0.0257,
+        "L3": 0.0029
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.11,
+        "L2": 0.0357,
+        "L3": 0.0086
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.0889,
+            0.1353
+          ],
+          "FPR": 0.11,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.0243,
+            0.0522
+          ],
+          "FPR": 0.0357,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0039,
+            0.0186
+          ],
+          "FPR": 0.0086,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 1
+    },
+    "motion_blur_sev3": {
+      "corruption": "motion_blur",
+      "frozen_FPR": {
+        "L1": 0.1757,
+        "L2": 0.0686,
+        "L3": 0.0157
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.1257,
+        "L2": 0.0371,
+        "L3": 0.0114
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.1032,
+            0.1523
+          ],
+          "FPR": 0.1257,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.0255,
+            0.0539
+          ],
+          "FPR": 0.0371,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0058,
+            0.0224
+          ],
+          "FPR": 0.0114,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 3
+    },
+    "motion_blur_sev5": {
+      "corruption": "motion_blur",
+      "frozen_FPR": {
+        "L1": 0.2514,
+        "L2": 0.1014,
+        "L3": 0.0129
+      },
+      "n_eval": 700,
+      "n_recal": 300,
+      "restored_FPR": {
+        "L1": 0.0686,
+        "L2": 0.01,
+        "L3": 0.0014
+      },
+      "restored_detail": {
+        "L1": {
+          "CI_95": [
+            0.0521,
+            0.0897
+          ],
+          "FPR": 0.0686,
+          "target_alpha": 0.1
+        },
+        "L2": {
+          "CI_95": [
+            0.0049,
+            0.0205
+          ],
+          "FPR": 0.01,
+          "target_alpha": 0.03
+        },
+        "L3": {
+          "CI_95": [
+            0.0003,
+            0.008
+          ],
+          "FPR": 0.0014,
+          "target_alpha": 0.005
+        }
+      },
+      "severity": 5
+    }
+  },
+  "seed": 42
+}

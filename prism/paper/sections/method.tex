@@ -137,7 +137,7 @@ evaluation; all three, however, are carved from the official CIFAR-10
 \emph{test} file (the standard detector-benchmark pool). Sourcing the
 head-fitting and calibration partitions from the CIFAR-10 \emph{train}
 split and reserving the official test set for final evaluation only is the
-stricter protocol, and we flag it as the clean fix for future runs.
+stricter protocol, which we recommend for deployment.
 The final \prism score is the convex combination
 $S(x) = \alpha\, S_\mathrm{TDA}(x) + (1 - \alpha)\, \tilde\ell_\mathrm{ens}(x)$
 fed to the \cadg conformal calibrator, with $\alpha$ controlling the
@@ -201,9 +201,9 @@ overlap heavily: a pooled $n{=}5000$ count covers only $\approx 1929$
 \emph{unique} source images. The pooled Wilson interval therefore treats
 overlapping draws as independent and is mildly anti-conservative (too
 narrow); we report the per-seed standard deviation alongside every
-pooled interval as the seed-level dispersion check, and flag disjoint
-per-seed eval windows (or image-clustered CIs) as the clean statistical
-fix for future runs. The disjoint-window cross-check that confirms the
+pooled interval as the seed-level dispersion check, and note that disjoint
+per-seed eval windows (or image-clustered CIs) are the stricter statistical
+protocol. The disjoint-window cross-check that confirms the
 overlap is immaterial (Appendix~\ref{app:audit}) was run only for
 FGSM/PGD/Square on CIFAR-10/ResNet-18; the pooled Wilson intervals for
 CW-L2, AutoAttack, and the WRN-28-10, CIFAR-100, and ViT-B/16 settings
@@ -274,9 +274,9 @@ calibration-set clean-score mean $\mu_\text{cal}=0.281$ and standard
 deviation $\sigma_\text{cal}=1.639$. We require a strictly positive drift
 floor: with $\delta = 0$, $C_t$ accumulates without the negative reset
 term and crosses any finite trigger on long enough clean streams,
-producing up to $59.4\%$ active-fraction on clean-only inputs at seed-42
-in our pre-fix runs. The F1 calibration raises $\delta$ from $0$ to
-$\mathbf{1.0}$ (one calibration-clean standard deviation) and requires
+producing up to $59.4\%$ active-fraction on clean-only inputs at seed-42.
+The calibration therefore sets $\delta = \mathbf{1.0}$ (one calibration-clean
+standard deviation) and requires
 $k_\text{consec}$ consecutive trigger steps before raising the alert,
 with cusum threshold $C^* = 5.0$ (CIFAR-10) and warmup
 $t_\text{warmup}=20$. With $\delta=1.0,\, k_\text{consec}=3$ on CIFAR-10
