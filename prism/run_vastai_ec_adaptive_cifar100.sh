@@ -120,6 +120,45 @@ if [ "${SMOKE:-0}" = "1" ]; then
   SCAN_LAMBDAS="${SMOKE_LAMBDAS:-0.0 10.0}"
 fi
 
+# ── Hardware auto-detection (CPU/GPU saturation, no numeric effect) ──────────
+# The attack harness processes one image at a time (no batch dim), so a single
+# sequential run leaves most of a modern GPU idle and only 1 of many CPU cores
+# busy. Two levers are used to close that gap, and BOTH are correctness-
+# preserving because they change scheduling only, never a computed value:
+#   (a) run multiple SEEDS as concurrent OS processes. Each seed already runs
+#       fully independent, self-seeded, deterministic code (its own model
+#       load, its own RNG stream, its own output files) -- overlapping them
+#       does not touch any number, only wall-clock.
+#   (b) build_profile_testset.py's own --workers path (Step 1) is documented
+#       in its source as numerically identical to the serial loop -- it only
+#       fans the CPU-bound ripser calls across a process pool.
+# Nothing here touches --pgd-restarts selection logic, batches images through
+# the model, or changes any RNG seed -- those are the parts that could shift
+# a reported number, and none of them are modified.
+NPROC="$(python3 -c 'import os; print(os.cpu_count() or 4)' 2>/dev/null || echo 4)"
+# `|| true` neutralizes the whole pipeline's exit status: under `set -o
+# pipefail`, a missing/erroring `nvidia-smi` makes the pipe report its exit
+# code (e.g. 127) even though wc/tr succeeded and produced "0" -- and a bare
+# `VAR=$(...)` assignment propagates that under `set -e`, aborting the script
+# before any real work starts. This must degrade to GPU_COUNT=0, never abort.
+GPU_COUNT="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ' || true)"
+if [ -z "$GPU_COUNT" ]; then GPU_COUNT=0; fi
+
+# How many seeds to run concurrently. Default: all seeds in the confirm phase
+# (typically 5) up to a safety cap of 8 -- CIFAR ResNet-18 attacks on a single
+# image have a tiny memory footprint, so VRAM is not the constraint; the cap
+# just avoids absurd concurrency if SEEDS is overridden to something large.
+PARALLEL_SEEDS="${PARALLEL_SEEDS:-8}"
+
+# CPU threads handed to each concurrent seed process, sized so
+# PARALLEL_SEEDS-way concurrency never oversubscribes the box
+# (reserves ~2 cores for the OS/orchestration).
+THREADS_PER_JOB="${THREADS_PER_JOB:-$(( (NPROC > 2 ? NPROC - 2 : NPROC) / (PARALLEL_SEEDS > 0 ? PARALLEL_SEEDS : 1) ))}"
+[ "$THREADS_PER_JOB" -lt 1 ] && THREADS_PER_JOB=1
+
+# Workers for the CPU-bound persistent-homology step (build only, Step 1).
+PROFILE_WORKERS="${PROFILE_WORKERS:-$(( NPROC > 2 ? NPROC - 2 : 1 ))}"
+
 SCAN_TAG="${TAG}_lambda_scan_n${SCAN_N}"
 CONFIRM_TAG="${TAG}_worst_lambda_n${CONFIRM_N}"
 
@@ -133,6 +172,10 @@ echo "Seeds (confirm, reported number): $SEEDS"
 echo "Scan:      n=$SCAN_N  lambdas=[$SCAN_LAMBDAS]  seeds=[$SCAN_SEEDS]  ${STEPS} steps x ${RESTARTS} restarts"
 echo "Confirm:   n=$CONFIRM_N (worst lambda), seeds=[$SEEDS]"
 echo "ec_match_coeff=$EC_MATCH_COEFF  ec_score_coeff=$EC_SCORE_COEFF  skip_gradnorm=$SKIP_GRADNORM"
+echo "------------------------------------------------------------"
+echo "Hardware:  ${NPROC} CPU cores detected, ${GPU_COUNT} GPU(s)"
+echo "Concurrency: up to ${PARALLEL_SEEDS} seeds run in parallel, ${THREADS_PER_JOB} CPU threads/job"
+echo "Profile-build workers (Step 1, ripser pool): ${PROFILE_WORKERS}"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || true
 
@@ -180,12 +223,15 @@ build_detector() {
       2>&1 | tee "logs/${TAG}/build_0a_backbone.log"
   fi
 
-  # 1: reference profiles
+  # 1: reference profiles (--workers fans the CPU-bound ripser calls across a
+  # process pool; numerically identical to the serial path per the script's
+  # own documentation -- same subsample, same ripser call, only faster).
   if [ -f "$REF" ]; then
     echo "  reference profiles present: $REF (skip)"
   else
-    echo "  building reference profiles -> $REF"
+    echo "  building reference profiles -> $REF (workers=$PROFILE_WORKERS)"
     python scripts/build_profile_testset.py --config "$CONFIG" \
+      --workers "$PROFILE_WORKERS" \
       2>&1 | tee "logs/${TAG}/build_1_profiles.log"
   fi
 
@@ -268,30 +314,78 @@ run_phase() {
                --ec-match-coeff "$EC_MATCH_COEFF" --ec-score-coeff "$EC_SCORE_COEFF")
   [ "$SKIP_GRADNORM" = "1" ] && extra+=(--skip-gradnorm-surrogate)
 
+  # Each seed is an independent, self-seeded, deterministic process with its
+  # own output/checkpoint files (results_..._seed${s}.json{,l}) -- there is no
+  # shared state between them, so running up to PARALLEL_SEEDS at once changes
+  # only wall-clock, never a result. Concurrency is capped (`wait -n`-style
+  # pool) so we never spawn more processes than PARALLEL_SEEDS at a time.
+  # `wait "$pid1" "$pid2" ...` only reports the exit status of the LAST pid
+  # given -- an earlier seed's failure would otherwise be silently swallowed
+  # under `set -e`. Track (seed, pid) pairs and check each exit code
+  # individually so a failed seed is never missed.
+  local pids=() pid_seeds=() running=0 any_failed=0
+
+  drain_batch() {
+    local i
+    for i in "${!pids[@]}"; do
+      if ! wait "${pids[$i]}"; then
+        echo "  ERROR: seed ${pid_seeds[$i]} failed (see $logdir/ec_adaptive_seed${pid_seeds[$i]}.log)"
+        any_failed=1
+      fi
+    done
+    pids=(); pid_seeds=(); running=0
+  }
+
   for s in $seeds; do
     local out_json="$outdir/results_ensemble_complete_adaptive_pgd_seed${s}.json"
     local out_jsonl="$outdir/results_ensemble_complete_adaptive_pgd_seed${s}.jsonl"
-    echo "  --- seed $s -> $out_json"
-    python experiments/evaluation/run_adaptive_pgd.py \
-      --config "$CONFIG" \
-      --n-test "$n_test" \
-      --seed "$s" \
-      --lambdas $lambdas \
-      --pgd-steps "$STEPS" \
-      --pgd-restarts "$RESTARTS" \
-      --eot-samples "$EOT_SAMPLES" \
-      --eot-verify-samples "$EOT_VERIFY_SAMPLES" \
-      "${extra[@]}" \
-      --checkpoint-jsonl "$out_jsonl" \
-      --resume \
-      --output "$out_json" \
-      2>&1 | tee "$logdir/ec_adaptive_seed${s}.log"
+    local gpu_idx=0
+    [ "$GPU_COUNT" -gt 0 ] && gpu_idx=$(( running % GPU_COUNT ))
+    local dev_args=()
+    [ "$GPU_COUNT" -gt 0 ] && dev_args=(--device "cuda:${gpu_idx}")
+
+    echo "  --- launching seed $s (gpu=${gpu_idx}, threads=${THREADS_PER_JOB}) -> $out_json"
+    (
+      export OMP_NUM_THREADS="$THREADS_PER_JOB" MKL_NUM_THREADS="$THREADS_PER_JOB"
+      python experiments/evaluation/run_adaptive_pgd.py \
+        --config "$CONFIG" \
+        --n-test "$n_test" \
+        --seed "$s" \
+        --lambdas $lambdas \
+        --pgd-steps "$STEPS" \
+        --pgd-restarts "$RESTARTS" \
+        --eot-samples "$EOT_SAMPLES" \
+        --eot-verify-samples "$EOT_VERIFY_SAMPLES" \
+        "${extra[@]}" "${dev_args[@]+${dev_args[@]}}" \
+        --checkpoint-jsonl "$out_jsonl" \
+        --resume \
+        --output "$out_json"
+    ) > "$logdir/ec_adaptive_seed${s}.log" 2>&1 &
+    pids+=($!)
+    pid_seeds+=("$s")
+    running=$((running + 1))
+
+    if [ "$running" -ge "$PARALLEL_SEEDS" ]; then
+      drain_batch
+    fi
   done
+  [ "${#pids[@]}" -gt 0 ] && drain_batch
+
+  # Surface each seed's log tail so failures are visible without opening files.
+  for s in $seeds; do
+    echo "  --- tail: seed $s ---"
+    tail -n 5 "$logdir/ec_adaptive_seed${s}.log" 2>/dev/null || echo "  (no log found)"
+  done
+
+  if [ "$any_failed" = "1" ]; then
+    echo "  ERROR: one or more seeds in phase ${tag} failed."
+    return 1
+  fi
 }
 
 # ── choose the worst-case (highest deployment-risk) lambda from the scan ─────
 choose_worst_lambda() {
-  SCAN_DIR="experiments/evaluation/${SCAN_TAG}" python - <<'PY'
+  SCAN_DIR="experiments/evaluation/${SCAN_TAG}" WORST_LAMBDA_FILE="logs/${SCAN_TAG}/prism_ec_worst_lambda.txt" python - <<'PY'
 import json, os
 from pathlib import Path
 root = Path(os.environ["SCAN_DIR"])
@@ -326,8 +420,9 @@ worst = max(summary, key=lambda x: (
     x["undetected_success_rate"], x["model_ASR"],
     x["evasion_rate_on_successful_attacks"],
     -x["TPR_on_successful_attacks"], -x["TPR"]))
-Path("/tmp").mkdir(exist_ok=True)
-Path("prism_ec_worst_lambda.txt").write_text(worst["lambda"] + "\n")
+out_file = Path(os.environ["WORST_LAMBDA_FILE"])
+out_file.parent.mkdir(parents=True, exist_ok=True)
+out_file.write_text(worst["lambda"] + "\n")
 print(json.dumps({"worst": worst, "summary": summary}, indent=2))
 PY
 }
@@ -337,7 +432,7 @@ run_phase "$SCAN_TAG" "$SCAN_N" "$SCAN_LAMBDAS" "$SCAN_SEEDS" || { echo "ERROR: 
 
 echo ""; echo "=== Selecting worst-case lambda from scan ==="
 choose_worst_lambda | tee "logs/${SCAN_TAG}/worst_lambda.log"
-WORST_LAMBDA="$(cat prism_ec_worst_lambda.txt)"
+WORST_LAMBDA="$(cat "logs/${SCAN_TAG}/prism_ec_worst_lambda.txt")"
 echo "WORST_LAMBDA=${WORST_LAMBDA}"
 
 # ── Stage B: confirm at the worst lambda, full n, full SEEDS (reported number) ─
