@@ -18,8 +18,12 @@
 #      -> val-FPR gate). Idempotent: existing artifacts are reused, so re-runs
 #      resume rather than retrain.
 #   2. Runs the two-stage ensemble-complete adaptive PGD:
-#        Stage A (scan):    n=50,  lambda in {0,0.5,1,2,5,10}, 100 steps x 10 restarts
-#        Stage B (confirm): n=200, worst-case lambda from Stage A, 5 seeds
+#        Stage A (scan):    n=50,  lambda in {0,0.5,1,2,5,10}, 100 steps x 10
+#                           restarts, 1 seed (SCAN_SEEDS) -- picks a lambda,
+#                           is not itself a reported number, so it runs cheap.
+#        Stage B (confirm): n=200, worst-case lambda from Stage A, full SEEDS
+#                           (default 5) -- this is the number that gets
+#                           compared against the CIFAR-10 result in the paper.
 #      "Worst" = the lambda maximising undetected-success-rate (successful model
 #      fooling that also evades PRISM) — the true deployment-risk operating point.
 #
@@ -83,6 +87,14 @@ RESTARTS="${RESTARTS:-10}"
 SCAN_LAMBDAS="${SCAN_LAMBDAS:-0.0 0.5 1.0 2.0 5.0 10.0}"
 SCAN_N="${SCAN_N:-50}"
 CONFIRM_N="${CONFIRM_N:-200}"
+# Stage A (lambda scan) only picks which lambda to confirm at — it is not
+# itself a reported number, so by default it runs on ONE seed instead of all
+# five. This is the single biggest cost lever: with 6 lambdas x n=50, 5 seeds
+# vs 1 seed is a 5x cost difference on the scan, which otherwise dominates
+# wall-clock alongside the confirm phase. Override with SCAN_SEEDS="..." to
+# scan on more seeds if you want the lambda choice itself to be seed-robust.
+first_seed=""; for s in $SEEDS; do first_seed="$s"; break; done
+SCAN_SEEDS="${SCAN_SEEDS:-$first_seed}"
 EOT_SAMPLES="${EOT_SAMPLES:-1}"
 EOT_VERIFY_SAMPLES="${EOT_VERIFY_SAMPLES:-20}"
 EC_MATCH_COEFF="${EC_MATCH_COEFF:-0.5}"
@@ -100,6 +112,7 @@ if [ "${SMOKE:-0}" = "1" ]; then
   TAG="${TAG}_smoke"
   first_seed=""; for s in $SEEDS; do first_seed="$s"; break; done
   SEEDS="$first_seed"
+  SCAN_SEEDS="$first_seed"
   SCAN_N="${SMOKE_SCAN_N:-4}"
   CONFIRM_N="${SMOKE_CONFIRM_N:-4}"
   STEPS="${SMOKE_STEPS:-2}"
@@ -116,9 +129,9 @@ echo "============================================================"
 echo "PRISM ensemble-complete adaptive PGD — ${TAG}"
 echo "Repo root: $PRISM_ROOT"
 echo "Config:    $CONFIG"
-echo "Seeds:     $SEEDS"
-echo "Scan:      n=$SCAN_N  lambdas=[$SCAN_LAMBDAS]  ${STEPS} steps x ${RESTARTS} restarts"
-echo "Confirm:   n=$CONFIRM_N (worst lambda), 5 seeds"
+echo "Seeds (confirm, reported number): $SEEDS"
+echo "Scan:      n=$SCAN_N  lambdas=[$SCAN_LAMBDAS]  seeds=[$SCAN_SEEDS]  ${STEPS} steps x ${RESTARTS} restarts"
+echo "Confirm:   n=$CONFIRM_N (worst lambda), seeds=[$SEEDS]"
 echo "ec_match_coeff=$EC_MATCH_COEFF  ec_score_coeff=$EC_SCORE_COEFF  skip_gradnorm=$SKIP_GRADNORM"
 echo "============================================================"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || true
@@ -243,19 +256,19 @@ if ! python experiments/evaluation/run_adaptive_pgd.py --help 2>&1 | grep -q -- 
   exit 3
 fi
 
-# ── run one (tag, n_test, lambdas) phase across all seeds ────────────────────
+# ── run one (tag, n_test, lambdas, seeds) phase ───────────────────────────────
 run_phase() {
-  local tag="$1" n_test="$2" lambdas="$3"
+  local tag="$1" n_test="$2" lambdas="$3" seeds="$4"
   local outdir="experiments/evaluation/${tag}"
   local logdir="logs/${tag}"
   mkdir -p "$outdir" "$logdir"
-  echo ""; echo "=== PHASE ${tag}: n=${n_test} lambdas=[${lambdas}] ==="
+  echo ""; echo "=== PHASE ${tag}: n=${n_test} lambdas=[${lambdas}] seeds=[${seeds}] ==="
 
   local extra=(--ensemble-complete --through-scorer
                --ec-match-coeff "$EC_MATCH_COEFF" --ec-score-coeff "$EC_SCORE_COEFF")
   [ "$SKIP_GRADNORM" = "1" ] && extra+=(--skip-gradnorm-surrogate)
 
-  for s in $SEEDS; do
+  for s in $seeds; do
     local out_json="$outdir/results_ensemble_complete_adaptive_pgd_seed${s}.json"
     local out_jsonl="$outdir/results_ensemble_complete_adaptive_pgd_seed${s}.jsonl"
     echo "  --- seed $s -> $out_json"
@@ -319,16 +332,16 @@ print(json.dumps({"worst": worst, "summary": summary}, indent=2))
 PY
 }
 
-# ── Stage A: lambda scan ─────────────────────────────────────────────────────
-run_phase "$SCAN_TAG" "$SCAN_N" "$SCAN_LAMBDAS" || { echo "ERROR: scan phase failed."; exit 4; }
+# ── Stage A: lambda scan (cheap — SCAN_SEEDS, default 1 seed) ────────────────
+run_phase "$SCAN_TAG" "$SCAN_N" "$SCAN_LAMBDAS" "$SCAN_SEEDS" || { echo "ERROR: scan phase failed."; exit 4; }
 
 echo ""; echo "=== Selecting worst-case lambda from scan ==="
 choose_worst_lambda | tee "logs/${SCAN_TAG}/worst_lambda.log"
 WORST_LAMBDA="$(cat prism_ec_worst_lambda.txt)"
 echo "WORST_LAMBDA=${WORST_LAMBDA}"
 
-# ── Stage B: confirm at the worst lambda, full n, all seeds ──────────────────
-run_phase "$CONFIRM_TAG" "$CONFIRM_N" "$WORST_LAMBDA" || { echo "ERROR: confirm phase failed."; exit 4; }
+# ── Stage B: confirm at the worst lambda, full n, full SEEDS (reported number) ─
+run_phase "$CONFIRM_TAG" "$CONFIRM_N" "$WORST_LAMBDA" "$SEEDS" || { echo "ERROR: confirm phase failed."; exit 4; }
 
 echo ""
 echo "============================================================"
